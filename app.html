@@ -5244,7 +5244,12 @@ async function appInitMsal() {
       auth: {
         clientId: APP_CONFIG.clientId,
         authority: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
-        redirectUri: window.location.origin + window.location.pathname,
+        // Use exact registered redirectUri — avoids PWA installed app URI mismatch
+        redirectUri: window.location.hostname === 'toalsistemas-hue.github.io'
+          ? 'https://toalsistemas-hue.github.io/madero-app/app.html'
+          : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/'
+            : window.location.origin + window.location.pathname),
         // knownAuthorities evita la llamada de red durante initialize()
         // que causaba endpoints_resolution_error en redes lentas o restrictivas
         knownAuthorities: ['login.microsoftonline.com'],
@@ -5333,44 +5338,55 @@ async function appInitMsal() {
 async function appDoLogin() {
   const btn = document.getElementById('app-login-btn');
   const status = document.getElementById('app-login-status');
-  // Re-initialize if MSAL instance is not ready
   if (!appMsalInstance) {
-    status.textContent = 'Inicializando MSAL...';
+    status.textContent = 'Inicializando...';
     await appInitMsal();
-    if (!appMsalInstance) { status.textContent = 'Error: no se pudo inicializar.'; return; }
+    if (!appMsalInstance) { status.textContent = 'Error al inicializar.'; return; }
   }
   btn.disabled = true;
+
+  // Determine best redirectUri — hardcode the registered GitHub Pages URL
+  // to avoid PWA installed app sending wrong URI
+  var hostname = window.location.hostname;
+  var redirectUri;
+  if (hostname === 'toalsistemas-hue.github.io') {
+    redirectUri = 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    redirectUri = 'http://localhost:3000/';
+  } else if (hostname.indexOf('netlify') >= 0) {
+    redirectUri = 'https://automatizaciones-madero-app.netlify.app/app.html';
+  } else {
+    redirectUri = window.location.origin + window.location.pathname;
+  }
+
+  // POPUP FIRST for PWA — more reliable than redirect in installed PWAs
   try {
-    var loginReq = {
+    status.textContent = 'Abriendo Microsoft...';
+    var result = await appMsalInstance.loginPopup({
       scopes: APP_CONFIG.scopes,
-      redirectUri: window.location.origin + window.location.pathname,
-    };
-    status.textContent = 'Conectando con Microsoft...';
-    await appMsalInstance.loginRedirect(loginReq);
-  } catch(e) {
-    console.error('loginRedirect error:', e);
-    // If redirect fails, try popup as fallback
+      redirectUri: redirectUri,
+    });
+    if (result && result.accessToken) {
+      appToken = result.accessToken;
+      appCurrentUser = { email: result.account.username.toLowerCase(), nombre: result.account.name || result.account.username };
+      document.getElementById('app-login-screen').style.display = 'none';
+      document.getElementById('app-shell-mobile').style.display = 'block';
+      btn.disabled = false;
+      status.textContent = '';
+      await appLoadDataFromSP();
+      try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
+      fabMobileInit();
+      renderApp();
+      if (typeof startSPPolling === 'function') startSPPolling();
+    }
+  } catch(popupErr) {
+    console.warn('loginPopup failed:', popupErr.message || popupErr.errorCode);
+    // Fallback to redirect
     try {
-      status.textContent = 'Intentando ventana emergente...';
-      var result = await appMsalInstance.loginPopup({
-        scopes: APP_CONFIG.scopes,
-        redirectUri: window.location.origin + window.location.pathname,
-      });
-      if (result && result.accessToken) {
-        appToken = result.accessToken;
-        appCurrentUser = { email: result.account.username.toLowerCase(), nombre: result.account.name || result.account.username };
-        document.getElementById('app-login-screen').style.display = 'none';
-        document.getElementById('app-shell-mobile').style.display = 'block';
-        btn.disabled = false;
-        status.textContent = '';
-        await appLoadDataFromSP();
-        try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
-        fabMobileInit();
-        renderApp();
-        if (typeof startSPPolling === 'function') startSPPolling();
-      }
+      status.textContent = 'Redirigiendo...';
+      await appMsalInstance.loginRedirect({ scopes: APP_CONFIG.scopes, redirectUri: redirectUri });
     } catch(e2) {
-      status.textContent = 'Error: ' + e2.message;
+      status.textContent = 'Error: ' + (e2.message||e2.errorCode||'desconocido');
       btn.disabled = false;
     }
   }
