@@ -3076,7 +3076,7 @@ async function ftLoadDataFromSP() {
               qty_ok: parseInt(o.Qty_OK||0),
               qty_def: parseInt(o.Qty_Def||0),
               qty_rej: parseInt(o.Qty_Rej||0),
-              cola: parseInt(o.Cola||0)||null,
+              cola: parseInt(o.Cola||0)||0, // also populated from FT_Cola_Estacion on load
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
               needsCal: o.NeedsCal === true,
@@ -3238,6 +3238,18 @@ async function ftLoadDataFromSP() {
       window.DB_STATION_QUEUE[st].push({ of_sap: c.OF_SAP||'', op_id: c.Op_ID||'', tipo: c.Tipo_Cola||'normal' });
     });
 
+    // Populate op.cola from FT_Cola_Estacion queue positions (authoritative source)
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if (window.DB_STATION_QUEUE && op.estacion) {
+          var q = window.DB_STATION_QUEUE[op.estacion];
+          if (q) {
+            var qIdx = q.findIndex(function(e){ return e.of_sap===aof.of_sap && e.op_id===op.id; });
+            if (qIdx >= 0) op.cola = qIdx;
+          }
+        }
+      });
+    });
     // Sync cola numbers
     sqSyncColaNumbers();
 
@@ -3270,7 +3282,7 @@ async function ftSaveOpToSP(of_sap, opId) {
       Tecnico:        op.tecnico || '',
       Ayudantes_JSON: (op.ayudantes || []).join(','),
       PauseReason:    op.pauseReason || '',
-      Cola:           op.cola || 0,
+      // Cola NOT patched — maintained in FT_Cola_Estacion.Posicion
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)   fields.NeedsCal = true;
@@ -3305,7 +3317,7 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   // Get actual SP internal column names (cache per list)
   if (!window._ftOpColMap) {
     try {
-      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName,readOnly,hidden,fieldTypeKind&$top=100');
+      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName,readOnly,hidden&$top=100');
       window._ftOpColMap = {};
       // Only include writable, non-hidden columns
       (colRes.value||[]).forEach(function(c){
@@ -3335,7 +3347,7 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     Qty_OK:         op.qty_ok || 0,
     Qty_Def:        op.qty_def || 0,
     Qty_Rej:        op.qty_rej || 0,
-    Cola:           0,   // patched after queue save
+    // Cola NOT written here — read from FT_Cola_Estacion.Posicion when loading
     Inicio:         op.inicio || '',
     Fin:            op.fin || '',
     Mins:           op.mins || 0,
@@ -3459,21 +3471,8 @@ async function ftSaveQueueToSP(of_sap) {
         }
       } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
     }
-    // After saving queue, patch Cola in FT_Operaciones for each op
-    for (var ci = 0; ci < aof.ops.length; ci++) {
-      var cOp = aof.ops[ci];
-      if (cOp._spId && cOp.cola !== undefined) {
-        try {
-          var colaFields = {};
-          var cmC = window._ftOpColMap || {};
-          var roC = ['LinkTitleNoMenu','LinkTitle','DocIcon','Edit','ID','ContentType','Modified','Created','Author','Editor'];
-          var cfk = cmC['Cola']||'Cola'; if(roC.indexOf(cfk)<0) colaFields[cfk] = cOp.cola;
-          if (Object.keys(colaFields).length) {
-            await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+cOp._spId+'/fields', colaFields);
-          }
-        } catch(e) { /* non-critical */ }
-      }
-    }
+    // Cola position is maintained in FT_Cola_Estacion.Posicion only
+    // FT_Operaciones.Cola is not used to avoid SP internal name conflicts
   } catch(e) { console.warn('ftSaveQueueToSP error:', e.message); }
 }
 
