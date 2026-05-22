@@ -5379,11 +5379,34 @@ async function appDoLogin() {
 async function appGetToken(force) {
   const accounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
   if (!accounts.length) throw new Error('No account');
-  const resp = await appMsalInstance.acquireTokenSilent({
-    scopes: APP_CONFIG.scopes, account: accounts[0], forceRefresh: force||false
-  });
-  appToken = resp.accessToken;
-  return appToken;
+  try {
+    const resp = await appMsalInstance.acquireTokenSilent({
+      scopes: APP_CONFIG.scopes, account: accounts[0], forceRefresh: force||false
+    });
+    appToken = resp.accessToken;
+    return appToken;
+  } catch(e) {
+    // monitor_window_timeout or interaction_required — try popup to refresh silently
+    const errCode = e.errorCode || e.name || '';
+    if (errCode.indexOf('monitor_window_timeout') >= 0 ||
+        errCode.indexOf('interaction_required') >= 0 ||
+        errCode.indexOf('consent_required') >= 0) {
+      console.warn('Token silente falló (' + errCode + ') — intentando popup...');
+      try {
+        const popResp = await appMsalInstance.acquireTokenPopup({
+          scopes: APP_CONFIG.scopes, account: accounts[0]
+        });
+        appToken = popResp.accessToken;
+        return appToken;
+      } catch(popErr) {
+        console.warn('Popup también falló:', popErr.message || popErr.errorCode);
+        // If we still have a cached token, use it (may be slightly expired but worth trying)
+        if (appToken) return appToken;
+        throw popErr;
+      }
+    }
+    throw e;
+  }
 }
 
 async function appGraphGet(endpoint, retry) {
@@ -5545,8 +5568,13 @@ async function appSaveOpToSP(of_sap, opId) {
     if (op.valcalNote)           patchFields.ValCalNote = op.valcalNote;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op._spId) {
-      // Op already exists in SP — just update
-      await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
+      try {
+        await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
+        console.log('✅ Op guardada en SP:', of_sap, opId, 'status:', op.status);
+      } catch(patchErr) {
+        console.error('❌ Error guardando op en SP:', of_sap, opId, '-', patchErr.message);
+        throw patchErr;
+      }
     } else {
       // Op not in SP yet — create it (POST)
       const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
@@ -10033,6 +10061,8 @@ async function spPollCheck() {
   // Strategy: use lastModifiedDateTime on items (no $expand needed, no 400 errors)
   // Only reload if we detect a REAL change from a KNOWN baseline
   
+  // Skip poll if token is unavailable to avoid monitor_window_timeout spam
+  if (!appToken && !appMsalInstance) return;
   try {
     // Check FT_Operaciones for any change (modified by supervisor via app)
     var opsRes = await appGraphGet(
