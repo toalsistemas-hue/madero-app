@@ -3255,8 +3255,7 @@ async function ftSaveOpToSP(of_sap, opId) {
     const aof = DB.activeOFs.find(a => a.of_sap === of_sap);
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
     if (!op) return;
-    // Build patch fields — only include what we know SP has
-    // Use known columns from SP list definition
+    // Core patch fields — only columns guaranteed to exist in FT_Operaciones
     const fields = {
       Status:         op.status || 'pending',
       Inicio:         op.inicio || '',
@@ -3268,10 +3267,11 @@ async function ftSaveOpToSP(of_sap, opId) {
       Tecnico:        op.tecnico || '',
       Ayudantes_JSON: (op.ayudantes||[]).join(','),
       PauseReason:    op.pauseReason || '',
-      NeedsCal:       op.needsCal === true,
-      ValCalNote:     op.valcalNote || '',
       Cola:           op.cola || 0,
     };
+    // Only add optional fields if they have meaningful values
+    if (op.needsCal === true)  fields.NeedsCal  = true;
+    if (op.valcalNote)         fields.ValCalNote = op.valcalNote;
     if (op._spId) {
       try {
         await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
