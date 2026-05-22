@@ -3255,23 +3255,23 @@ async function ftSaveOpToSP(of_sap, opId) {
     const aof = DB.activeOFs.find(a => a.of_sap === of_sap);
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
     if (!op) return;
-    // Core patch fields — only columns guaranteed to exist in FT_Operaciones
-    const fields = {
-      Status:         op.status || 'pending',
-      Inicio:         op.inicio || '',
-      Fin:            op.fin || '',
-      Mins:           op.mins || 0,
-      Qty_OK:         op.qty_ok || 0,
-      Qty_Def:        op.qty_def || 0,
-      Qty_Rej:        op.qty_rej || 0,
-      Tecnico:        op.tecnico || '',
-      Ayudantes_JSON: (op.ayudantes||[]).join(','),
-      PauseReason:    op.pauseReason || '',
-      Cola:           op.cola || 0,
-    };
-    // Only add optional fields if they have meaningful values
-    if (op.needsCal === true)  fields.NeedsCal  = true;
-    if (op.valcalNote)         fields.ValCalNote = op.valcalNote;
+    // Use col map to resolve actual SP internal field names
+    const cm2 = window._ftOpColMap || {};
+    const col2 = function(d){ return cm2[d] || d; };
+    const fields = {};
+    fields[col2('Status')]         = op.status || 'pending';
+    fields[col2('Inicio')]         = op.inicio || '';
+    fields[col2('Fin')]            = op.fin || '';
+    fields[col2('Mins')]           = op.mins || 0;
+    fields[col2('Qty_OK')]         = op.qty_ok || 0;
+    fields[col2('Qty_Def')]        = op.qty_def || 0;
+    fields[col2('Qty_Rej')]        = op.qty_rej || 0;
+    fields[col2('Tecnico')]        = op.tecnico || '';
+    fields[col2('Ayudantes_JSON')] = (op.ayudantes||[]).join(',');
+    fields[col2('PauseReason')]    = op.pauseReason || '';
+    fields[col2('Cola')]           = op.cola || 0;
+    if (op.needsCal === true && cm2['NeedsCal']) fields[cm2['NeedsCal']] = true;
+    if (op.valcalNote && cm2['ValCalNote'])       fields[cm2['ValCalNote']] = op.valcalNote;
     if (op._spId) {
       try {
         await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
@@ -3298,68 +3298,68 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftCreateOpInSP: no siteId', e.message); return; }
   }
   const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
-  // Build fields using exact column names from FT_Operaciones SP list
-  const fieldsCore = {
-    Title:          op.id,
-    OF_SAP:         of_sap,
-    Op_ID:          op.id,
-    Estacion:       op.estacion || '',
-    tipo:           op.tipo || 'Secuencial',
-    Tecnico:        op.tecnico || '',
-    Ayudantes_JSON: (op.ayudantes||[]).join(','),
-    Status:         op.status || 'pending',
-    Inicio:         op.inicio || '',
-    Fin:            op.fin || '',
-    Mins:           op.mins || 0,
-    Qty_Total:      op.qty_total || 10,
-    Qty_OK:         op.qty_ok || 0,
-    Qty_Def:        op.qty_def || 0,
-    Qty_Rej:        op.qty_rej || 0,
-    Cola:           op.cola || 0,
-    PauseReason:    op.pauseReason || '',
-    Secuencia:      seqNum,
-  };
-  if (op.nombre) fieldsCore.Nombre = op.nombre;
-  // Optional boolean/text fields — add only if they have non-default values
-  // to avoid SP rejecting fields that may not exist in the list
-  if (op.isRetrabajo === true) fieldsCore.isRetrabajo = true;
-  if (op.needsCal === true)   fieldsCore.NeedsCal = true;
-  if (op.valcalNote)          fieldsCore.ValCalNote = op.valcalNote;
+  // Get actual SP internal column names (cache per list)
+  if (!window._ftOpColMap) {
+    try {
+      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName&$top=100');
+      window._ftOpColMap = {};
+      (colRes.value||[]).forEach(function(c){ window._ftOpColMap[c.displayName] = c.name; window._ftOpColMap[c.name] = c.name; });
+      console.log('FT_Operaciones col map:', JSON.stringify(window._ftOpColMap));
+    } catch(e) { window._ftOpColMap = {}; }
+  }
+  const cm = window._ftOpColMap;
+  // Helper: resolve column name (use SP internal name if found)
+  const col = function(displayName, fallback) { return cm[displayName] || cm[fallback||displayName] || displayName; };
 
+  const seqField = seqNum;
+  const fields = { Title: op.id };
+  fields[col('OF_SAP')]         = of_sap;
+  fields[col('Op_ID')]          = op.id;
+  if (op.nombre) fields[col('Nombre', 'Nombre')] = op.nombre;
+  fields[col('Estacion')]       = op.estacion || '';
+  fields[col('tipo')]           = op.tipo || 'Secuencial';
+  fields[col('Tecnico')]        = op.tecnico || '';
+  fields[col('Ayudantes_JSON')] = (op.ayudantes||[]).join(',');
+  fields[col('Status')]         = op.status || 'pending';
+  fields[col('Secuencia')]      = seqNum;
+  fields[col('Qty_Total')]      = op.qty_total || 10;
+  fields[col('Qty_OK')]         = op.qty_ok || 0;
+  fields[col('Qty_Def')]        = op.qty_def || 0;
+  fields[col('Qty_Rej')]        = op.qty_rej || 0;
+  fields[col('Cola')]           = op.cola || 0;
+  fields[col('Inicio')]         = op.inicio || '';
+  fields[col('Fin')]            = op.fin || '';
+  fields[col('Mins')]           = op.mins || 0;
+  fields[col('PauseReason')]    = op.pauseReason || '';
+
+  console.log('ftCreateOpInSP sending fields:', JSON.stringify(fields));
   try {
-    const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: fieldsCore });
+    const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
     op._spId = res.id;
     console.log('✅ Op creada en SP:', op.nombre || op.id, '→ SP id', res.id);
   } catch(e) {
-    // If 400, try with minimal required fields only
-    if (e.message && e.message.indexOf('400') >= 0) {
-      console.warn('ftCreateOpInSP: 400 con campos completos, intentando con campos mínimos...');
-      const fieldsMin = {
-        Title:     op.id,
-        OF_SAP:    of_sap,
-        Op_ID:     op.id,
-        Estacion:  op.estacion || '',
-        tipo:      op.tipo || 'Secuencial',
-        Tecnico:   op.tecnico || '',
-        Status:    op.status || 'pending',
-        Secuencia: seqNum,
-        Qty_Total: op.qty_total || 10,
-      };
-      if (op.nombre) fieldsMin.Nombre = op.nombre;
+    console.error('ftCreateOpInSP FAILED:', e.message);
+    // Try super-minimal: only Title (required), plus most basic fields
+    try {
+      const minFields = { Title: op.id };
+      if (cm['OF_SAP']) minFields[cm['OF_SAP']] = of_sap;
+      if (cm['Op_ID'])  minFields[cm['Op_ID']]  = op.id;
+      if (cm['Status']) minFields[cm['Status']] = op.status||'pending';
+      if (cm['Secuencia']) minFields[cm['Secuencia']] = seqNum;
+      const res2 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: minFields });
+      op._spId = res2.id;
+      console.log('✅ Op creada en SP (mínima):', op.id, '→', res2.id);
+    } catch(e2) {
+      // Last resort: just Title
       try {
-        const res2 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: fieldsMin });
-        op._spId = res2.id;
-        console.log('✅ Op creada en SP (campos mínimos):', op.nombre || op.id, '→ SP id', res2.id);
-        return; // success with minimal fields
-      } catch(e2) {
-        console.error('ftCreateOpInSP FAILED (mínimos también):', e2.message);
-        console.error('Fields mínimos enviados:', JSON.stringify(fieldsMin));
-        throw e2;
+        const res3 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: { Title: op.id } });
+        op._spId = res3.id;
+        console.log('✅ Op creada en SP (solo Title):', op.id, '→', res3.id);
+      } catch(e3) {
+        console.error('ftCreateOpInSP FATAL:', e3.message);
+        throw e3;
       }
     }
-    console.error('ftCreateOpInSP FAILED:', e.message);
-    console.error('Fields enviados:', JSON.stringify(fieldsCore));
-    throw e;
   }
 }
 
@@ -3412,16 +3412,25 @@ async function ftSaveQueueToSP(of_sap) {
       if (!op.estacion) continue;
       var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
       var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
-      // FT_Cola_Estacion exact SP columns: Estacion(Title), OF_SAP, Op_ID, Posicion, Tipo_Cola, Activo
-      var fields = {
-        Title:     op.estacion || of_sap, // Title = Estacion per SP definition
-        Estacion:  op.estacion || '',
-        OF_SAP:    of_sap,
-        Op_ID:     op.id,
-        Posicion:  pos >= 0 ? pos : i,
-        Tipo_Cola: 'normal', // SP accepts: prioritaria, normal
-        Activo:    op.status !== 'done',
-      };
+      // FT_Cola_Estacion: get actual SP internal column names
+      if (!window._ftQueueColMap) {
+        try {
+          const qColRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/columns?$select=name,displayName&$top=50');
+          window._ftQueueColMap = {};
+          (qColRes.value||[]).forEach(function(c){ window._ftQueueColMap[c.displayName]=c.name; window._ftQueueColMap[c.name]=c.name; });
+          console.log('FT_Cola_Estacion col map:', JSON.stringify(window._ftQueueColMap));
+        } catch(e) { window._ftQueueColMap = {}; }
+      }
+      const qcm = window._ftQueueColMap;
+      const qcol = function(d){ return qcm[d] || d; };
+      var fields = { Title: op.estacion || of_sap };
+      fields[qcol('OF_SAP')]    = of_sap;
+      fields[qcol('Op_ID')]     = op.id;
+      fields[qcol('Posicion')]  = pos >= 0 ? pos : i;
+      fields[qcol('Tipo_Cola')] = 'normal';
+      fields[qcol('Activo')]    = op.status !== 'done';
+      // Try Estacion field only if it exists in the col map
+      if (qcm['Estacion']) fields[qcm['Estacion']] = op.estacion || '';
       try {
         if (op._queueSpId) {
           await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
