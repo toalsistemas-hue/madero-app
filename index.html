@@ -3220,7 +3220,9 @@ async function ftLoadDataFromSP() {
 
 // -- SP Persistence — Save op status changes -----------
 async function ftSaveOpToSP(of_sap, opId) {
-  if (!FT_SITE_ID) return;
+  if (!FT_SITE_ID) {
+    try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
+  }
   try {
     const aof = DB.activeOFs.find(a => a.of_sap === of_sap);
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
@@ -3250,9 +3252,13 @@ async function ftSaveOpToSP(of_sap, opId) {
 }
 
 async function ftCreateOpInSP(of_sap, op, aof) {
-  if (!FT_SITE_ID || !op) return;
+  if (!op) return;
+  // Resolve siteId if not yet available
+  if (!FT_SITE_ID) {
+    try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftCreateOpInSP: no siteId', e.message); return; }
+  }
   try {
-    // Detect FT_Operaciones columns once and cache
+    // Detect FT_Operaciones columns once and cache — reset to force fresh detection
     if (!window._ftOpCols) {
       try {
         const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name&$top=100');
@@ -3274,8 +3280,9 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     else if (cols.indexOf('tipo') >= 0) fields.tipo      = op.tipo || 'Secuencial';
     if (cols.indexOf('Tecnico')   >= 0) fields.Tecnico   = op.tecnico || '';
     // SP column is 'Ayudantes_JSON' based on list screenshot
-    if (cols.indexOf('Ayudantes_JSON') >= 0) fields.Ayudantes_JSON = (op.ayudantes||[]).join(',');
-    else if (cols.indexOf('Ayudantes') >= 0) fields.Ayudantes = (op.ayudantes||[]).join(',');
+    var ayudStr = (op.ayudantes||[]).join(',');
+    if (cols.indexOf('Ayudantes_JSON') >= 0) fields.Ayudantes_JSON = ayudStr;
+    else if (cols.indexOf('Ayudantes') >= 0) fields.Ayudantes = ayudStr;
     if (cols.indexOf('Status')    >= 0) fields.Status    = op.status || 'pending';
     if (cols.indexOf('Secuencia') >= 0) fields.Secuencia = seqNum;
     if (cols.indexOf('Qty_Total') >= 0) fields.Qty_Total = op.qty_total || 10;
@@ -3332,7 +3339,9 @@ async function ftSaveTimerToSP(key) {
 
 // ====== FT_Cola_Estacion — save queue for a given OF's ops ======
 async function ftSaveQueueToSP(of_sap) {
-  if (!FT_SITE_ID) return;
+  if (!FT_SITE_ID) {
+    try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
+  }
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
@@ -5403,16 +5412,28 @@ function confirmProgMain() {
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   ftSaveProgramacionToSP();
   // -- Auto-create ops in FT_Operaciones + FT_Cola_Estacion for ALL active OFs --
-  if (!state.isDemoMode && state.token && FT_SITE_ID) {
-    DB.ofs.filter(function(o){ return o.programadoHoy; }).forEach(function(o){
-      var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === o.of_sap; });
-      if (aofNew && aofNew.ops.length) {
-        aofNew.ops.forEach(function(op){
-          if (typeof ftSaveOpToSP === 'function') ftSaveOpToSP(o.of_sap, op.id);
-        });
-        if (typeof ftSaveQueueToSP === 'function') ftSaveQueueToSP(o.of_sap);
+  if (!state.isDemoMode && state.token) {
+    // Use setTimeout to not block the UI, but still execute
+    setTimeout(async function(){
+      try {
+        if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        var programadas = DB.ofs.filter(function(o){ return o.programadoHoy; });
+        console.log('Auto-guardando', programadas.length, 'OFs en SP...');
+        for (var pi = 0; pi < programadas.length; pi++) {
+          var o = programadas[pi];
+          var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === o.of_sap; });
+          if (!aofNew || !aofNew.ops.length) continue;
+          console.log('  OF', o.of_sap, '→', aofNew.ops.length, 'ops');
+          for (var oi = 0; oi < aofNew.ops.length; oi++) {
+            await ftSaveOpToSP(o.of_sap, aofNew.ops[oi].id);
+          }
+          await ftSaveQueueToSP(o.of_sap);
+        }
+        console.log('✅ Ops guardadas en SP correctamente');
+      } catch(e) {
+        console.error('Error guardando ops en SP:', e);
       }
-    });
+    }, 500); // small delay to let ftSaveProgramacionToSP complete first
   }
 }
 
@@ -5654,24 +5675,25 @@ function saveOFOps() {
   closeCModal('modal-of-ops');
   // Reset column cache before upserting — ensures we always detect current SP schema
   window._ftOpCols = null;
-  // Upsert ALL ops to FT_Operaciones (create if new, update if existing)
-  console.log('saveOFOps — isDemoMode:', state.isDemoMode, '| token:', !!state.token, '| FT_SITE_ID:', FT_SITE_ID);
-  if (!state.isDemoMode && state.token) {
-    var aofToSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-    if (aofToSave) {
-      console.log('Guardando', aofToSave.ops.length, 'ops en SP para OF', sap);
-      aofToSave.ops.forEach(function(op){
-        console.log('  → op:', op.nombre, '| _spId:', op._spId||'(nueva)');
-        if (typeof ftSaveOpToSP === 'function') ftSaveOpToSP(sap, op.id);
-      });
-      // Also save to FT_Cola_Estacion
-      if (typeof ftSaveQueueToSP === 'function') ftSaveQueueToSP(sap);
-    }
-  } else {
-    console.warn('saveOFOps: SP write skipped — isDemoMode:', state.isDemoMode, '| token:', !!state.token);
-  }
-  // Fire notifications so supervisor sees assignment
+  // Upsert ALL ops to FT_Operaciones + FT_Cola_Estacion
   fireSync('coord', 'ops_assigned', {of_sap: sap});
+  if (!state.isDemoMode && state.token) {
+    (async function(){
+      try {
+        if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        var aofToSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+        if (!aofToSave || !aofToSave.ops.length) return;
+        console.log('saveOFOps: guardando', aofToSave.ops.length, 'ops en SP para OF', sap);
+        for (var i = 0; i < aofToSave.ops.length; i++) {
+          await ftSaveOpToSP(sap, aofToSave.ops[i].id);
+        }
+        await ftSaveQueueToSP(sap);
+        console.log('✅ saveOFOps: ops guardadas en SP');
+      } catch(e) {
+        console.error('saveOFOps SP error:', e);
+      }
+    })();
+  }
   renderSeg();
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
