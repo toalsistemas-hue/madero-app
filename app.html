@@ -5238,101 +5238,94 @@ function appClearSession() {
 // Also treat any private IP as semi-secure for MSAL purposes
 var APP_IS_LOCAL_IP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
 
+// Exact registered redirect URIs in Azure AD
+function appGetRedirectUri() {
+  var h = window.location.hostname;
+  if (h === 'toalsistemas-hue.github.io') return 'https://toalsistemas-hue.github.io/madero-app/app.html';
+  if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3000/';
+  if (h.indexOf('netlify') >= 0) return 'https://automatizaciones-madero-app.netlify.app/app.html';
+  return window.location.origin + '/madero-app/app.html';
+}
+
 async function appInitMsal() {
   try {
+    var redirectUri = appGetRedirectUri();
     var msalConfig = {
       auth: {
         clientId: APP_CONFIG.clientId,
         authority: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
-        // Use exact registered redirectUri — avoids PWA installed app URI mismatch
-        redirectUri: window.location.hostname === 'toalsistemas-hue.github.io'
-          ? 'https://toalsistemas-hue.github.io/madero-app/app.html'
-          : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000/'
-            : window.location.origin + window.location.pathname),
-        // knownAuthorities evita la llamada de red durante initialize()
-        // que causaba endpoints_resolution_error en redes lentas o restrictivas
+        redirectUri: redirectUri,
+        navigateToLoginRequestUrl: false,
         knownAuthorities: ['login.microsoftonline.com'],
-        // Usar metadata local para no necesitar red en initialize()
-        authorityMetadata: JSON.stringify({
-          authorization_endpoint: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId + '/oauth2/v2.0/authorize',
-          token_endpoint: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId + '/oauth2/v2.0/token',
-          end_session_endpoint: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId + '/oauth2/v2.0/logout',
-          issuer: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId + '/v2.0',
-        }),
       },
       cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
-      system: {
-        // Aumentar timeout para redes lentas
-        loadFrameTimeout: 10000,
-        windowHashTimeout: 10000,
-        iframeHashTimeout: 10000,
-      }
+      system: { loadFrameTimeout: 10000, windowHashTimeout: 15000, iframeHashTimeout: 10000 }
     };
     appMsalInstance = new msal.PublicClientApplication(msalConfig);
-    
-    // initialize() puede fallar en redes lentas — capturarlo sin bloquear el botón
     try {
       await Promise.race([
         appMsalInstance.initialize(),
-        new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, 6000); })
+        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 8000); })
       ]);
-    } catch(initErr) {
-      console.warn('MSAL initialize timeout/error (continuando):', initErr.message);
-      // Continuar de todas formas — el login puede funcionar aún
-    }
+    } catch(e) { console.warn('MSAL init timeout, continuing:', e.message); }
 
-    // Intentar recuperar sesión del redirect o caché
+    // Check if we're returning from a redirect login
     var redirect = null;
     try {
-      redirect = await Promise.race([
-        appMsalInstance.handleRedirectPromise(),
-        new Promise(function(r){ setTimeout(function(){ r(null); }, 5000); })
-      ]);
-    } catch(e) {
-      console.warn('handleRedirectPromise error:', e.message);
+      redirect = await appMsalInstance.handleRedirectPromise();
+    } catch(e) { console.warn('handleRedirectPromise:', e.message); }
+
+    if (redirect && redirect.accessToken) {
+      // Successfully returned from redirect login
+      appToken = redirect.accessToken;
+      appCurrentUser = { email: redirect.account.username.toLowerCase(), nombre: redirect.account.name || redirect.account.username };
+      await appLoginSuccess();
+      return;
     }
 
-    // Sin redirect — intentar token silente desde cuenta cacheada
-    if (!redirect) {
-      var accounts = appMsalInstance.getAllAccounts();
-      if (accounts.length > 0) {
-        try {
-          redirect = await Promise.race([
-            appMsalInstance.acquireTokenSilent({ account: accounts[0], scopes: APP_CONFIG.scopes }),
-            new Promise(function(r){ setTimeout(function(){ r(null); }, 5000); })
-          ]);
-        } catch(e) { redirect = null; }
+    // Check for existing cached session (already logged in before)
+    var accounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
+    if (accounts.length > 0) {
+      try {
+        var silent = await Promise.race([
+          appMsalInstance.acquireTokenSilent({ account: accounts[0], scopes: APP_CONFIG.scopes }),
+          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 5000); })
+        ]);
+        if (silent && silent.accessToken) {
+          appToken = silent.accessToken;
+          appCurrentUser = { email: silent.account.username.toLowerCase(), nombre: silent.account.name || silent.account.username };
+          await appLoginSuccess();
+          return;
+        }
+      } catch(e) {
+        console.warn('Silent token failed:', e.message || e.errorCode);
+        // Clear stale account and show login
+        try { await appMsalInstance.clearCache(); } catch(ce) {}
       }
     }
 
-    if (redirect && redirect.accessToken) {
-      appToken = redirect.accessToken;
-      appCurrentUser = {
-        email: redirect.account.username.toLowerCase(),
-        nombre: redirect.account.name || redirect.account.username
-      };
-      document.getElementById('app-login-screen').style.display = 'none';
-      document.getElementById('app-shell-mobile').style.display = 'block';
-      await appLoadDataFromSP();
-      // Load user profile and set role from Usuarios+Puestos lists
-      try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
-      fabMobileInit();
-      renderApp();
-      // Start SP polling for real-time coordinator→app sync (every 30s)
-      if (typeof startSPPolling === 'function') startSPPolling();
-    } else {
-      document.getElementById('app-login-screen').style.display = 'flex';
-    }
+    // No session — show login screen
+    document.getElementById('app-login-screen').style.display = 'flex';
     document.getElementById('app-login-btn').disabled = false;
     document.getElementById('app-login-status').textContent = '';
   } catch(e) {
-    console.warn('appInitMsal error:', e);
-    // Mostrar el botón aunque haya error — el login puede funcionar
+    console.warn('appInitMsal error:', e.message);
     document.getElementById('app-login-btn').disabled = false;
     document.getElementById('app-login-screen').style.display = 'flex';
     document.getElementById('app-login-status').textContent = '';
   }
+}
+
+async function appLoginSuccess() {
+  document.getElementById('app-login-screen').style.display = 'none';
+  document.getElementById('app-shell-mobile').style.display = 'block';
+  document.getElementById('app-login-btn').disabled = false;
+  document.getElementById('app-login-status').textContent = '';
+  await appLoadDataFromSP();
+  try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load:', e); }
+  fabMobileInit();
+  renderApp();
+  if (typeof startSPPolling === 'function') startSPPolling();
 }
 
 async function appDoLogin() {
@@ -5344,51 +5337,18 @@ async function appDoLogin() {
     if (!appMsalInstance) { status.textContent = 'Error al inicializar.'; return; }
   }
   btn.disabled = true;
-
-  // Determine best redirectUri — hardcode the registered GitHub Pages URL
-  // to avoid PWA installed app sending wrong URI
-  var hostname = window.location.hostname;
-  var redirectUri;
-  if (hostname === 'toalsistemas-hue.github.io') {
-    redirectUri = 'https://toalsistemas-hue.github.io/madero-app/app.html';
-  } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    redirectUri = 'http://localhost:3000/';
-  } else if (hostname.indexOf('netlify') >= 0) {
-    redirectUri = 'https://automatizaciones-madero-app.netlify.app/app.html';
-  } else {
-    redirectUri = window.location.origin + window.location.pathname;
-  }
-
-  // POPUP FIRST for PWA — more reliable than redirect in installed PWAs
   try {
-    status.textContent = 'Abriendo Microsoft...';
-    var result = await appMsalInstance.loginPopup({
+    status.textContent = 'Redirigiendo a Microsoft...';
+    // REDIRECT ONLY — popup is blocked in PWAs installed on Android
+    await appMsalInstance.loginRedirect({
       scopes: APP_CONFIG.scopes,
-      redirectUri: redirectUri,
+      redirectUri: appGetRedirectUri(),
     });
-    if (result && result.accessToken) {
-      appToken = result.accessToken;
-      appCurrentUser = { email: result.account.username.toLowerCase(), nombre: result.account.name || result.account.username };
-      document.getElementById('app-login-screen').style.display = 'none';
-      document.getElementById('app-shell-mobile').style.display = 'block';
-      btn.disabled = false;
-      status.textContent = '';
-      await appLoadDataFromSP();
-      try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
-      fabMobileInit();
-      renderApp();
-      if (typeof startSPPolling === 'function') startSPPolling();
-    }
-  } catch(popupErr) {
-    console.warn('loginPopup failed:', popupErr.message || popupErr.errorCode);
-    // Fallback to redirect
-    try {
-      status.textContent = 'Redirigiendo...';
-      await appMsalInstance.loginRedirect({ scopes: APP_CONFIG.scopes, redirectUri: redirectUri });
-    } catch(e2) {
-      status.textContent = 'Error: ' + (e2.message||e2.errorCode||'desconocido');
-      btn.disabled = false;
-    }
+    // Page will redirect — no code runs after this
+  } catch(e) {
+    console.error('loginRedirect error:', e.message || e.errorCode);
+    status.textContent = 'Error: ' + (e.message || e.errorCode || 'desconocido');
+    btn.disabled = false;
   }
 }
 
@@ -5407,19 +5367,12 @@ async function appGetToken(force) {
     if (errCode.indexOf('monitor_window_timeout') >= 0 ||
         errCode.indexOf('interaction_required') >= 0 ||
         errCode.indexOf('consent_required') >= 0) {
-      console.warn('Token silente falló (' + errCode + ') — intentando popup...');
-      try {
-        const popResp = await appMsalInstance.acquireTokenPopup({
-          scopes: APP_CONFIG.scopes, account: accounts[0]
-        });
-        appToken = popResp.accessToken;
-        return appToken;
-      } catch(popErr) {
-        console.warn('Popup también falló:', popErr.message || popErr.errorCode);
-        // If we still have a cached token, use it (may be slightly expired but worth trying)
-        if (appToken) return appToken;
-        throw popErr;
-      }
+      console.warn('Token silente falló (' + errCode + ') — usando token en caché si disponible');
+      // Don't use popup (blocked in PWA) — use cached token or trigger redirect
+      if (appToken) return appToken; // use existing token until it actually 401s
+      // Token truly expired — redirect to login
+      await appMsalInstance.loginRedirect({ scopes: APP_CONFIG.scopes, redirectUri: appGetRedirectUri() });
+      throw e; // will redirect, no more code runs
     }
     throw e;
   }
