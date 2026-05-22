@@ -1071,6 +1071,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:6px;">
           <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()" title="Diagnóstico FT_Operaciones (ver consola)">🔍 Diagnóstico</button>
           <button class="btn btn-ghost btn-sm" onclick="renderSeg()">↻ Actualizar</button>
+        <span id="auto-refresh-indicator" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
         </div>
       </div>
       <div class="kpi-grid">
@@ -3271,6 +3272,9 @@ async function ftLoadDataFromSP() {
           await ftLoadDataFromSP();
           if (C && C.currentPage === 'seguimiento') renderSeg();
           if (C && C.currentPage === 'programacion') renderProg();
+          // Flash indicator
+          var ind = document.getElementById('auto-refresh-indicator');
+          if (ind) { ind.style.color='var(--accent)'; ind.textContent='⟳ actualizado'; setTimeout(function(){ ind.style.color='var(--text-dim)'; ind.textContent='⏱ auto 15s'; }, 2000); }
         } else if (!window._coordLastOpsMod) {
           window._coordLastOpsMod = latestMod;
         }

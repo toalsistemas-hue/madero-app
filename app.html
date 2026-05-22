@@ -453,6 +453,9 @@ tr:last-child td{border-bottom:none;}
     Iniciar sesión con Microsoft
   </button>
   <div class="app-login-status" id="app-login-status">Inicializando...</div>
+  <button onclick="appClearSession()" style="margin-top:14px;background:transparent;border:1px solid rgba(255,255,255,.12);color:#8b949e;padding:7px 16px;border-radius:6px;font-size:.72rem;cursor:pointer;width:100%;">
+    🔄 Limpiar sesión / Reintentar
+  </button>
   <div class="app-login-note">Usa tu cuenta @maderoequipos.com para acceder. Solo supervisores y personal de calidad tienen acceso.</div>
 </div>
 
@@ -5205,6 +5208,33 @@ var appCurrentUser = null;
 
 // Detect if running on HTTP (non-secure) — affects MSAL PKCE
 var APP_IS_SECURE = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// Clear MSAL session cache — use when login fails with "No podemos iniciar sesión"
+function appClearSession() {
+  try {
+    // Clear all MSAL-related localStorage keys
+    var keysToRemove = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && (k.indexOf('msal')>=0 || k.indexOf('login.windows')>=0 || k.indexOf('login.microsoftonline')>=0)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(function(k){ localStorage.removeItem(k); });
+    // Also clear sessionStorage
+    sessionStorage.clear();
+    appMsalInstance = null;
+    appToken = null;
+    appCurrentUser = null;
+    var statusEl = document.getElementById('app-login-status');
+    if (statusEl) statusEl.textContent = 'Sesión limpiada. Recargando...';
+    console.log('Session cleared, reloading...');
+    setTimeout(function(){ window.location.reload(); }, 1000);
+  } catch(e) {
+    console.error('Clear session error:', e);
+    window.location.reload();
+  }
+}
 // Also treat any private IP as semi-secure for MSAL purposes
 var APP_IS_LOCAL_IP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
 
