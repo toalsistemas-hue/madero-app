@@ -2330,7 +2330,10 @@ function appStartOp(sap,opId){
   if(!op)return;
   op.status="running";op.inicio=nowT();op.calResult=null;op.needsCal=false;
   DB.timers[sap+"_"+opId]={start:Date.now(),elapsed:0,running:true};
-  renderApp();fireSync("app","op_started",{of_sap:sap});
+  renderApp();
+  // Save to SP immediately
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(sap, opId).catch(function(e){console.warn('SP save error:',e);});
+  fireSync("app","op_started",{of_sap:sap, op_id:opId, op_name:op.nombre, tecnico:op.tecnico||''});
 }
 // ── Helpers tipo pausa ────────────────────────────────────
 var _pauseTipo = 'normal';
@@ -2434,7 +2437,8 @@ function appConfirmPause(){
     }
   });
   closeAppModal("app-modal-pause");renderApp();_refreshStationViews();
-  fireSync("app","op_paused",{of_sap:ctx.of_sap,tipo:_pauseTipo});
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){console.warn('SP pause save:',e);});
+  fireSync("app","op_paused",{of_sap:ctx.of_sap, op_id:ctx.op_id, tipo:_pauseTipo});
 }
 
 // ── Traspaso de turno ──────────────────────────────────────
@@ -2573,7 +2577,9 @@ function appConfirmValCal(){
   var note=document.getElementById("app-valcal-note").value.trim()||"Sin nota";
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
-  closeAppModal("app-modal-valcal");renderApp();fireSync("app","op_valcal",{of_sap:ctx.of_sap});
+  closeAppModal("app-modal-valcal");renderApp();
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){console.warn('SP valcal save:',e);});
+  fireSync("app","op_valcal",{of_sap:ctx.of_sap, op_id:ctx.op_id});
 }
 function openCalResp(sap,opId){
   APP.currentCalRespCtx={of_sap:sap,op_id:opId};
@@ -3341,7 +3347,8 @@ function doFinish(ctx, el, ok, def, rej) {
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
   closeAppModal('app-modal-finish'); renderApp();
-  fireSync('app','op_finished',{of_sap:ctx.of_sap, op_name:op.nombre, obs:obs});
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){console.warn('SP finish save:',e);});
+  fireSync('app','op_finished',{of_sap:ctx.of_sap, op_id:op.id, op_name:op.nombre, obs:obs, tecnico:op.tecnico||''});
 }
 
 // ── appConfirmValCal — pasar nota ─────────────────────────
@@ -5474,12 +5481,24 @@ async function appSaveOpToSP(of_sap, opId) {
     const aof = DB.activeOFs.find(a=>a.of_sap===of_sap);
     const op = aof ? aof.ops.find(o=>o.id===opId) : null;
     if (!op) return;
+    // Hardcoded SP internal field names (confirmed: tipo→Tip, Ayudantes→Ayudantes_JSON)
     const patchFields = {
-      Status: op.status||'pending', Inicio: op.inicio||'', Fin: op.fin||'', Mins: op.mins||0,
-      Qty_OK: op.qty_ok||0, Qty_Def: op.qty_def||0, Qty_Rej: op.qty_rej||0,
-      Tecnico: op.tecnico||'', Cola: op.cola||null, PauseReason: op.pauseReason||'',
-      Ayudantes: (op.ayudantes||[]).join(','),
+      Status:         op.status || 'pending',
+      Inicio:         op.inicio || '',
+      Fin:            op.fin || '',
+      Mins:           op.mins || 0,
+      Qty_Total:      op.qty_total || 10,
+      Qty_OK:         op.qty_ok || 0,
+      Qty_Def:        op.qty_def || 0,
+      Qty_Rej:        op.qty_rej || 0,
+      Tecnico:        op.tecnico || '',
+      Ayudantes_JSON: (op.ayudantes || []).join(','),
+      PauseReason:    op.pauseReason || '',
+      Tip:            op.tipo || 'Secuencial',
     };
+    if (op.needsCal === true)    patchFields.NeedsCal = true;
+    if (op.valcalNote)           patchFields.ValCalNote = op.valcalNote;
+    if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op._spId) {
       // Op already exists in SP — just update
       await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
@@ -5487,7 +5506,7 @@ async function appSaveOpToSP(of_sap, opId) {
       // Op not in SP yet — create it (POST)
       const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
       const postFields = Object.assign({
-        Title:    op.id,
+        Title:    op.nombre || op.id,  // Nombre col in SP = Title internal
         OF_SAP:   of_sap,
         Op_ID:    op.id,
         Nombre:   op.nombre||'',
@@ -9884,43 +9903,44 @@ function startSPPolling() {
     try {
       await spPollCheck();
     } catch(e) { console.warn('SP poll error:', e.message); }
-  }, 30000); // cada 30 segundos
+  }, 15000); // cada 15 segundos para seguimiento en tiempo real
 }
 
 async function spPollCheck() {
   const siteId = appSiteId;
-  // Check FT_OrdenesFabricacion for programación changes
-  const ofsRes = await appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$expand=fields&$select=id,fields&$top=200&$filter=fields/Programado_Hoy eq true');
-  const programadas = (ofsRes.value||[]).map(i => i.fields.OF_SAP||i.fields.Title||'').sort().join(',');
-  
-  if (programadas !== _spLastProgramadas && _spLastProgramadas !== '') {
-    // Coordinator changed the programación
-    console.log('SP poll: programación cambió → recargando datos');
+  // Use $top=1 with $orderby=Modified desc to cheaply detect ANY change in each list
+  const [ofsCheck, opsCheck] = await Promise.all([
+    appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$select=id,fields/Modified,fields/OF_SAP,fields/Programado_Hoy&$expand=fields&$top=200&$orderby=Modified desc').catch(function(){return {value:[]};}),
+    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$select=id,fields/Modified,fields/OF_SAP,fields/Status,fields/Tecnico&$expand=fields&$top=1&$orderby=Modified desc').catch(function(){return {value:[]};})
+  ]);
+
+  // Track programación changes
+  const programadas = (ofsCheck.value||[])
+    .filter(function(i){ return i.fields && i.fields.Programado_Hoy===true; })
+    .map(function(i){ return i.fields.OF_SAP||i.fields.Title||''; })
+    .sort().join(',');
+
+  if (_spLastProgramadas !== '' && programadas !== _spLastProgramadas) {
+    console.log('SP poll: programación cambió → recargando');
     _spLastProgramadas = programadas;
     await appLoadDataFromSP();
-    // Add notification to app
     var exists = DB.notifications.some(function(n){return n.type==='coord'&&n.msg==='📅 El Coordinador actualizó la programación'&&!n.read;});
-    if (!exists) {
-      DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅',
-        msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
-    }
+    if (!exists) DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅', msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
     renderApp();
     return;
   }
-  if (_spLastProgramadas === '') _spLastProgramadas = programadas;
+  _spLastProgramadas = programadas;
 
-  // Check FT_Operaciones for op status changes (ops assigned by coordinator)
-  const opsRes = await appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields&$select=id,fields&$top=200&$orderby=Modified desc&$top=10');
-  const opsHash = (opsRes.value||[]).map(i=>(i.fields.OF_SAP||'')+'_'+(i.fields.Status||'')+'_'+(i.fields.Tecnico||'')).join('|');
-  
-  if (opsHash !== _spLastOpsHash && _spLastOpsHash !== '') {
-    console.log('SP poll: operaciones cambiaron → recargando');
-    _spLastOpsHash = opsHash;
+  // Track op changes via latest Modified timestamp
+  var latestOpMod = (opsCheck.value||[]).length ? ((opsCheck.value[0].fields||{}).Modified||'') : '';
+  if (_spLastOpsHash !== '' && latestOpMod !== _spLastOpsHash) {
+    console.log('SP poll: ops modificadas →', latestOpMod, 'anterior:', _spLastOpsHash);
+    _spLastOpsHash = latestOpMod;
     await appLoadDataFromSP();
     renderApp();
     return;
   }
-  if (_spLastOpsHash === '') _spLastOpsHash = opsHash;
+  _spLastOpsHash = latestOpMod;
 }
 </script>
 </body>

@@ -3256,6 +3256,26 @@ async function ftLoadDataFromSP() {
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
+  // Start real-time polling so portal auto-updates when app mobile makes changes
+  if (!window._coordPollTimer && !state.isDemoMode) {
+    window._coordLastOpsMod = '';
+    window._coordPollTimer = setInterval(async function(){
+      if (!state.token || !FT_SITE_ID) return;
+      try {
+        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,fields/Modified&$expand=fields&$top=1&$orderby=Modified%20desc');
+        var latestMod = (r.value&&r.value.length&&r.value[0].fields) ? (r.value[0].fields.Modified||'') : '';
+        if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
+          console.log('Coord poll: ops cambiaron →', latestMod);
+          window._coordLastOpsMod = latestMod;
+          await ftLoadDataFromSP();
+          if (C && C.currentPage === 'seguimiento') renderSeg();
+          if (C && C.currentPage === 'programacion') renderProg();
+        } else if (!window._coordLastOpsMod) {
+          window._coordLastOpsMod = latestMod;
+        }
+      } catch(e) { /* silencioso */ }
+    }, 15000); // cada 15s
+  }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   }
