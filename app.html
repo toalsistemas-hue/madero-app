@@ -10030,39 +10030,102 @@ function startSPPolling() {
 
 async function spPollCheck() {
   const siteId = appSiteId;
-  // Use $top=1 with $orderby=Modified desc to cheaply detect ANY change in each list
-  const [ofsCheck, opsCheck] = await Promise.all([
-    appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=OF_SAP,Programado_Hoy)&$top=200').catch(function(){return {value:[]};}),
-    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime desc').catch(function(){return {value:[]};})
-  ]);
+  // Strategy: use lastModifiedDateTime on items (no $expand needed, no 400 errors)
+  // Only reload if we detect a REAL change from a KNOWN baseline
+  
+  try {
+    // Check FT_Operaciones for any change (modified by supervisor via app)
+    var opsRes = await appGraphGet(
+      'sites/'+siteId+'/lists/FT_Operaciones/items' +
+      '?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
+    );
+    var latestOpMod = (opsRes.value && opsRes.value.length) ? (opsRes.value[0].lastModifiedDateTime||'') : '';
 
-  // Track programación changes
-  const programadas = (ofsCheck.value||[])
-    .filter(function(i){ return i.fields && i.fields.Programado_Hoy===true; })
-    .map(function(i){ return i.fields.OF_SAP||i.fields.Title||''; })
-    .sort().join(',');
+    // Only trigger if we have a valid baseline AND a real new timestamp
+    if (_spLastOpsHash && latestOpMod && latestOpMod !== _spLastOpsHash) {
+      console.log('Poll: op actualizada en SP →', latestOpMod);
+      _spLastOpsHash = latestOpMod;
+      // Reload only ops, keep DB.ofs intact to avoid losing activeOFs
+      await appReloadOpsFromSP();
+      renderApp();
+      return;
+    }
+    // Set baseline on first successful poll
+    if (!_spLastOpsHash && latestOpMod) {
+      _spLastOpsHash = latestOpMod;
+    }
+  } catch(e) { console.warn('Poll ops error:', e.message); }
 
-  if (_spLastProgramadas !== '' && programadas !== _spLastProgramadas) {
-    console.log('SP poll: programación cambió → recargando');
-    _spLastProgramadas = programadas;
-    await appLoadDataFromSP();
-    var exists = DB.notifications.some(function(n){return n.type==='coord'&&n.msg==='📅 El Coordinador actualizó la programación'&&!n.read;});
-    if (!exists) DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅', msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
-    renderApp();
-    return;
-  }
-  _spLastProgramadas = programadas;
+  try {
+    // Check FT_OrdenesFabricacion for programacion changes
+    var ofsRes = await appGraphGet(
+      'sites/'+siteId+'/lists/FT_OrdenesFabricacion/items' +
+      '?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
+    );
+    var latestOfsMod = (ofsRes.value && ofsRes.value.length) ? (ofsRes.value[0].lastModifiedDateTime||'') : '';
 
-  // Track op changes via latest Modified timestamp
-  var latestOpMod = (opsCheck.value||[]).length ? (opsCheck.value[0].lastModifiedDateTime||'') : '';
-  if (_spLastOpsHash !== '' && latestOpMod !== _spLastOpsHash) {
-    console.log('SP poll: ops modificadas →', latestOpMod, 'anterior:', _spLastOpsHash);
-    _spLastOpsHash = latestOpMod;
-    await appLoadDataFromSP();
-    renderApp();
-    return;
-  }
-  _spLastOpsHash = latestOpMod;
+    if (_spLastProgramadas && latestOfsMod && latestOfsMod !== _spLastProgramadas) {
+      console.log('Poll: programación cambió →', latestOfsMod);
+      _spLastProgramadas = latestOfsMod;
+      await appLoadDataFromSP();
+      // Only notify if programadoHoy actually changed (compare activeOFs count)
+      var exists = DB.notifications.some(function(n){
+        return n.type==='coord' && n.msg.indexOf('programación')>=0 && !n.read;
+      });
+      if (!exists) {
+        DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅',
+          msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
+      }
+      renderApp();
+      return;
+    }
+    if (!_spLastProgramadas && latestOfsMod) {
+      _spLastProgramadas = latestOfsMod;
+    }
+  } catch(e) { console.warn('Poll OFs error:', e.message); }
+}
+
+// Lightweight reload — only refresh ops without rebuilding DB.ofs
+async function appReloadOpsFromSP() {
+  try {
+    const siteId = await appGetSiteId();
+    var opsRes = await appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
+    var allOps = (opsRes.value||[]).map(function(i){ return i.fields; });
+    // Update ops on existing activeOFs — don't replace the whole array
+    DB.activeOFs.forEach(function(aof) {
+      var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
+                        .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
+      if (!spOps.length) return; // keep existing ops if SP has none
+      aof.ops = spOps.map(function(o) {
+        var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
+        return {
+          id:          o.Op_ID || o.Title || '',
+          nombre:      o.Nombre || o.Title || '',
+          estacion:    o.Estacion || '',
+          tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
+          tecnico:     o.Tecnico || '',
+          ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
+          status:      o.Status || 'pending',
+          inicio:      o.Inicio || '',
+          fin:         o.Fin || '',
+          mins:        parseInt(o.Mins||0),
+          qty_total:   parseInt(o.Qty_Total||10),
+          qty_ok:      parseInt(o.Qty_OK||0),
+          qty_def:     parseInt(o.Qty_Def||0),
+          qty_rej:     parseInt(o.Qty_Rej||0),
+          cola:        existing ? existing.cola : 0,
+          isRetrabajo: o.isRetrabajo === true,
+          pauseReason: o.PauseReason || '',
+          needsCal:    o.NeedsCal === true,
+          valcalNote:  o.ValCalNote || null,
+          calResult:   o.CalResult || null,
+          calComment:  o.CalComment || null,
+          _spId:       o.ID || o._itemId || null,
+        };
+      });
+    });
+    console.log('Poll: ops recargadas OK');
+  } catch(e) { console.warn('appReloadOpsFromSP error:', e.message); }
 }
 </script>
 </body>

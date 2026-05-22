@@ -3263,20 +3263,39 @@ async function ftLoadDataFromSP() {
     window._coordPollTimer = setInterval(async function(){
       if (!state.token || !FT_SITE_ID) return;
       try {
-        // Use lastModifiedDateTime on the item itself (no $expand needed)
-        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime desc');
+        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
         var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
-        if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
-          console.log('Coord poll: ops cambiaron →', latestMod);
+        if (!window._coordLastOpsMod && latestMod) {
+          // First successful poll — set baseline, don't trigger reload
           window._coordLastOpsMod = latestMod;
-          await ftLoadDataFromSP();
-          if (C && C.currentPage === 'seguimiento') renderSeg();
-          if (C && C.currentPage === 'programacion') renderProg();
-          // Flash indicator
-          var ind = document.getElementById('auto-refresh-indicator');
-          if (ind) { ind.style.color='var(--accent)'; ind.textContent='⟳ actualizado'; setTimeout(function(){ ind.style.color='var(--text-dim)'; ind.textContent='⏱ auto 15s'; }, 2000); }
-        } else if (!window._coordLastOpsMod) {
+        } else if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
           window._coordLastOpsMod = latestMod;
+          // Lightweight: reload only ops fields, no full page rebuild
+          var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
+          var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+          DB.activeOFs.forEach(function(aof){
+            var spOps = allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
+                              .sort(function(a,b){return (a.Secuencia||0)-(b.Secuencia||0);});
+            if(!spOps.length) return;
+            aof.ops = spOps.map(function(o){
+              var ex=aof.ops.find(function(e){return e.id===(o.Op_ID||o.Title||'');});
+              return {id:o.Op_ID||o.Title||'',nombre:o.Nombre||o.Title||'',
+                estacion:o.Estacion||'',tipo:o.Tip||o.Tipo||o.tipo||'Secuencial',
+                tecnico:o.Tecnico||'',ayudantes:(o.Ayudantes_JSON||'').split(',').filter(Boolean),
+                status:o.Status||'pending',inicio:o.Inicio||'',fin:o.Fin||'',
+                mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
+                qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
+                qty_rej:parseInt(o.Qty_Rej||0),cola:ex?ex.cola:0,
+                isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
+                needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
+                _spId:o.ID||null};
+            });
+          });
+          if(C&&C.currentPage==='seguimiento') renderSeg();
+          if(C&&C.currentPage==='programacion') renderProg();
+          var ind=document.getElementById('auto-refresh-indicator');
+          if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
+            setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 15s';},2500);}
         }
       } catch(e) { /* silencioso */ }
     }, 15000); // cada 15s
