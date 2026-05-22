@@ -2996,6 +2996,9 @@ async function graphPost(endpoint, body, retry) {
 
 // -- SP Data Layer — Load FabTracker data --------------
 var FT_SITE_ID = null;
+// Reset SP column maps on each load to avoid stale cache
+window._ftOpColMap = null;
+window._ftQueueColMap = null;
 
 async function ftLoadDataFromSP() {
   // Guard: do not run in demo mode or without a valid session token
@@ -3303,10 +3306,16 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   // Get actual SP internal column names (cache per list)
   if (!window._ftOpColMap) {
     try {
-      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName&$top=100');
+      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName,readOnly,hidden,fieldTypeKind&$top=100');
       window._ftOpColMap = {};
-      (colRes.value||[]).forEach(function(c){ window._ftOpColMap[c.displayName] = c.name; window._ftOpColMap[c.name] = c.name; });
-      console.log('FT_Operaciones col map:', JSON.stringify(window._ftOpColMap));
+      // Only include writable, non-hidden columns
+      (colRes.value||[]).forEach(function(c){
+        if (!c.readOnly && !c.hidden) {
+          window._ftOpColMap[c.displayName] = c.name;
+          window._ftOpColMap[c.name] = c.name;
+        }
+      });
+      console.log('FT_Operaciones col map (writable only):', JSON.stringify(window._ftOpColMap));
     } catch(e) { window._ftOpColMap = {}; }
   }
   const cm = window._ftOpColMap || {};
@@ -3341,15 +3350,15 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   setField(fields, 'Qty_OK',         op.qty_ok || 0);
   setField(fields, 'Qty_Def',        op.qty_def || 0);
   setField(fields, 'Qty_Rej',        op.qty_rej || 0);
-  // Cola = position in station queue (set when queue is created)
-  setField(fields, 'Cola', (op.cola !== undefined && op.cola !== null) ? op.cola : 0);
+  // Cola = 0 on creation; will be patched to actual queue position after ftSaveQueueToSP
+  setField(fields, 'Cola', 0);
   setField(fields, 'Inicio',         op.inicio || '');
   setField(fields, 'Fin',            op.fin || '');
   setField(fields, 'Mins',           op.mins || 0);
   setField(fields, 'PauseReason',    op.pauseReason || '');
-  // Boolean fields — always send explicitly to avoid SP storing wrong defaults
-  setField(fields, 'isRetrabajo', op.isRetrabajo === true);
-  setField(fields, 'NeedsCal',    op.needsCal === true);
+  // Boolean fields — only set if true to avoid interfering with number fields
+  if (op.isRetrabajo === true) setField(fields, 'isRetrabajo', true);
+  if (op.needsCal === true)    setField(fields, 'NeedsCal', true);
 
   try {
     const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
@@ -3433,10 +3442,15 @@ async function ftSaveQueueToSP(of_sap) {
       // FT_Cola_Estacion: get actual SP internal column names
       if (!window._ftQueueColMap) {
         try {
-          const qColRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/columns?$select=name,displayName&$top=50');
+          const qColRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/columns?$select=name,displayName,readOnly,hidden&$top=50');
           window._ftQueueColMap = {};
-          (qColRes.value||[]).forEach(function(c){ window._ftQueueColMap[c.displayName]=c.name; window._ftQueueColMap[c.name]=c.name; });
-          console.log('FT_Cola_Estacion col map:', JSON.stringify(window._ftQueueColMap));
+          (qColRes.value||[]).forEach(function(c){
+            if (!c.readOnly && !c.hidden) {
+              window._ftQueueColMap[c.displayName]=c.name;
+              window._ftQueueColMap[c.name]=c.name;
+            }
+          });
+          console.log('FT_Cola_Estacion col map (writable):', JSON.stringify(window._ftQueueColMap));
         } catch(e) { window._ftQueueColMap = {}; }
       }
       const qcm = window._ftQueueColMap;
