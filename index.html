@@ -4412,6 +4412,9 @@ function afterRenderApp(){
 }
 function updateAppBadge(){
   var b=document.getElementById("app-notif-badge");
+  // Also update coord notifs bell if in coordinator view
+  var coordBell = document.getElementById('coord-notif-bell-count');
+  if(coordBell) { var cCount = COORD_NOTIFS ? COORD_NOTIFS.filter(function(n){return !n.read;}).length : 0; coordBell.textContent = cCount||''; coordBell.style.display = cCount?'':'none'; }
   var count=DB.notifications.filter(function(n){return !n.read;}).length;
   if(b){b.style.display=count>0?"flex":"none";if(count>0)b.textContent=count;}
 }
@@ -5399,6 +5402,18 @@ function confirmProgMain() {
   fireSync('coord', 'prog_updated', {count: hoy});
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   ftSaveProgramacionToSP();
+  // -- Auto-create ops in FT_Operaciones + FT_Cola_Estacion for ALL active OFs --
+  if (!state.isDemoMode && state.token && FT_SITE_ID) {
+    DB.ofs.filter(function(o){ return o.programadoHoy; }).forEach(function(o){
+      var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === o.of_sap; });
+      if (aofNew && aofNew.ops.length) {
+        aofNew.ops.forEach(function(op){
+          if (typeof ftSaveOpToSP === 'function') ftSaveOpToSP(o.of_sap, op.id);
+        });
+        if (typeof ftSaveQueueToSP === 'function') ftSaveQueueToSP(o.of_sap);
+      }
+    });
+  }
 }
 
 function cancelEditMode() {
@@ -5655,6 +5670,8 @@ function saveOFOps() {
   } else {
     console.warn('saveOFOps: SP write skipped — isDemoMode:', state.isDemoMode, '| token:', !!state.token);
   }
+  // Fire notifications so supervisor sees assignment
+  fireSync('coord', 'ops_assigned', {of_sap: sap});
   renderSeg();
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
@@ -5816,13 +5833,30 @@ function handleCoordNotifClick(id) {
 // -- Reemplazar showCoordNotif para usar COORD_NOTIFS ------
 function showCoordNotif(event, data) { addCoordNotif(event, data); }
 
-// -- fireSync mejorado para pasar datos --------------------
-var _origFireSync = fireSync;
+// -- fireSync con notificaciones — llamado aquí directamente --
+var _origFireSync = typeof fireSync === 'function' ? fireSync : null;
 fireSync = function(source, event, data) {
   var targets = source==='coord' ? syncCallbacks.app : syncCallbacks.coord;
   targets.forEach(function(cb){ try{cb(event,data);}catch(e){} });
   showSyncToast(source, event);
-  // addCoordNotif es llamado por _basefireSync, no aquí
+  // Notificaciones al coordinador cuando vienen de la app
+  if(source==='app') {
+    if(typeof addCoordNotif === 'function') addCoordNotif(event, data);
+  }
+  // Notificaciones a la app cuando vienen del coordinador
+  if(source==='coord') {
+    var coordMsgs = {
+      ops_assigned: {icon:'👷', msg:'Técnicos asignados', detail: data&&data.of_sap?'OF '+data.of_sap:null},
+      prog_updated:  {icon:'📋', msg:'Programación actualizada', detail: data&&data.count?data.count+' OFs hoy':null},
+      template_updated: {icon:'📋', msg:'Plantilla actualizada', detail: data&&data.articulo?data.articulo:null},
+    };
+    var cm = coordMsgs[event];
+    if(cm) {
+      var exists = DB.notifications.some(function(n){return n.type==='coord'&&n.msg===cm.msg&&!n.read;});
+      if(!exists) DB.notifications.push({id:'cn_'+Date.now(),type:'coord',icon:cm.icon,msg:cm.msg,detail:cm.detail,time:nowT(),read:false});
+      if(typeof renderApp === 'function') setTimeout(renderApp, 50);
+    }
+  }
 };
 
 // -- 12: appStartOp mejorado (pausa notif) ----------------
@@ -5854,7 +5888,7 @@ function doFinish(ctx, el, ok, def, rej) {
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
   closeAppModal('app-modal-finish'); renderApp();
-  fireSync('app','op_finished',{of_sap:ctx.of_sap, op_name:op.nombre, obs:obs, op_id:op.id});
+  fireSync('app','op_finished',{of_sap:ctx.of_sap, op_id:op.id, op_name:op.nombre, obs:obs, tecnico:op.tecnico||''});
   // Update pedido status in SP
   if (!state.isDemoMode && state.token && of && of.pedido) ftSavePedidoStatusToSP(of.pedido);
 }
@@ -6505,7 +6539,7 @@ function _doStartOp(sap, opId){
     }
   });
   renderApp();
-  fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
+  fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre, tecnico:op.tecnico||''});
 }
 
 // Detener tiempo de un ayudante específico
@@ -6624,7 +6658,7 @@ appConfirmValCal = function(){
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
   closeAppModal('app-modal-valcal'); renderApp();
-  _basefireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
+  fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_id:ctx.op_id, op_name:op.nombre, note:note});
 };
 
 // -- 8 & 10: renderSeg con observaciones y comentarios ---------
