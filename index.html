@@ -3262,8 +3262,9 @@ async function ftLoadDataFromSP() {
     window._coordPollTimer = setInterval(async function(){
       if (!state.token || !FT_SITE_ID) return;
       try {
-        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields($select=Modified)&$top=1&$orderby=Modified desc');
-        var latestMod = (r.value&&r.value.length&&r.value[0].fields) ? (r.value[0].fields.Modified||'') : '';
+        // Use lastModifiedDateTime on the item itself (no $expand needed)
+        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime desc');
+        var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
         if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
           console.log('Coord poll: ops cambiaron →', latestMod);
           window._coordLastOpsMod = latestMod;

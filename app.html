@@ -10002,8 +10002,8 @@ async function spPollCheck() {
   const siteId = appSiteId;
   // Use $top=1 with $orderby=Modified desc to cheaply detect ANY change in each list
   const [ofsCheck, opsCheck] = await Promise.all([
-    appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$select=id,fields/Modified,fields/OF_SAP,fields/Programado_Hoy&$expand=fields&$top=200&$orderby=Modified desc').catch(function(){return {value:[]};}),
-    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields($select=Modified,OF_SAP,Status,Tecnico)&$top=1&$orderby=Modified desc').catch(function(){return {value:[]};})
+    appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=OF_SAP,Programado_Hoy)&$top=200').catch(function(){return {value:[]};}),
+    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime desc').catch(function(){return {value:[]};})
   ]);
 
   // Track programación changes
@@ -10024,7 +10024,7 @@ async function spPollCheck() {
   _spLastProgramadas = programadas;
 
   // Track op changes via latest Modified timestamp
-  var latestOpMod = (opsCheck.value||[]).length ? ((opsCheck.value[0].fields||{}).Modified||'') : '';
+  var latestOpMod = (opsCheck.value||[]).length ? (opsCheck.value[0].lastModifiedDateTime||'') : '';
   if (_spLastOpsHash !== '' && latestOpMod !== _spLastOpsHash) {
     console.log('SP poll: ops modificadas →', latestOpMod, 'anterior:', _spLastOpsHash);
     _spLastOpsHash = latestOpMod;
