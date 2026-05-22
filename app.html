@@ -3886,7 +3886,7 @@ function _doStartOp(sap, opId){
     }
   });
   renderApp();
-  fireSync('app','op_started',{of_sap:sap, op_name:op.nombre});
+  fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
 
 // Detener tiempo de un ayudante específico
@@ -5394,26 +5394,62 @@ async function appGraphGet(endpoint, retry) {
 async function appGraphPatch(endpoint, body, retry) {
   const token = await appGetToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (res.status === 401 && !retry) { appToken = null; await appGetToken(true); return appGraphPatch(endpoint, body, true); }
-  if (!res.ok && res.status !== 204) throw new Error('PATCH ' + res.status);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch(netErr) {
+    // Network error (Failed to fetch) — wait 2s and retry once
+    if (!retry) {
+      console.warn('⚠ PATCH network error, reintentando...', netErr.message);
+      await new Promise(function(r){ setTimeout(r, 2000); });
+      return appGraphPatch(endpoint, body, true);
+    }
+    throw new Error('PATCH network: ' + netErr.message);
+  }
+  if (res.status === 401 && !retry) {
+    appToken = null;
+    try { await appGetToken(true); } catch(e) { throw new Error('PATCH 401 no-refresh'); }
+    return appGraphPatch(endpoint, body, true);
+  }
+  if (!res.ok && res.status !== 204) {
+    const errText = await res.text().catch(function(){return '';});
+    throw new Error('PATCH ' + res.status + ': ' + errText.slice(0,200));
+  }
   return true;
 }
 
 async function appGraphPost(endpoint, body, retry) {
   const token = await appGetToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (res.status === 401 && !retry) { appToken = null; await appGetToken(true); return appGraphPost(endpoint, body, true); }
-  if (!res.ok) { const err = await res.text(); throw new Error('POST ' + res.status + ': ' + err.slice(0,200)); }
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch(netErr) {
+    // Network error — wait 2s and retry once
+    if (!retry) {
+      console.warn('⚠ POST network error, reintentando...', netErr.message);
+      await new Promise(function(r){ setTimeout(r, 2000); });
+      return appGraphPost(endpoint, body, true);
+    }
+    throw new Error('POST network: ' + netErr.message);
+  }
+  if (res.status === 401 && !retry) {
+    appToken = null;
+    try { await appGetToken(true); } catch(e) { throw new Error('POST 401 no-refresh'); }
+    return appGraphPost(endpoint, body, true);
+  }
+  if (!res.ok) {
+    const err = await res.text().catch(function(){return '';});
+    throw new Error('POST ' + res.status + ': ' + err.slice(0,200));
+  }
   return res.json();
 }
 
@@ -5540,19 +5576,45 @@ async function appSaveOpToSP(of_sap, opId) {
     if (op.needsCal === true)    patchFields.NeedsCal = true;
     if (op.valcalNote)           patchFields.ValCalNote = op.valcalNote;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
-    if (op._spId) {
+    // Guard: _spId must be a valid SP item ID (non-empty string)
+    const validSpId = op._spId && String(op._spId).trim() !== '' && op._spId !== 'null';
+    if (validSpId) {
       try {
         await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
-        console.log('✅ Op guardada en SP:', of_sap, opId, 'status:', op.status);
+        console.log('✅ Op PATCH OK:', of_sap, opId, 'status:', op.status, '_spId:', op._spId);
       } catch(patchErr) {
-        console.error('❌ Error guardando op en SP:', of_sap, opId, '-', patchErr.message);
-        throw patchErr;
+        // If item not found (404), clear _spId and fallback to POST
+        if (patchErr.message && (patchErr.message.includes('404') || patchErr.message.includes('PATCH 404'))) {
+          console.warn('⚠ Op _spId inválido (404) — recreando en SP:', op._spId);
+          op._spId = null;
+          // Fall through to POST below
+        } else {
+          console.error('❌ Error PATCH op en SP:', of_sap, opId, '-', patchErr.message);
+          throw patchErr;
+        }
       }
-    } else {
-      // Op not in SP yet — create it (POST)
+    }
+    if (!op._spId || !validSpId) {
+      // Op not in SP yet — check if it already exists (duplicate guard)
+      try {
+        const existing = await appGraphGet(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq \''+encodeURIComponent(of_sap)+'\''+
+          ' and fields/Op_ID eq \''+encodeURIComponent(opId)+'\'&$select=id&$top=1'
+        );
+        if (existing.value && existing.value.length) {
+          op._spId = existing.value[0].id;
+          console.log('Op ya existía en SP, _spId restaurado:', op._spId);
+          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
+          console.log('✅ Op PATCH (restaurada) OK:', of_sap, opId);
+          return;
+        }
+      } catch(checkErr) {
+        console.warn('appSaveOpToSP check existente:', checkErr.message);
+      }
+      // Confirmed: create new
       const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
       const postFields = Object.assign({
-        Title:    op.nombre || op.id,  // Nombre col in SP = Title internal
+        Title:    op.nombre || op.id,
         OF_SAP:   of_sap,
         Op_ID:    op.id,
         Nombre:   op.nombre||'',
@@ -5563,7 +5625,8 @@ async function appSaveOpToSP(of_sap, opId) {
       }, patchFields);
       const res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items', {fields: postFields});
       op._spId = res.id;
-      console.log('Op creada en SP desde app:', op.nombre, '→', res.id);
+      op.isTemplate = false; // ya está en SP, no es solo plantilla
+      console.log('✅ Op POST (nueva) OK:', op.nombre, '→ _spId:', res.id);
     }
   } catch(e) { console.warn('appSaveOpToSP:', e.message); }
 }
@@ -5574,9 +5637,22 @@ async function appSaveTimerToSP(key) {
     const t = DB.timers[key]; if(!t) return;
     const fields={Title:key,Timer_Key:key,OF_SAP:key.split('_')[0],Op_ID:key.split('_').slice(1).join('_'),
       Start_MS:t.start,Elapsed_MS:t.elapsed||0,Running:t.running};
-    if(t._spId){await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);}
-    else{const res=await appGraphPost('sites/'+appSiteId+'/lists/FT_Timers/items',{fields});t._spId=res.id;}
-  } catch(e) { console.warn('appSaveTimerToSP:', e); }
+    if(t._spId){
+      await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
+    } else {
+      // Duplicate guard
+      try {
+        var ex = await appGraphGet('sites/'+appSiteId+'/lists/FT_Timers/items?$filter=fields/Timer_Key eq \''+encodeURIComponent(key)+'\'&$select=id&$top=1');
+        if (ex.value && ex.value.length) {
+          t._spId = ex.value[0].id;
+          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
+          return;
+        }
+      } catch(e2) {}
+      const res=await appGraphPost('sites/'+appSiteId+'/lists/FT_Timers/items',{fields});
+      t._spId=res.id;
+    }
+  } catch(e) { console.warn('appSaveTimerToSP:', e.message||e); }
 }
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
@@ -5698,10 +5774,27 @@ window.fireSync = function(source, event, data) {
   if (!appSiteId) return;
   // Op lifecycle
   if (['op_finished','op_started','op_paused','op_resumed','op_valcal','op_added','turno_traspaso'].includes(event) && data && data.of_sap) {
-    if (data.op_id) appSaveOpToSP(data.of_sap, data.op_id);
-    else {
+    var _savePromise;
+    if (data.op_id) {
+      _savePromise = appSaveOpToSP(data.of_sap, data.op_id);
+    } else {
       var _aofE = DB.activeOFs.find(function(a){return a.of_sap===data.of_sap;});
-      if (_aofE) _aofE.ops.forEach(function(op){ appSaveOpToSP(data.of_sap, op.id); });
+      if (_aofE) _savePromise = Promise.all(_aofE.ops.map(function(op){ return appSaveOpToSP(data.of_sap, op.id); }));
+    }
+    // Show toast notification if SP save fails (helps detect auth issues)
+    if (_savePromise) {
+      _savePromise.catch(function(spErr) {
+        var msg = spErr && spErr.message ? spErr.message : String(spErr);
+        console.error('❌ SP sync error ['+event+']:', msg);
+        // Show brief toast only for user-triggered events
+        if (['op_started','op_finished','op_paused'].includes(event)) {
+          var toast = document.createElement('div');
+          toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(180,40,40,.95);color:#fff;padding:10px 18px;border-radius:8px;font-size:.8rem;z-index:9999;max-width:80vw;text-align:center;';
+          toast.textContent = '⚠ Error al guardar en SharePoint: '+msg.slice(0,80);
+          document.body.appendChild(toast);
+          setTimeout(function(){ if(toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+        }
+      });
     }
   }
   // Queue changes
@@ -8643,7 +8736,7 @@ function _doStartOp(sap, opId){
     }
   });
   renderApp();
-  fireSync('app','op_started',{of_sap:sap, op_name:op.nombre});
+  fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
 
 // Detener tiempo de un ayudante específico
