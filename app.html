@@ -5362,19 +5362,10 @@ async function appGetToken(force) {
     appToken = resp.accessToken;
     return appToken;
   } catch(e) {
-    // monitor_window_timeout or interaction_required — try popup to refresh silently
-    const errCode = e.errorCode || e.name || '';
-    if (errCode.indexOf('monitor_window_timeout') >= 0 ||
-        errCode.indexOf('interaction_required') >= 0 ||
-        errCode.indexOf('consent_required') >= 0) {
-      console.warn('Token silente falló (' + errCode + ') — usando token en caché si disponible');
-      // Don't use popup (blocked in PWA) — use cached token or trigger redirect
-      if (appToken) return appToken; // use existing token until it actually 401s
-      // Token truly expired — redirect to login
-      await appMsalInstance.loginRedirect({ scopes: APP_CONFIG.scopes, redirectUri: appGetRedirectUri() });
-      throw e; // will redirect, no more code runs
-    }
-    throw e;
+    // NEVER trigger popup or redirect from background — always use cached token
+    // Popup causes "pop-ups blocked" banner; redirect interrupts the user
+    if (appToken) return appToken;
+    throw new Error('token_unavailable');
   }
 }
 
@@ -5382,8 +5373,21 @@ async function appGraphGet(endpoint, retry) {
   const token = await appGetToken();
   const url = endpoint.startsWith('https') ? endpoint : 'https://graph.microsoft.com/v1.0/' + endpoint;
   const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  if (res.status === 401 && !retry) { appToken = null; await appGetToken(true); return appGraphGet(endpoint, true); }
-  if (!res.ok) throw new Error('Graph ' + res.status);
+  if (res.status === 401 && !retry) {
+    // Token rejected by server — clear and try once more silently
+    appToken = null;
+    try { await appGetToken(true); } catch(e) {
+      // Can't refresh silently — show login screen without redirect
+      console.warn('Token expirado, se requiere re-login');
+      document.getElementById('app-shell-mobile').style.display = 'none';
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-status').textContent = 'Sesión expirada. Inicia sesión de nuevo.';
+      document.getElementById('app-login-btn').disabled = false;
+      throw new Error('session_expired');
+    }
+    return appGraphGet(endpoint, true);
+  }
+  if (!res.ok) throw new Error('Graph ' + res.status + ': ' + (await res.text().catch(function(){return '';})).slice(0,200));
   return res.json();
 }
 
