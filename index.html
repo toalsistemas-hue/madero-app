@@ -3334,9 +3334,9 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   // All other custom fields have matching display/internal names
   // 'Nombre' → 'LinkTitleNoMenu' (READ-ONLY, use Title instead)
   const fields = {
-    Title:          op.id,               // Required, always writable
+    Title:          op.nombre || op.id,  // "Nombre" col in SP = Title internal name
     OF_SAP:         of_sap,
-    Op_ID:          op.id,
+    Op_ID:          op.id,               // Store op.id in Op_ID for reference
     Estacion:       op.estacion || '',
     Tip:            op.tipo || 'Secuencial',  // 'tipo' display → 'Tip' internal
     Tecnico:        op.tecnico || '',
