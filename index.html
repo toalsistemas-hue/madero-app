@@ -3262,7 +3262,7 @@ async function ftLoadDataFromSP() {
     window._coordPollTimer = setInterval(async function(){
       if (!state.token || !FT_SITE_ID) return;
       try {
-        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,fields/Modified&$expand=fields&$top=1&$orderby=Modified%20desc');
+        var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields($select=Modified)&$top=1&$orderby=Modified desc');
         var latestMod = (r.value&&r.value.length&&r.value[0].fields) ? (r.value[0].fields.Modified||'') : '';
         if (window._coordLastOpsMod && latestMod && latestMod !== window._coordLastOpsMod) {
           console.log('Coord poll: ops cambiaron →', latestMod);

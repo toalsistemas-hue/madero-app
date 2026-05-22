@@ -458,12 +458,27 @@ tr:last-child td{border-bottom:none;}
 
 <!-- App Shell (shown after login) -->
 <div id="app-shell-mobile">
+
+<!-- ── Debug Panel ── -->
+<div id="debug-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:99999;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#111;border-bottom:1px solid #333;flex-shrink:0;">
+    <span style="color:#00b4d8;font-family:monospace;font-weight:700;font-size:.9rem;">🐛 Debug Console</span>
+    <div style="display:flex;gap:8px;">
+      <button onclick="clearDebugLog()" style="padding:5px 10px;background:#333;color:#aaa;border:none;border-radius:4px;font-size:.75rem;cursor:pointer;">Limpiar</button>
+      <button onclick="document.getElementById('debug-panel').style.display='none'" style="padding:5px 10px;background:#c0392b;color:#fff;border:none;border-radius:4px;font-size:.75rem;cursor:pointer;">✕ Cerrar</button>
+    </div>
+  </div>
+  <div id="debug-log" style="flex:1;overflow-y:auto;padding:8px;font-family:monospace;font-size:.7rem;line-height:1.5;"></div>
+  <div style="padding:8px 12px;background:#111;border-top:1px solid #222;font-size:.65rem;color:#555;flex-shrink:0;">
+    Toca el avatar FM 5 veces · <span id="debug-count" style="color:#00b4d8;">0</span> entradas
+  </div>
+</div>
 <div class="app-panel">
 
   
   <div class="app-hdr">
     <div class="app-hdr-brand">
-      <div class="app-hdr-logo">FM</div>
+      <div class="app-hdr-logo" onclick="_onAvatarTap()" style="cursor:pointer;user-select:none;">FM</div>
       <div><div class="app-hdr-title">FabTracker</div><div class="app-hdr-sub" id="app-role-sub">Supervisor de Línea</div></div>
     </div>
     <div class="app-role-pills">
@@ -9880,6 +9895,83 @@ setInterval(function(){
 </script>
 
 <script>
+// ── Debug Panel ──────────────────────────────────────────
+var _debugLog = [];
+var _debugTapCount = 0;
+var _debugTapTimer = null;
+
+function _debugAddEntry(type, args) {
+  var colors = { error:'#ff6b6b', warn:'#ffd93d', log:'#aaa', info:'#74c0fc' };
+  var text = Array.from(args).map(function(a){
+    if (a instanceof Error) return a.message + (a.stack ? '\n' + a.stack.split('\n').slice(1,3).join('\n') : '');
+    try { return typeof a === 'object' ? JSON.stringify(a).slice(0,300) : String(a); }
+    catch(e) { return String(a); }
+  }).join(' ');
+  var now = new Date();
+  var ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  _debugLog.unshift({ type:type, text:text, ts:ts, color:colors[type]||'#aaa' });
+  if (_debugLog.length > 100) _debugLog.pop();
+  // Update panel if open
+  var panel = document.getElementById('debug-panel');
+  if (panel && panel.style.display !== 'none') _debugRender();
+}
+
+function _debugRender() {
+  var el = document.getElementById('debug-log');
+  var cnt = document.getElementById('debug-count');
+  if (!el) return;
+  el.innerHTML = _debugLog.map(function(e){
+    return '<div style="padding:3px 4px;border-bottom:1px solid #1a1a1a;color:'+e.color+';">' +
+      '<span style="color:#555;margin-right:6px;">'+e.ts+'</span>' +
+      '<span style="margin-right:4px;font-size:.65rem;">'+e.type.toUpperCase()+'</span>' +
+      '<span style="white-space:pre-wrap;word-break:break-all;">'+e.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span></div>';
+  }).join('');
+  if (cnt) cnt.textContent = _debugLog.length;
+}
+
+function clearDebugLog() { _debugLog = []; _debugRender(); }
+
+function toggleDebugPanel() {
+  var panel = document.getElementById('debug-panel');
+  if (!panel) return;
+  var isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'flex';
+  if (!isOpen) _debugRender();
+}
+
+// Intercept console methods
+(function() {
+  var methods = ['log','warn','error','info'];
+  methods.forEach(function(m) {
+    var orig = console[m].bind(console);
+    console[m] = function() {
+      orig.apply(console, arguments);
+      _debugAddEntry(m, arguments);
+    };
+  });
+  // Catch unhandled errors
+  window.addEventListener('error', function(e) {
+    _debugAddEntry('error', [e.message + ' (' + (e.filename||'').split('/').pop() + ':' + e.lineno + ')']);
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    _debugAddEntry('error', ['Unhandled Promise: ' + (e.reason&&e.reason.message ? e.reason.message : String(e.reason))]);
+  });
+})();
+
+// Tap avatar 5 times to open debug panel
+function _onAvatarTap() {
+  _debugTapCount++;
+  if (_debugTapTimer) clearTimeout(_debugTapTimer);
+  if (_debugTapCount >= 5) {
+    _debugTapCount = 0;
+    toggleDebugPanel();
+  } else {
+    _debugTapTimer = setTimeout(function(){ _debugTapCount = 0; }, 1500);
+  }
+}
+</script>
+
+<script>
 // ── Service Worker para PWA (cache offline básico) ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
@@ -9911,7 +10003,7 @@ async function spPollCheck() {
   // Use $top=1 with $orderby=Modified desc to cheaply detect ANY change in each list
   const [ofsCheck, opsCheck] = await Promise.all([
     appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$select=id,fields/Modified,fields/OF_SAP,fields/Programado_Hoy&$expand=fields&$top=200&$orderby=Modified desc').catch(function(){return {value:[]};}),
-    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$select=id,fields/Modified,fields/OF_SAP,fields/Status,fields/Tecnico&$expand=fields&$top=1&$orderby=Modified desc').catch(function(){return {value:[]};})
+    appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields($select=Modified,OF_SAP,Status,Tecnico)&$top=1&$orderby=Modified desc').catch(function(){return {value:[]};})
   ]);
 
   // Track programación changes
