@@ -505,7 +505,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.6.0</div>
+    <div class="login-version">v1.6.1</div>
   </div>
 </div>
 
@@ -3062,7 +3062,9 @@ async function ftLoadDataFromSP() {
               estacion: o.Estacion || '',
               tipo: o.Tipo || o.tipo || 'Secuencial',
               tecnico: o.Tecnico || '',
-              ayudantes: o.Ayudantes ? o.Ayudantes.split(',').map(s=>s.trim()).filter(Boolean) : [],
+              ayudantes: (o.Ayudantes_JSON || o.Ayudantes || '')
+                ? (o.Ayudantes_JSON || o.Ayudantes || '').split(',').map(s=>s.trim()).filter(Boolean)
+                : [],
               status: o.Status || 'pending',
               inicio: o.Inicio || '',
               fin: o.Fin || '',
@@ -3080,7 +3082,8 @@ async function ftLoadDataFromSP() {
         };
       });
 
-    // Fill ops from template for OFs that have no FT_Operaciones records yet
+    // For OFs with no FT_Operaciones records: fill from template AND persist to SP
+    var ofsNeedingSpCreate = [];
     DB.activeOFs.forEach(function(aof){
       if (aof.ops.length === 0 && aof.articulo) {
         var tpl = DB.templates[aof.articulo];
@@ -3096,13 +3099,38 @@ async function ftLoadDataFromSP() {
               needsCal: false, calResult: null, calComment: null,
             };
           });
-          // Apply padre/subarts from template
           if (tpl.padre) aof.padre = {articulo: tpl.padre, nombre: DB.articles[tpl.padre]||''};
           if (tpl.subarts && tpl.subarts.length) aof.subarts = tpl.subarts.slice();
+          // Mark for SP creation
+          ofsNeedingSpCreate.push(aof.of_sap);
         }
       }
     });
     console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
+    // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
+    if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
+      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
+      setTimeout(async function(){
+        try {
+          if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+          for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
+            var sapId = ofsNeedingSpCreate[ni];
+            var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
+            if (!aofToSave || !aofToSave.ops.length) continue;
+            console.log('  Creando', aofToSave.ops.length, 'ops en SP para OF', sapId);
+            for (var oi = 0; oi < aofToSave.ops.length; oi++) {
+              await ftSaveOpToSP(sapId, aofToSave.ops[oi].id);
+            }
+            await ftSaveQueueToSP(sapId);
+          }
+          console.log('✅ Ops creadas automáticamente en SP desde plantilla');
+          // Refresh seg panel if visible
+          if (typeof renderSeg === 'function' && C && C.currentPage === 'seguimiento') renderSeg();
+        } catch(e) {
+          console.error('Error auto-creando ops en SP:', e.message);
+        }
+      }, 800);
+    }
 
     // Técnicos → TECHNICIANS array
     window.TECHNICIANS = (tecRes.value||[]).map(i=>i.fields).filter(t=>t.Activo!==false).map(t=>t.Nombre||t.Title||'');
@@ -3212,7 +3240,7 @@ async function ftLoadDataFromSP() {
 
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
-    console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length);
+    console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   }
@@ -3228,20 +3256,22 @@ async function ftSaveOpToSP(of_sap, opId) {
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
     if (!op) return;
     // Build patch fields — only include what we know SP has
-    const cols = window._ftOpCols || [];
-    const fields = {};
-    if (!cols.length || cols.indexOf('Status')      >= 0) fields.Status      = op.status||'pending';
-    if (!cols.length || cols.indexOf('Inicio')      >= 0) fields.Inicio      = op.inicio||'';
-    if (!cols.length || cols.indexOf('Fin')         >= 0) fields.Fin         = op.fin||'';
-    if (!cols.length || cols.indexOf('Mins')        >= 0) fields.Mins        = op.mins||0;
-    if (!cols.length || cols.indexOf('Qty_OK')      >= 0) fields.Qty_OK      = op.qty_ok||0;
-    if (!cols.length || cols.indexOf('Qty_Def')     >= 0) fields.Qty_Def     = op.qty_def||0;
-    if (!cols.length || cols.indexOf('Qty_Rej')     >= 0) fields.Qty_Rej     = op.qty_rej||0;
-    if (!cols.length || cols.indexOf('Tecnico')     >= 0) fields.Tecnico     = op.tecnico||'';
-    // SP column is 'Ayudantes_JSON' based on list screenshot
-    if (!cols.length || cols.indexOf('Ayudantes_JSON') >= 0) fields.Ayudantes_JSON = (op.ayudantes||[]).join(',');
-    else if (cols.indexOf('Ayudantes') >= 0) fields.Ayudantes = (op.ayudantes||[]).join(',');
-    if (!cols.length || cols.indexOf('PauseReason') >= 0) fields.PauseReason = op.pauseReason||'';
+    // Use known columns from SP list definition
+    const fields = {
+      Status:         op.status || 'pending',
+      Inicio:         op.inicio || '',
+      Fin:            op.fin || '',
+      Mins:           op.mins || 0,
+      Qty_OK:         op.qty_ok || 0,
+      Qty_Def:        op.qty_def || 0,
+      Qty_Rej:        op.qty_rej || 0,
+      Tecnico:        op.tecnico || '',
+      Ayudantes_JSON: (op.ayudantes||[]).join(','),
+      PauseReason:    op.pauseReason || '',
+      NeedsCal:       op.needsCal === true,
+      ValCalNote:     op.valcalNote || '',
+      Cola:           op.cola || 0,
+    };
     if (op._spId) {
       await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
     } else {
@@ -3261,46 +3291,33 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftCreateOpInSP: no siteId', e.message); return; }
   }
   try {
-    // Detect FT_Operaciones columns once and cache — reset to force fresh detection
-    if (!window._ftOpCols) {
-      try {
-        const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name&$top=100');
-        window._ftOpCols = (colRes.value||[]).map(c => c.name);
-        console.log('FT_Operaciones columnas:', window._ftOpCols);
-      } catch(e) {
-        // Use known FT_Operaciones columns from SP list screenshot as fallback
-        window._ftOpCols = ['Title','Nombre','OF_SAP','Op_ID','Estacion','tipo',
-          'Tecnico','Ayudantes_JSON','Status','Inicio','Fin','Mins',
-          'Secuencia','Qty_Total','Qty_OK','Qty_Def','Qty_Rej','PauseReason'];
-        console.warn('FT_Operaciones column detection failed, using known columns');
-      }
-    }
-    const cols = window._ftOpCols;
+    // Use exact column names from FT_Operaciones SP list definition
     const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
-    // Always-present fields (Title always exists in SP)
-    const fields = { Title: op.id };
-    // Conditionally add each field based on what exists in SP
-    if (cols.indexOf('OF_SAP')    >= 0) fields.OF_SAP    = of_sap;
-    if (cols.indexOf('Op_ID')     >= 0) fields.Op_ID     = op.id;
-    if (cols.indexOf('Nombre')    >= 0) fields.Nombre    = op.nombre || '';
-    if (cols.indexOf('Estacion')  >= 0) fields.Estacion  = op.estacion || '';
-    // Handle 'Tipo' vs 'tipo' — check both casings
-    if (cols.indexOf('Tipo')      >= 0) fields.Tipo      = op.tipo || 'Secuencial';
-    else if (cols.indexOf('tipo') >= 0) fields.tipo      = op.tipo || 'Secuencial';
-    if (cols.indexOf('Tecnico')   >= 0) fields.Tecnico   = op.tecnico || '';
-    // SP column is 'Ayudantes_JSON' based on list screenshot
-    var ayudStr = (op.ayudantes||[]).join(',');
-    if (cols.indexOf('Ayudantes_JSON') >= 0) fields.Ayudantes_JSON = ayudStr;
-    else if (cols.indexOf('Ayudantes') >= 0) fields.Ayudantes = ayudStr;
-    if (cols.indexOf('Status')    >= 0) fields.Status    = op.status || 'pending';
-    if (cols.indexOf('Secuencia') >= 0) fields.Secuencia = seqNum;
-    if (cols.indexOf('Qty_Total') >= 0) fields.Qty_Total = op.qty_total || 10;
-    if (cols.indexOf('Qty_OK')    >= 0) fields.Qty_OK    = op.qty_ok || 0;
-    if (cols.indexOf('Qty_Def')   >= 0) fields.Qty_Def   = op.qty_def || 0;
-    if (cols.indexOf('Qty_Rej')   >= 0) fields.Qty_Rej   = op.qty_rej || 0;
-    if (cols.indexOf('Inicio')    >= 0) fields.Inicio    = op.inicio || '';
-    if (cols.indexOf('Fin')       >= 0) fields.Fin       = op.fin || '';
-    if (cols.indexOf('Mins')      >= 0) fields.Mins      = op.mins || 0;
+    const fields = {
+      Title:          op.id,            // col 1: Nombre = Title
+      OF_SAP:         of_sap,           // col 2
+      Op_ID:          op.id,            // col 3
+      Estacion:       op.estacion || '',// col 4
+      tipo:           op.tipo || 'Secuencial', // col 5 (lowercase as in SP)
+      Tecnico:        op.tecnico || '', // col 6
+      Ayudantes_JSON: (op.ayudantes||[]).join(','), // col 7
+      Status:         op.status || 'pending',  // col 8
+      Inicio:         op.inicio || '',  // col 9
+      Fin:            op.fin || '',     // col 10
+      Mins:           op.mins || 0,     // col 11
+      Qty_Total:      op.qty_total || 10, // col 12
+      Qty_OK:         op.qty_ok || 0,   // col 13
+      Qty_Def:        op.qty_def || 0,  // col 14
+      Qty_Rej:        op.qty_rej || 0,  // col 15
+      Cola:           op.cola || 0,     // col 16
+      isRetrabajo:    op.isRetrabajo === true, // col 17
+      PauseReason:    op.pauseReason || '',    // col 18
+      NeedsCal:       op.needsCal === true,    // col 19
+      ValCalNote:     op.valcalNote || '',     // col 20
+      Secuencia:      seqNum,                 // col 21
+    };
+    // Also include Nombre as separate field if defined in SP
+    if (op.nombre) fields.Nombre = op.nombre;
     const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
     op._spId = res.id;
     console.log('Op creada en SP:', op.nombre, '→ id', res.id);
@@ -3361,14 +3378,14 @@ async function ftSaveQueueToSP(of_sap) {
       if (!op.estacion) continue;
       var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
       var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
-      // FT_Cola_Estacion columns (SP): Estacion, OF_SAP, Op_ID, Posicion, Tipo_Cola, Activo
+      // FT_Cola_Estacion exact SP columns: Estacion(Title), OF_SAP, Op_ID, Posicion, Tipo_Cola, Activo
       var fields = {
-        Title:     of_sap + '_' + op.id,
+        Title:     op.estacion || of_sap, // Title = Estacion per SP definition
         Estacion:  op.estacion || '',
         OF_SAP:    of_sap,
         Op_ID:     op.id,
         Posicion:  pos >= 0 ? pos : i,
-        Tipo_Cola: op.tipo || 'normal',
+        Tipo_Cola: 'normal', // SP accepts: prioritaria, normal
         Activo:    op.status !== 'done',
       };
       try {
@@ -6393,6 +6410,49 @@ function saveTplModal(){
   // Auto-register any new operations in FT_Catalogo_Operaciones
   if (!state.isDemoMode && state.token && typeof registerNewOpsInCatalog === 'function') {
     registerNewOpsInCatalog(art, ops);
+  }
+  // Sync template changes to FT_Operaciones for all active OFs with this article
+  if (!state.isDemoMode && state.token) {
+    setTimeout(async function(){
+      try {
+        if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        var affectedOFs = DB.activeOFs.filter(function(aof){ return aof.articulo === art; });
+        if (!affectedOFs.length) return;
+        console.log('Sincronizando plantilla', art, 'a', affectedOFs.length, 'OFs activas en SP');
+        for (var ai = 0; ai < affectedOFs.length; ai++) {
+          var aof = affectedOFs[ai];
+          // Rebuild ops from updated template
+          var tpl = DB.templates[art];
+          if (!tpl || !tpl.ops) continue;
+          // Keep existing ops that have progress, add/update the rest
+          var existingOpsWithProgress = aof.ops.filter(function(op){
+            return op._spId && (op.status !== 'pending' || op.qty_ok > 0 || op.mins > 0);
+          });
+          // Rebuild ops array from template (preserving progress on existing ones)
+          aof.ops = tpl.ops.map(function(tplOp, i){
+            var existingOp = aof.ops.find(function(o){ return o.nombre === tplOp.nombre && o.estacion === tplOp.estacion; });
+            if (existingOp) return existingOp; // keep existing with progress
+            return {
+              id: 'op_'+aof.of_sap+'_'+i,
+              nombre: tplOp.nombre, estacion: tplOp.estacion, tipo: tplOp.tipo||'Secuencial',
+              tecnico: '', ayudantes: [], qty_total: 10,
+              qty_ok: 0, qty_def: 0, qty_rej: 0, status: 'pending',
+              inicio: null, fin: null, mins: 0, isTemplate: true,
+              pauseReason: null, valcalNote: null, needsCal: false, calResult: null, calComment: null,
+            };
+          });
+          // Save all ops to SP
+          for (var oi = 0; oi < aof.ops.length; oi++) {
+            await ftSaveOpToSP(aof.of_sap, aof.ops[oi].id);
+          }
+          await ftSaveQueueToSP(aof.of_sap);
+        }
+        console.log('✅ Plantilla sincronizada a FT_Operaciones');
+        if (typeof renderSeg === 'function') renderSeg();
+      } catch(e) {
+        console.error('Error sincronizando plantilla a SP:', e.message);
+      }
+    }, 500);
   }
   // -- 3: Actualizar activeOFs con padre y subarts --
   DB.activeOFs.forEach(function(aof){
