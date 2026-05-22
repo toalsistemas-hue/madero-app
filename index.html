@@ -3273,14 +3273,21 @@ async function ftSaveOpToSP(of_sap, opId) {
       Cola:           op.cola || 0,
     };
     if (op._spId) {
-      await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
+      try {
+        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
+      } catch(patchErr) {
+        if (patchErr.message && patchErr.message.indexOf('400') >= 0) {
+          // Try with minimal patch fields
+          const patchMin = { Status: op.status||'pending', Tecnico: op.tecnico||'', Inicio: op.inicio||'', Fin: op.fin||'', Mins: op.mins||0, Qty_OK: op.qty_ok||0, Qty_Def: op.qty_def||0, Qty_Rej: op.qty_rej||0 };
+          await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchMin);
+        } else { throw patchErr; }
+      }
     } else {
       // Op not in SP yet — create it
       await ftCreateOpInSP(of_sap, op, aof);
     }
   } catch(e) {
     console.error('ftSaveOpToSP FAILED for', of_sap, opId, ':', e.message);
-    throw e;
   }
 }
 
@@ -3290,42 +3297,69 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftCreateOpInSP: no siteId', e.message); return; }
   }
+  const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
+  // Build fields using exact column names from FT_Operaciones SP list
+  const fieldsCore = {
+    Title:          op.id,
+    OF_SAP:         of_sap,
+    Op_ID:          op.id,
+    Estacion:       op.estacion || '',
+    tipo:           op.tipo || 'Secuencial',
+    Tecnico:        op.tecnico || '',
+    Ayudantes_JSON: (op.ayudantes||[]).join(','),
+    Status:         op.status || 'pending',
+    Inicio:         op.inicio || '',
+    Fin:            op.fin || '',
+    Mins:           op.mins || 0,
+    Qty_Total:      op.qty_total || 10,
+    Qty_OK:         op.qty_ok || 0,
+    Qty_Def:        op.qty_def || 0,
+    Qty_Rej:        op.qty_rej || 0,
+    Cola:           op.cola || 0,
+    PauseReason:    op.pauseReason || '',
+    Secuencia:      seqNum,
+  };
+  if (op.nombre) fieldsCore.Nombre = op.nombre;
+  // Optional boolean/text fields — add only if they have non-default values
+  // to avoid SP rejecting fields that may not exist in the list
+  if (op.isRetrabajo === true) fieldsCore.isRetrabajo = true;
+  if (op.needsCal === true)   fieldsCore.NeedsCal = true;
+  if (op.valcalNote)          fieldsCore.ValCalNote = op.valcalNote;
+
   try {
-    // Use exact column names from FT_Operaciones SP list definition
-    const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
-    const fields = {
-      Title:          op.id,            // col 1: Nombre = Title
-      OF_SAP:         of_sap,           // col 2
-      Op_ID:          op.id,            // col 3
-      Estacion:       op.estacion || '',// col 4
-      tipo:           op.tipo || 'Secuencial', // col 5 (lowercase as in SP)
-      Tecnico:        op.tecnico || '', // col 6
-      Ayudantes_JSON: (op.ayudantes||[]).join(','), // col 7
-      Status:         op.status || 'pending',  // col 8
-      Inicio:         op.inicio || '',  // col 9
-      Fin:            op.fin || '',     // col 10
-      Mins:           op.mins || 0,     // col 11
-      Qty_Total:      op.qty_total || 10, // col 12
-      Qty_OK:         op.qty_ok || 0,   // col 13
-      Qty_Def:        op.qty_def || 0,  // col 14
-      Qty_Rej:        op.qty_rej || 0,  // col 15
-      Cola:           op.cola || 0,     // col 16
-      isRetrabajo:    op.isRetrabajo === true, // col 17
-      PauseReason:    op.pauseReason || '',    // col 18
-      NeedsCal:       op.needsCal === true,    // col 19
-      ValCalNote:     op.valcalNote || '',     // col 20
-      Secuencia:      seqNum,                 // col 21
-    };
-    // Also include Nombre as separate field if defined in SP
-    if (op.nombre) fields.Nombre = op.nombre;
-    const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
+    const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: fieldsCore });
     op._spId = res.id;
-    console.log('Op creada en SP:', op.nombre, '→ id', res.id);
+    console.log('✅ Op creada en SP:', op.nombre || op.id, '→ SP id', res.id);
   } catch(e) {
-    console.error('ftCreateOpInSP FAILED:', e.message, '| fields sent:', JSON.stringify(fields||{}));
-    // Reset column cache so next attempt re-detects
-    window._ftOpCols = null;
-    throw e; // re-throw so caller knows it failed
+    // If 400, try with minimal required fields only
+    if (e.message && e.message.indexOf('400') >= 0) {
+      console.warn('ftCreateOpInSP: 400 con campos completos, intentando con campos mínimos...');
+      const fieldsMin = {
+        Title:     op.id,
+        OF_SAP:    of_sap,
+        Op_ID:     op.id,
+        Estacion:  op.estacion || '',
+        tipo:      op.tipo || 'Secuencial',
+        Tecnico:   op.tecnico || '',
+        Status:    op.status || 'pending',
+        Secuencia: seqNum,
+        Qty_Total: op.qty_total || 10,
+      };
+      if (op.nombre) fieldsMin.Nombre = op.nombre;
+      try {
+        const res2 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: fieldsMin });
+        op._spId = res2.id;
+        console.log('✅ Op creada en SP (campos mínimos):', op.nombre || op.id, '→ SP id', res2.id);
+        return; // success with minimal fields
+      } catch(e2) {
+        console.error('ftCreateOpInSP FAILED (mínimos también):', e2.message);
+        console.error('Fields mínimos enviados:', JSON.stringify(fieldsMin));
+        throw e2;
+      }
+    }
+    console.error('ftCreateOpInSP FAILED:', e.message);
+    console.error('Fields enviados:', JSON.stringify(fieldsCore));
+    throw e;
   }
 }
 
