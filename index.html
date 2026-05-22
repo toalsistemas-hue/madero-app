@@ -3341,13 +3341,16 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   setField(fields, 'Qty_OK',         op.qty_ok || 0);
   setField(fields, 'Qty_Def',        op.qty_def || 0);
   setField(fields, 'Qty_Rej',        op.qty_rej || 0);
-  setField(fields, 'Cola',           op.cola || 0);
+  // Cola = position in station queue (set when queue is created)
+  setField(fields, 'Cola', (op.cola !== undefined && op.cola !== null) ? op.cola : 0);
   setField(fields, 'Inicio',         op.inicio || '');
   setField(fields, 'Fin',            op.fin || '');
   setField(fields, 'Mins',           op.mins || 0);
   setField(fields, 'PauseReason',    op.pauseReason || '');
+  // Boolean fields — always send explicitly to avoid SP storing wrong defaults
+  setField(fields, 'isRetrabajo', op.isRetrabajo === true);
+  setField(fields, 'NeedsCal',    op.needsCal === true);
 
-  console.log('ftCreateOpInSP sending fields:', JSON.stringify(fields));
   try {
     const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
     op._spId = res.id;
@@ -3443,11 +3446,14 @@ async function ftSaveQueueToSP(of_sap) {
       const qsf = function(f,d,v){ var k=qcm[d]||d; if(QRO.indexOf(k)<0) f[k]=v; };
       // Title = first column (Estacion in this list) — always writable
       var fields = { Title: op.estacion || of_sap };
+      var queuePos = pos >= 0 ? pos : i;
       qsf(fields,'OF_SAP',   of_sap);
       qsf(fields,'Op_ID',    op.id);
-      qsf(fields,'Posicion', pos >= 0 ? pos : i);
+      qsf(fields,'Posicion', queuePos);
       qsf(fields,'Tipo_Cola','normal');
       qsf(fields,'Activo',   op.status !== 'done');
+      // Update op.cola with actual queue position
+      op.cola = queuePos;
       // Skip 'Estacion' — it maps to LinkTitleNoMenu (read-only); Title holds the station name
       try {
         if (op._queueSpId) {
@@ -3457,6 +3463,21 @@ async function ftSaveQueueToSP(of_sap) {
           op._queueSpId = res.id;
         }
       } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
+    }
+    // After saving queue, patch Cola in FT_Operaciones for each op
+    for (var ci = 0; ci < aof.ops.length; ci++) {
+      var cOp = aof.ops[ci];
+      if (cOp._spId && cOp.cola !== undefined) {
+        try {
+          var colaFields = {};
+          var cmC = window._ftOpColMap || {};
+          var roC = ['LinkTitleNoMenu','LinkTitle','DocIcon','Edit','ID','ContentType','Modified','Created','Author','Editor'];
+          var cfk = cmC['Cola']||'Cola'; if(roC.indexOf(cfk)<0) colaFields[cfk] = cOp.cola;
+          if (Object.keys(colaFields).length) {
+            await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+cOp._spId+'/fields', colaFields);
+          }
+        } catch(e) { /* non-critical */ }
+      }
     }
   } catch(e) { console.warn('ftSaveQueueToSP error:', e.message); }
 }
