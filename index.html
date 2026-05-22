@@ -5328,6 +5328,8 @@ function updatePedidoPrio(pedido, val) {
 
 // -- 1 & 2: confirmProgMain aplica PENDING a DB ------------
 function confirmProgMain() {
+  // Track which OFs are newly added to programacion (for SP create)
+  var nuevasOfs = [];
   // Aplicar cambios pendientes a DB
   Object.keys(PENDING_PROG).forEach(function(sap) {
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
@@ -5335,48 +5337,50 @@ function confirmProgMain() {
     var prev = of.programadoHoy;
     of.programadoHoy = PENDING_PROG[sap].programadoHoy;
     of.prioridad     = PENDING_PROG[sap].prioridad;
-    // -- 3: Si se desmarca, verificar si tiene ops activas o finalizadas --
+    // Si se desmarca, verificar si tiene ops activas
     if (!of.programadoHoy && prev) {
       var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
       if (aof && aof.ops && aof.ops.length > 0) {
         var hasProgress = aof.ops.some(function(op){
-          return op.status === 'running' || op.status === 'paused' ||
-                 op.status === 'validating' || op.status === 'done' ||
-                 op.qty_ok > 0 || op.qty_def > 0 || op.mins > 0;
+          return op.status==='running'||op.status==='paused'||
+                 op.status==='validating'||op.status==='done'||
+                 op.qty_ok>0||op.qty_def>0||op.mins>0;
         });
         if (hasProgress) {
-          // Block removal: restore the programadoHoy flag
           of.programadoHoy = true;
           PENDING_PROG[sap].programadoHoy = true;
           var ofDesc = of.descripcion ? of.descripcion.substring(0,40) : sap;
-          alert('No es posible quitar la OF ' + sap + ' de la programacion.\n\n' +
-                ofDesc + '\n\n' +
-                'Esta orden ya tiene operaciones en proceso o finalizadas.\n' +
-                'Debe completar o cancelar las operaciones antes de retirarla.');
-          return; // skip this OF
+          alert('No es posible quitar la OF '+sap+' de la programacion.\n\n'+ofDesc+'\n\nEsta orden ya tiene operaciones en proceso o finalizadas.');
+          return;
         }
       }
-      DB.activeOFs = DB.activeOFs.filter(function(a){return a.of_sap !== sap;});
+      DB.activeOFs = DB.activeOFs.filter(function(a){return a.of_sap!==sap;});
     }
-    // Si se marca y no estaba, agregar a activeOFs
+    // Si se marca como nueva, crear activeOF con ops completas
     if (of.programadoHoy && !prev) {
       if (!DB.activeOFs.find(function(a){return a.of_sap===sap;})) {
         var tpl = DB.templates[of.articulo];
+        var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
         var ops = tpl ? tpl.ops.map(function(op,i){
-          return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion, tipo:op.tipo,
-            tecnico:'', qty_total:10, qty_ok:0, qty_def:0, qty_rej:0,
+          return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
+            tipo:op.tipo||'Secuencial', tecnico:'', ayudantes:[],
+            qty_total:10, qty_ok:0, qty_def:0, qty_rej:0,
             status:'pending', inicio:null, fin:null, mins:0,
-            isTemplate:true, pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
+            isTemplate:true, pauseReason:null, valcalNote:null,
+            needsCal:false, calResult:null, calComment:null};
         }) : [];
-        DB.activeOFs.push({of_sap:sap, pedido:of.pedido, cliente:of.cliente, ofv:of.ofv||'',
-          articulo:of.articulo, descripcion:of.descripcion, prioridad:of.prioridad,
-          padre:null, subarts:[], ops:ops});
+        DB.activeOFs.push({of_sap:sap, pedido:of.pedido, cliente:of.cliente,
+          ofv:of.ofv||'', articulo:of.articulo, descripcion:of.descripcion,
+          prioridad:of.prioridad, padre:padre, subarts:tpl&&tpl.subarts?tpl.subarts.slice():[],
+          ops:ops});
+        nuevasOfs.push(sap); // track for SP save
       }
     }
-    // Actualizar prioridad en activeOFs también
     var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
     if (aof) aof.prioridad = of.prioridad;
   });
+
+  // IMPORTANT: clear PENDING_PROG only ONCE after processing
   PENDING_PROG = {};
   C.editingMode = false;
   document.getElementById('btn-prog').style.display = 'inline-flex';
@@ -5384,16 +5388,11 @@ function confirmProgMain() {
   document.getElementById('btn-confirm-prog').style.display = 'none';
   document.getElementById('btn-cancel-prog').style.display = 'none';
   var hoy = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
-  // Construir detalle con las OFs recién activadas
-  var nuevasOfs = Object.keys(PENDING_PROG).filter(function(sap){
-    return PENDING_PROG[sap] && PENDING_PROG[sap].programadoHoy;
-  });
   var detailMsg = 'Programación actualizada · '+hoy+' OFs asignadas hoy';
-  if(nuevasOfs.length){
+  if (nuevasOfs.length) {
     var primeraOf = DB.ofs.find(function(o){return o.of_sap===nuevasOfs[0];});
-    if(primeraOf) detailMsg = 'Se agregó OF '+primeraOf.of_sap+' — '+primeraOf.descripcion.substring(0,45)+(nuevasOfs.length>1?' y '+(nuevasOfs.length-1)+' más':'');
+    if (primeraOf) detailMsg = 'Se agregó OF '+primeraOf.of_sap+' — '+(primeraOf.descripcion||'').substring(0,45)+(nuevasOfs.length>1?' y '+(nuevasOfs.length-1)+' más':'');
   }
-  PENDING_PROG = {};
   renderProg();
   // Sync queue for newly programmed OFs
   DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(o){
@@ -5411,29 +5410,30 @@ function confirmProgMain() {
   fireSync('coord', 'prog_updated', {count: hoy});
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   ftSaveProgramacionToSP();
-  // -- Auto-create ops in FT_Operaciones + FT_Cola_Estacion for ALL active OFs --
-  if (!state.isDemoMode && state.token) {
-    // Use setTimeout to not block the UI, but still execute
+  // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
+  if (!state.isDemoMode && state.token && nuevasOfs.length > 0) {
     setTimeout(async function(){
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-        var programadas = DB.ofs.filter(function(o){ return o.programadoHoy; });
-        console.log('Auto-guardando', programadas.length, 'OFs en SP...');
-        for (var pi = 0; pi < programadas.length; pi++) {
-          var o = programadas[pi];
-          var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === o.of_sap; });
-          if (!aofNew || !aofNew.ops.length) continue;
-          console.log('  OF', o.of_sap, '→', aofNew.ops.length, 'ops');
-          for (var oi = 0; oi < aofNew.ops.length; oi++) {
-            await ftSaveOpToSP(o.of_sap, aofNew.ops[oi].id);
+        console.log('Creando ops en SP para', nuevasOfs.length, 'OFs nuevas:', nuevasOfs);
+        for (var ni = 0; ni < nuevasOfs.length; ni++) {
+          var sap = nuevasOfs[ni];
+          var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
+          if (!aofNew || !aofNew.ops.length) {
+            console.warn('  OF', sap, 'sin ops — saltando');
+            continue;
           }
-          await ftSaveQueueToSP(o.of_sap);
+          console.log('  OF', sap, '→', aofNew.ops.length, 'ops');
+          for (var oi = 0; oi < aofNew.ops.length; oi++) {
+            await ftSaveOpToSP(sap, aofNew.ops[oi].id);
+          }
+          await ftSaveQueueToSP(sap);
         }
-        console.log('✅ Ops guardadas en SP correctamente');
+        console.log('✅ Ops creadas en SP:', nuevasOfs.join(', '));
       } catch(e) {
-        console.error('Error guardando ops en SP:', e);
+        console.error('Error creando ops en SP:', e.message, e);
       }
-    }, 500); // small delay to let ftSaveProgramacionToSP complete first
+    }, 300);
   }
 }
 
