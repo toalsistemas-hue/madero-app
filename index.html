@@ -505,7 +505,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.6.1</div>
+    <div class="login-version">v1.6.2</div>
   </div>
 </div>
 
@@ -3258,25 +3258,24 @@ async function ftSaveOpToSP(of_sap, opId) {
     const aof = DB.activeOFs.find(a => a.of_sap === of_sap);
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
     if (!op) return;
-    const cm2 = window._ftOpColMap || {};
-    const RO2 = ['LinkTitleNoMenu','LinkTitle','DocIcon','Edit','ID','ContentType',
-      'Modified','Created','Author','Editor','_UIVersionString','Attachments',
-      'ItemChildCount','FolderChildCount','AppAuthor','AppEditor'];
-    const sf = function(f,d,v){ var k=cm2[d]||d; if(RO2.indexOf(k)<0) f[k]=v; };
-    const fields = {};
-    sf(fields,'Status',         op.status||'pending');
-    sf(fields,'Inicio',         op.inicio||'');
-    sf(fields,'Fin',            op.fin||'');
-    sf(fields,'Mins',           op.mins||0);
-    sf(fields,'Qty_OK',         op.qty_ok||0);
-    sf(fields,'Qty_Def',        op.qty_def||0);
-    sf(fields,'Qty_Rej',        op.qty_rej||0);
-    sf(fields,'Tecnico',        op.tecnico||'');
-    sf(fields,'Ayudantes_JSON', (op.ayudantes||[]).join(','));
-    sf(fields,'PauseReason',    op.pauseReason||'');
-    sf(fields,'Cola',           op.cola||0);
-    if (op.needsCal===true) sf(fields,'NeedsCal',true);
-    if (op.valcalNote)      sf(fields,'ValCalNote',op.valcalNote);
+    // Hardcoded writable field names for FT_Operaciones PATCH
+    const fields = {
+      Status:         op.status || 'pending',
+      Inicio:         op.inicio || '',
+      Fin:            op.fin || '',
+      Mins:           op.mins || 0,
+      Qty_OK:         op.qty_ok || 0,
+      Qty_Def:        op.qty_def || 0,
+      Qty_Rej:        op.qty_rej || 0,
+      Tecnico:        op.tecnico || '',
+      Ayudantes_JSON: (op.ayudantes || []).join(','),
+      PauseReason:    op.pauseReason || '',
+      Cola:           op.cola || 0,
+      Tip:            op.tipo || 'Secuencial',
+    };
+    if (op.needsCal === true)   fields.NeedsCal = true;
+    if (op.valcalNote)          fields.ValCalNote = op.valcalNote;
+    if (op.isRetrabajo === true) fields.isRetrabajo = true;
     if (op._spId) {
       try {
         await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
@@ -3318,47 +3317,33 @@ async function ftCreateOpInSP(of_sap, op, aof) {
       console.log('FT_Operaciones col map (writable only):', JSON.stringify(window._ftOpColMap));
     } catch(e) { window._ftOpColMap = {}; }
   }
-  const cm = window._ftOpColMap || {};
-  // Read-only system fields that SP rejects when writing
-  const READ_ONLY = ['LinkTitleNoMenu','LinkTitle','DocIcon','Edit','ID',
-    'ContentType','Modified','Created','Author','Editor','_UIVersionString',
-    'Attachments','ItemChildCount','FolderChildCount','AppAuthor','AppEditor',
-    '_ColorTag','ComplianceAssetId','_ComplianceFlags','_ComplianceTag',
-    '_ComplianceTagWrittenTime','_ComplianceTagUserId','_IsRecord'];
-
-  // Helper: resolve internal name, skip if read-only
-  const col = function(displayName) {
-    var internal = cm[displayName] || displayName;
-    return READ_ONLY.indexOf(internal) >= 0 ? null : internal;
+  // Use HARDCODED internal SP field names (confirmed from col map logs)
+  // 'tipo' display name → 'Tip' internal name (confirmed)
+  // All other custom fields have matching display/internal names
+  // 'Nombre' → 'LinkTitleNoMenu' (READ-ONLY, use Title instead)
+  const fields = {
+    Title:          op.id,               // Required, always writable
+    OF_SAP:         of_sap,
+    Op_ID:          op.id,
+    Estacion:       op.estacion || '',
+    Tip:            op.tipo || 'Secuencial',  // 'tipo' display → 'Tip' internal
+    Tecnico:        op.tecnico || '',
+    Ayudantes_JSON: (op.ayudantes || []).join(','),
+    Status:         op.status || 'pending',
+    Secuencia:      seqNum,
+    Qty_Total:      op.qty_total || 10,
+    Qty_OK:         op.qty_ok || 0,
+    Qty_Def:        op.qty_def || 0,
+    Qty_Rej:        op.qty_rej || 0,
+    Cola:           0,   // patched after queue save
+    Inicio:         op.inicio || '',
+    Fin:            op.fin || '',
+    Mins:           op.mins || 0,
+    PauseReason:    op.pauseReason || '',
   };
-  const setField = function(fields, displayName, value) {
-    var k = col(displayName); if (k) fields[k] = value;
-  };
-
-  const fields = { Title: op.id }; // Title is always writable
-  setField(fields, 'OF_SAP',         of_sap);
-  setField(fields, 'Op_ID',          op.id);
-  // Note: 'Nombre' maps to LinkTitleNoMenu (read-only) — skip it, Title holds the op id
-  // The 'Nombre' display column in SP view is auto-populated from Title
-  setField(fields, 'Estacion',       op.estacion || '');
-  setField(fields, 'tipo',           op.tipo || 'Secuencial');
-  setField(fields, 'Tecnico',        op.tecnico || '');
-  setField(fields, 'Ayudantes_JSON', (op.ayudantes||[]).join(','));
-  setField(fields, 'Status',         op.status || 'pending');
-  setField(fields, 'Secuencia',      seqNum);
-  setField(fields, 'Qty_Total',      op.qty_total || 10);
-  setField(fields, 'Qty_OK',         op.qty_ok || 0);
-  setField(fields, 'Qty_Def',        op.qty_def || 0);
-  setField(fields, 'Qty_Rej',        op.qty_rej || 0);
-  // Cola = 0 on creation; will be patched to actual queue position after ftSaveQueueToSP
-  setField(fields, 'Cola', 0);
-  setField(fields, 'Inicio',         op.inicio || '');
-  setField(fields, 'Fin',            op.fin || '');
-  setField(fields, 'Mins',           op.mins || 0);
-  setField(fields, 'PauseReason',    op.pauseReason || '');
-  // Boolean fields — only set if true to avoid interfering with number fields
-  if (op.isRetrabajo === true) setField(fields, 'isRetrabajo', true);
-  if (op.needsCal === true)    setField(fields, 'NeedsCal', true);
+  // Boolean fields only when explicitly true
+  if (op.isRetrabajo === true) fields.isRetrabajo = true;
+  if (op.needsCal === true)    fields.NeedsCal = true;
 
   try {
     const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
@@ -3453,22 +3438,18 @@ async function ftSaveQueueToSP(of_sap) {
           console.log('FT_Cola_Estacion col map (writable):', JSON.stringify(window._ftQueueColMap));
         } catch(e) { window._ftQueueColMap = {}; }
       }
-      const qcm = window._ftQueueColMap;
-      const QRO = ['LinkTitleNoMenu','LinkTitle','DocIcon','Edit','ID','ContentType',
-        'Modified','Created','Author','Editor','_UIVersionString','Attachments',
-        'ItemChildCount','FolderChildCount','AppAuthor','AppEditor'];
-      const qsf = function(f,d,v){ var k=qcm[d]||d; if(QRO.indexOf(k)<0) f[k]=v; };
-      // Title = first column (Estacion in this list) — always writable
-      var fields = { Title: op.estacion || of_sap };
+      // Hardcoded writable SP field names for FT_Cola_Estacion
+      // Estacion display col → LinkTitleNoMenu (read-only) — use Title instead
       var queuePos = pos >= 0 ? pos : i;
-      qsf(fields,'OF_SAP',   of_sap);
-      qsf(fields,'Op_ID',    op.id);
-      qsf(fields,'Posicion', queuePos);
-      qsf(fields,'Tipo_Cola','normal');
-      qsf(fields,'Activo',   op.status !== 'done');
-      // Update op.cola with actual queue position
-      op.cola = queuePos;
-      // Skip 'Estacion' — it maps to LinkTitleNoMenu (read-only); Title holds the station name
+      var fields = {
+        Title:     op.estacion || of_sap,
+        OF_SAP:    of_sap,
+        Op_ID:     op.id,
+        Posicion:  queuePos,
+        Tipo_Cola: 'normal',
+        Activo:    op.status !== 'done',
+      };
+      op.cola = queuePos; // update for later patch to FT_Operaciones
       try {
         if (op._queueSpId) {
           await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
