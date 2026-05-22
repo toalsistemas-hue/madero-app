@@ -6,6 +6,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FabTracker">
+<meta name="application-name" content="FabTracker">
+<meta name="theme-color" content="#060e18">
+<meta name="description" content="FabTracker — Seguimiento de línea de producción Madero Equipos">
+<link rel="manifest" href="manifest.json">
+<!-- Ícono para iOS (Apple Touch Icon) -->
+<link rel="apple-touch-icon" href="icon-192.png">
+<!-- Ícono estándar -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <title>FabTracker App</title>
 
 <!-- MSAL Browser -->
@@ -9790,5 +9799,15 @@ setInterval(function(){
 
 </script>
 
+<script>
+// ── Service Worker para PWA (cache offline básico) ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('sw.js')
+      .then(function(reg) { console.log('SW registrado:', reg.scope); })
+      .catch(function(err) { console.log('SW error:', err); });
+  });
+}
+</script>
 </body>
 </html>
