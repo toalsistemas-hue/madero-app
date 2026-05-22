@@ -505,7 +505,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.5.1</div>
+    <div class="login-version">v1.6.0</div>
   </div>
 </div>
 
@@ -3248,7 +3248,10 @@ async function ftSaveOpToSP(of_sap, opId) {
       // Op not in SP yet — create it
       await ftCreateOpInSP(of_sap, op, aof);
     }
-  } catch(e) { console.warn('ftSaveOpToSP error:', e); }
+  } catch(e) {
+    console.error('ftSaveOpToSP FAILED for', of_sap, opId, ':', e.message);
+    throw e;
+  }
 }
 
 async function ftCreateOpInSP(of_sap, op, aof) {
@@ -3264,7 +3267,13 @@ async function ftCreateOpInSP(of_sap, op, aof) {
         const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name&$top=100');
         window._ftOpCols = (colRes.value||[]).map(c => c.name);
         console.log('FT_Operaciones columnas:', window._ftOpCols);
-      } catch(e) { window._ftOpCols = ['Title','OF_SAP','Op_ID']; }
+      } catch(e) {
+        // Use known FT_Operaciones columns from SP list screenshot as fallback
+        window._ftOpCols = ['Title','Nombre','OF_SAP','Op_ID','Estacion','tipo',
+          'Tecnico','Ayudantes_JSON','Status','Inicio','Fin','Mins',
+          'Secuencia','Qty_Total','Qty_OK','Qty_Def','Qty_Rej','PauseReason'];
+        console.warn('FT_Operaciones column detection failed, using known columns');
+      }
     }
     const cols = window._ftOpCols;
     const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
@@ -3296,9 +3305,10 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     op._spId = res.id;
     console.log('Op creada en SP:', op.nombre, '→ id', res.id);
   } catch(e) {
-    console.warn('ftCreateOpInSP error:', e.message);
+    console.error('ftCreateOpInSP FAILED:', e.message, '| fields sent:', JSON.stringify(fields||{}));
     // Reset column cache so next attempt re-detects
     window._ftOpCols = null;
+    throw e; // re-throw so caller knows it failed
   }
 }
 
@@ -5430,8 +5440,23 @@ function confirmProgMain() {
           await ftSaveQueueToSP(sap);
         }
         console.log('✅ Ops creadas en SP:', nuevasOfs.join(', '));
+        // Show success toast to coordinator
+        var toast = document.getElementById('toast-coord');
+        if (toast) {
+          toast.textContent = '✅ ' + nuevasOfs.length + ' OF(s) registradas en SharePoint';
+          toast.style.opacity='1'; toast.style.transform='translateY(0)';
+          setTimeout(function(){toast.style.opacity='0'; toast.style.transform='translateY(10px)';}, 3000);
+        }
       } catch(e) {
         console.error('Error creando ops en SP:', e.message, e);
+        // Show error to coordinator
+        var toastE = document.getElementById('toast-coord');
+        if (toastE) {
+          toastE.textContent = '❌ Error SP: ' + e.message.substring(0, 80);
+          toastE.style.opacity='1'; toastE.style.transform='translateY(0)';
+          setTimeout(function(){toastE.style.opacity='0'; toastE.style.transform='translateY(10px)';}, 5000);
+        }
+        alert('Error guardando operaciones en SharePoint:\n\n' + e.message + '\n\nAbre la consola (F12) para más detalles.');
       }
     }, 300);
   }

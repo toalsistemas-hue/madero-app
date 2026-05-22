@@ -1326,11 +1326,13 @@ function getEl(key){
 function groupByPedido(ofs){
   var g={};
   (ofs||[]).filter(Boolean).forEach(function(of){
-    var k=of.pedido||"SIN_PEDIDO";
-    if(!g[k])g[k]={pedido:of.pedido,cliente:of.cliente,ofv:of.ofv||"",prioridad:"normal",ofs:[]};
+    // Use pedido as key — fallback to cliente+articulo for STOCK/N/A
+    var pedidoKey = (of.pedido && of.pedido!=='N/A' && of.pedido.trim()) ? of.pedido.trim() : null;
+    var k = pedidoKey || ('__'+of.cliente+'__'+(of.articulo||of.of_sap));
+    if(!g[k]) g[k]={pedido:pedidoKey||'',cliente:of.cliente||'',ofv:of.ofv||'',prioridad:'normal',ofs:[]};
     g[k].ofs.push(of);
-    if(of.prioridad==="alta")g[k].prioridad="alta";
-    else if(of.prioridad==="media"&&g[k].prioridad!=="alta")g[k].prioridad="media";
+    if(of.prioridad==='alta') g[k].prioridad='alta';
+    else if(of.prioridad==='media'&&g[k].prioridad!=='alta') g[k].prioridad='media';
   });
   var arr=Object.values(g);
   arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
@@ -2173,25 +2175,46 @@ function renderAppOpsPanel(of){
 
 // ─── ÓRDENES ─────────────────────────────────────────────
 function renderAppOFs(){
+  // EN PROCESO: OFs que el coordinador programó para hoy (programadoHoy=true en SP)
   var asignadas=DB.activeOFs.map(function(o){return o.of_sap;});
-  var enProceso=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)>-1;});
-  var planeacion=DB.ofs.filter(function(o){return asignadas.indexOf(o.of_sap)===-1;});
+  var enProceso=DB.ofs.filter(function(o){return o.programadoHoy===true;});
+  // PLANEACION: OFs que NO están programadas para hoy
+  var planeacion=DB.ofs.filter(function(o){return !o.programadoHoy;});
   var pC={alta:"app-prio-alta",media:"app-prio-media",normal:"app-prio-normal"};
   var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
   var h="<div class='app-sh'>EN PROCESO <span class='app-sbadge'>"+enProceso.length+"</span></div>";
+  if(enProceso.length===0){
+    h+="<div style='padding:14px 10px;text-align:center;color:var(--adim);font-size:.76rem;'>Sin OFs en producción hoy. El Coordinador programa las OFs desde la plataforma web.</div>";
+  }
   groupByPedido((enProceso||[]).filter(Boolean)).forEach(function(g){
-    h+="<div class='app-ped-group'><div class='app-ped-hdr'><div><div class='app-ped-num'>"+esc(g.pedido)+"</div><div class='app-ped-cliente'>"+esc(g.cliente)+(g.ofv?" · "+esc(g.ofv):"")+"</div></div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";
+    var pedidoLabel = g.pedido ? 'Pedido '+g.pedido : g.cliente||'Sin pedido';
+    h+="<div class='app-ped-group'><div class='app-ped-hdr'><div>";
+    h+="<div class='app-ped-num'>"+esc(pedidoLabel)+"</div>";
+    h+="<div class='app-ped-cliente'>"+esc(g.cliente)+(g.ofv?' · '+esc(g.ofv):'')+"</div>";
+    h+="</div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";
     g.ofs.forEach(function(o){
-      h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'><div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div><div class='app-of-desc'>"+esc(o.descripcion.substring(0,50))+"</div><div class='app-of-meta'><span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span>"+(o.estacion?"<span class='app-chip app-c-est'>"+esc(o.estacion)+"</span>":"")+"</div></div></div></div>";
+      h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
+      h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
+      h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
+      h+="<div class='app-of-meta'><span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span></div>";
+      h+="</div></div></div>";
     });
     h+="</div>";
   });
   h+="<div class='app-sh' style='margin-top:12px;'>PLANEACIÓN <span class='app-sbadge app-sbadge-r'>"+planeacion.length+"</span></div>";
   h+="<div style='background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.15);border-radius:6px;padding:7px 10px;margin-bottom:9px;font-size:.7rem;color:var(--ayellow);'>⚙ El Coordinador programa las OFs desde la plataforma web.</div>";
   groupByPedido((planeacion||[]).filter(Boolean)).forEach(function(g){
-    h+="<div class='app-ped-group' style='opacity:.65;'><div class='app-ped-hdr'><div><div class='app-ped-num'>"+esc(g.pedido)+"</div><div class='app-ped-cliente'>"+esc(g.cliente)+"</div></div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";
+    var pedidoLabel = g.pedido ? 'Pedido '+g.pedido : g.cliente||'Sin pedido';
+    h+="<div class='app-ped-group' style='opacity:.72;'><div class='app-ped-hdr'><div>";
+    h+="<div class='app-ped-num'>"+esc(pedidoLabel)+"</div>";
+    h+="<div class='app-ped-cliente'>"+esc(g.cliente)+"</div>";
+    h+="</div><span class='app-chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span></div>";
     g.ofs.forEach(function(o){
-      h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'><div class='app-of-num'>OF "+esc(o.of_sap)+"</div><div class='app-of-desc'>"+esc(o.descripcion.substring(0,50))+"</div><div class='app-of-meta'><span class='app-chip app-c-plan'>PLANEACIÓN</span></div></div></div></div>";
+      h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
+      h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
+      h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
+      h+="<div class='app-of-meta'><span class='app-chip app-c-plan'>PLANEACIÓN</span></div>";
+      h+="</div></div></div>";
     });
     h+="</div>";
   });
@@ -5239,6 +5262,8 @@ async function appInitMsal() {
       try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
       fabMobileInit();
       renderApp();
+      // Start SP polling for real-time coordinator→app sync (every 30s)
+      if (typeof startSPPolling === 'function') startSPPolling();
     } else {
       document.getElementById('app-login-screen').style.display = 'flex';
     }
@@ -5290,6 +5315,7 @@ async function appDoLogin() {
         try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load error:', e); }
         fabMobileInit();
         renderApp();
+        if (typeof startSPPolling === 'function') startSPPolling();
       }
     } catch(e2) {
       status.textContent = 'Error: ' + e2.message;
@@ -5354,7 +5380,7 @@ async function appLoadDataFromSP() {
   try {
     const siteId = await appGetSiteId();
     var emptyFn = function(){ return {value:[]}; };
-    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes] = await Promise.all([
+    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes] = await Promise.all([
       appGraphGet('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000').catch(emptyFn),
       appGraphGet('sites/' + siteId + '/lists/FT_Operaciones/items?$expand=fields&$top=5000').catch(emptyFn),
       appGraphGet('sites/' + siteId + '/lists/FT_Tecnicos/items?$expand=fields&$top=200').catch(emptyFn),
@@ -5362,6 +5388,7 @@ async function appLoadDataFromSP() {
       appGraphGet('sites/' + siteId + '/lists/FT_Cola_Estacion/items?$expand=fields&$top=2000').catch(emptyFn),
       appGraphGet('sites/' + siteId + '/lists/FT_Status_Estacion/items?$expand=fields&$top=100').catch(emptyFn),
       appGraphGet('sites/' + siteId + '/lists/FT_Timers/items?$expand=fields&$top=2000').catch(emptyFn),
+      appGraphGet('sites/' + siteId + '/lists/FT_Plantillas_Operaciones/items?$expand=fields&$top=500').catch(emptyFn),
     ]);
     const ofs = (ofsRes.value||[]).map(i => i.fields);
     DB.ofs = ofs.map(f => ({
@@ -5381,15 +5408,38 @@ async function appLoadDataFromSP() {
       prioridad:   (f.Prioridad||'Normal').toLowerCase(),
       ofv:         f.OFV||f.Rotacion||'',
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
-        id: o.Op_ID||('op_'+o.ID), nombre: o.Nombre||o.Title||'', estacion: o.Estacion||'',
-        tipo: o.Tipo||'Secuencial', tecnico: o.Tecnico||'', status: o.Status||'pending',
+        id: o.Op_ID||('op_'+(o.ID||'')),
+        nombre: o.Nombre||o.Title||'', estacion: o.Estacion||'',
+        tipo: o.Tipo||o.tipo||'Secuencial',
+        tecnico: o.Tecnico||'',
+        ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
+                 : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        status: o.Status||'pending',
         inicio: o.Inicio||'', fin: o.Fin||'', mins: parseInt(o.Mins||0),
-        qty_total: parseInt(o.Qty_Total||0), qty_ok: parseInt(o.Qty_OK||0),
+        qty_total: parseInt(o.Qty_Total||10), qty_ok: parseInt(o.Qty_OK||0),
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
         cola: parseInt(o.Cola||0)||null, isRetrabajo: o.isRetrabajo===true,
-        pauseReason: o.PauseReason||'', needsCal: o.NeedsCal===true, _spId: o.ID,
+        pauseReason: o.PauseReason||'', needsCal: o.NeedsCal===true,
+        valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
+        calComment: o.CalComment||null, _spId: o.ID||o._itemId||null,
       })),
     }));
+    // For OFs with no ops in FT_Operaciones, try to fill from FT_Plantillas
+    DB.activeOFs.forEach(function(aof){
+      if (aof.ops.length === 0 && aof.articulo) {
+        var tplKey = aof.articulo;
+        var tpl = DB.templates && DB.templates[tplKey];
+        if (tpl && tpl.ops && tpl.ops.length) {
+          aof.ops = tpl.ops.map(function(op, i){
+            return {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
+              tipo:op.tipo||'Secuencial', tecnico:'', ayudantes:[], qty_total:10,
+              qty_ok:0, qty_def:0, qty_rej:0, status:'pending',
+              inicio:null, fin:null, mins:0, isTemplate:true,
+              pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
+          });
+        }
+      }
+    });
     window.TECHNICIANS = (tecRes.value||[]).map(i=>i.fields).filter(t=>t.Activo!==false).map(t=>t.Nombre||t.Title||'');
     window.STATIONS = (estRes.value||[]).map(i=>i.fields).filter(e=>e.Activo!==false).map(e=>e.Nombre||e.Title||'');
     window.DB_STATION_STATUS = window.DB_STATION_STATUS||{};
@@ -5402,7 +5452,18 @@ async function appLoadDataFromSP() {
     const colaItems=(colaRes.value||[]).map(i=>i.fields).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
     colaItems.forEach(c=>{const st=c.Estacion||c.Title||'';if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];window.DB_STATION_QUEUE[st].push({of_sap:c.OF_SAP||'',op_id:c.Op_ID||'',tipo:c.Tipo_Cola||'normal'});});
     sqSyncColaNumbers();
-    console.log('App SP load OK');
+    // Load templates for filling ops when FT_Operaciones is empty
+    DB.templates = DB.templates || {};
+    (tplRes.value||[]).forEach(function(i){
+      var f = i.fields;
+      var key = f.Articulo_Key || f.Title || '';
+      if (!key) return;
+      var ops = [];
+      try { ops = JSON.parse(f.Operaciones_JSON||'[]'); } catch(e){}
+      DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
+        subarts:[], ops:ops};
+    });
+    console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
   } catch(e) { console.warn('appLoadDataFromSP error:', e); }
 }
 
@@ -9807,6 +9868,59 @@ if ('serviceWorker' in navigator) {
       .then(function(reg) { console.log('SW registrado:', reg.scope); })
       .catch(function(err) { console.log('SW error:', err); });
   });
+}
+
+// ── SP Polling — sincronización en tiempo real entre portal y app ──
+// El portal y la app son dispositivos distintos — usamos SP como canal compartido
+var _spPollTimer = null;
+var _spLastProgramadas = ''; // track cambios en programación
+var _spLastOpsHash = '';      // track cambios en operaciones
+
+function startSPPolling() {
+  if (_spPollTimer) return; // ya corriendo
+  console.log('Iniciando SP polling cada 30s...');
+  _spPollTimer = setInterval(async function() {
+    if (!appSiteId || !appToken) return;
+    try {
+      await spPollCheck();
+    } catch(e) { console.warn('SP poll error:', e.message); }
+  }, 30000); // cada 30 segundos
+}
+
+async function spPollCheck() {
+  const siteId = appSiteId;
+  // Check FT_OrdenesFabricacion for programación changes
+  const ofsRes = await appGraphGet('sites/'+siteId+'/lists/FT_OrdenesFabricacion/items?$expand=fields&$select=id,fields&$top=200&$filter=fields/Programado_Hoy eq true');
+  const programadas = (ofsRes.value||[]).map(i => i.fields.OF_SAP||i.fields.Title||'').sort().join(',');
+  
+  if (programadas !== _spLastProgramadas && _spLastProgramadas !== '') {
+    // Coordinator changed the programación
+    console.log('SP poll: programación cambió → recargando datos');
+    _spLastProgramadas = programadas;
+    await appLoadDataFromSP();
+    // Add notification to app
+    var exists = DB.notifications.some(function(n){return n.type==='coord'&&n.msg==='📅 El Coordinador actualizó la programación'&&!n.read;});
+    if (!exists) {
+      DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅',
+        msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
+    }
+    renderApp();
+    return;
+  }
+  if (_spLastProgramadas === '') _spLastProgramadas = programadas;
+
+  // Check FT_Operaciones for op status changes (ops assigned by coordinator)
+  const opsRes = await appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields&$select=id,fields&$top=200&$orderby=Modified desc&$top=10');
+  const opsHash = (opsRes.value||[]).map(i=>(i.fields.OF_SAP||'')+'_'+(i.fields.Status||'')+'_'+(i.fields.Tecnico||'')).join('|');
+  
+  if (opsHash !== _spLastOpsHash && _spLastOpsHash !== '') {
+    console.log('SP poll: operaciones cambiaron → recargando');
+    _spLastOpsHash = opsHash;
+    await appLoadDataFromSP();
+    renderApp();
+    return;
+  }
+  if (_spLastOpsHash === '') _spLastOpsHash = opsHash;
 }
 </script>
 </body>
