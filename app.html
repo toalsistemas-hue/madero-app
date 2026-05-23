@@ -5705,12 +5705,26 @@ async function appLoadDataFromSP() {
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
         cola: parseInt(o.Cola||0)||null, isRetrabajo: o.isRetrabajo===true,
         pauseReason: o.PauseReason||'', needsCal: o.NeedsCal===true,
-        // Inferir _pauseTipo desde el texto de pauseReason (no hay columna en SP para esto)
+        // Inferir _pauseTipo desde el texto de pauseReason
         _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
-        // Restaurar piezas restantes desde pauseReason "🌙 Fin de turno — X · N pzas completadas, M restantes"
+        // Restaurar datos del turno A desde valcalNote JSON (guardado al pausar fin de turno)
         _pzasRestantes: (function(){
+          // Primero intentar desde valcalNote JSON
+          try { var d=JSON.parse(o.ValCalNote||''); if(d._turnoData) return d.qty_rest||0; } catch(e){}
+          // Fallback: parsear desde pauseReason
           var m=(o.PauseReason||'').match(/(\d+) restantes/);
           return m?parseInt(m[1]):null;
+        })(),
+        turnos: (function(){
+          try {
+            var d=JSON.parse(o.ValCalNote||'');
+            if(d._turnoData){
+              return [{tecnico:d.tecnico||'',mins:d.mins||0,
+                qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,
+                inicio:d.inicio||'',fin:d.fin||''}];
+            }
+          } catch(e){}
+          return [];
         })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
         calComment: o.CalComment||null, _spId: o.ID||o._itemId||null,
@@ -7597,6 +7611,17 @@ function appConfirmPause(){
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
     op._pzasRestantes=pzRest;
+    // Serializar datos del turno A en valcalNote para recuperarlos desde SP
+    op.valcalNote = JSON.stringify({
+      _turnoData: true,
+      tecnico:    op.tecnico,
+      mins:       turnoMins,
+      qty_ok:     pzOk,
+      qty_def:    pzDef,
+      qty_rest:   pzRest,
+      inicio:     op.inicio,
+      fin:        nowT()
+    });
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
   }
@@ -10728,7 +10753,8 @@ async function appReloadOpsFromSP() {
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
-          _pzasRestantes: (function(){ var m=(o.PauseReason||'').match(/(\d+) restantes/); return m?parseInt(m[1]):null; })(),
+          _pzasRestantes: (function(){ try{var d=JSON.parse(o.ValCalNote||'');if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
+          turnos: (function(){ try{var d=JSON.parse(o.ValCalNote||'');if(d._turnoData)return [{tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||''}];}catch(e){}; return []; })(),
           needsCal:    o.NeedsCal === true,
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,
