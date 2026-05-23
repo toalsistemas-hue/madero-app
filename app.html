@@ -5617,25 +5617,24 @@ async function appSaveOpToSP(of_sap, opId) {
     if (!op._spId || !validSpId) {
       try {
         const existing = await appGraphGet(
-          "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq '"+encodeURIComponent(of_sap)+"'"+
-          " and fields/Op_ID eq '"+encodeURIComponent(opId)+"'&$select=id&$top=1"
+          "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields/Op_ID eq '"+encodeURIComponent(opId)+"'&$select=id,fields/OF_SAP&$expand=fields&$top=5"
         );
-        if (existing.value && existing.value.length) {
-          op._spId = existing.value[0].id;
+        // Filter JS-side for OF_SAP match (Op_ID alone may not be unique across OFs)
+        const existMatch = (existing.value||[]).find(function(item){ return item.fields && item.fields.OF_SAP === of_sap; });
+        if (existMatch) {
+          op._spId = existMatch.id;
           console.log('Op encontrada en SP _spId='+op._spId+' → PATCH');
           await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
           console.log('✅ PATCH (restaurada) OK ['+opId+']');
           return;
         }
-      } catch(checkErr) {
-        console.log('⚠ check existente: '+checkErr.message);
-      }
+      } catch(checkErr) { console.log('⚠ check existente: '+checkErr.message); }
       const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
       const postFields = Object.assign({
         Title:    op.nombre || op.id,
         OF_SAP:   of_sap,
         Op_ID:    op.id,
-        Nombre:   op.nombre||'',
+        // 'Nombre' no existe en SP — Title cubre este campo
         Estacion: op.estacion||'',
         Tipo:     op.tipo||'Secuencial',
         Secuencia: seqNum,
@@ -5654,14 +5653,14 @@ async function appSaveTimerToSP(key) {
   if (!appSiteId) return;
   try {
     const t = DB.timers[key]; if(!t) return;
-    const fields={Title:key,Timer_Key:key,OF_SAP:key.split('_')[0],Op_ID:key.split('_').slice(1).join('_'),
-      Start_MS:t.start,Elapsed_MS:t.elapsed||0,Running:t.running};
+    const fields={Title:key, Op_ID:key.split('_').slice(1).join('_'),
+      Start_MS:t.start, Elapsed_MS:t.elapsed||0, Running:t.running};
     if(t._spId){
       await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
     } else {
       // Duplicate guard
       try {
-        var ex = await appGraphGet('sites/'+appSiteId+'/lists/FT_Timers/items?$filter=fields/Timer_Key eq \''+encodeURIComponent(key)+'\'&$select=id&$top=1');
+        var ex = await appGraphGet('sites/'+appSiteId+'/lists/FT_Timers/items?$filter=fields/Title eq \''+encodeURIComponent(key)+'\'&$select=id&$top=1');
         if (ex.value && ex.value.length) {
           t._spId = ex.value[0].id;
           await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
