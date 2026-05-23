@@ -3286,16 +3286,42 @@ async function ftLoadDataFromSP() {
           // Lightweight: reload only ops fields, no full page rebuild
           var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
           var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+          // Detectar cambios de status para generar notificaciones
+          var _statusEvents = [];
           DB.activeOFs.forEach(function(aof){
             var spOps = allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
                               .sort(function(a,b){return (a.Secuencia||0)-(b.Secuencia||0);});
             if(!spOps.length) return;
             aof.ops = spOps.map(function(o){
               var ex=aof.ops.find(function(e){return e.id===(o.Op_ID||o.Title||'');});
+              var newStatus = o.Status||'pending';
+              var oldStatus = ex ? ex.status : 'pending';
+              // Detectar transición de status para notificación
+              if(ex && oldStatus !== newStatus){
+                var evtMap = {
+                  running:    'op_started',
+                  paused:     'op_paused',
+                  done:       'op_finished',
+                  validating: 'op_valcal',
+                };
+                var evt = evtMap[newStatus];
+                if(evt){
+                  _statusEvents.push({
+                    event:   evt,
+                    of_sap:  aof.of_sap,
+                    op_id:   o.Op_ID||'',
+                    op_name: o.Nombre||o.Title||'',
+                    tecnico: o.Tecnico||'',
+                    reason:  o.PauseReason||'',
+                    obs:     o.Obs||'',
+                    note:    o.ValCalNote||'',
+                  });
+                }
+              }
               return {id:o.Op_ID||o.Title||'',nombre:o.Nombre||o.Title||'',
                 estacion:o.Estacion||'',tipo:o.Tip||o.Tipo||o.tipo||'Secuencial',
                 tecnico:o.Tecnico||'',ayudantes:(o.Ayudantes_JSON||'').split(',').filter(Boolean),
-                status:o.Status||'pending',inicio:o.Inicio||'',fin:o.Fin||'',
+                status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
                 mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
                 qty_rej:parseInt(o.Qty_Rej||0),cola:ex?ex.cola:0,
@@ -3304,6 +3330,11 @@ async function ftLoadDataFromSP() {
                 _spId:o.ID||null};
             });
           });
+          // Disparar notificaciones por cambios detectados
+          _statusEvents.forEach(function(e){
+            if(typeof addCoordNotif==='function') addCoordNotif(e.event, e);
+          });
+          console.log('Coord poll: ops cambiaron →', latestMod, '| notifs:', _statusEvents.length);
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
           var ind=document.getElementById('auto-refresh-indicator');
@@ -5974,23 +6005,45 @@ function showTplFlowModal(art) {
 // -- 12 & 15: Sistema de notificaciones mejorado ----------
 COORD_NOTIFS = [];
 function addCoordNotif(event, data) {
-  var msgs = {
-    op_started:  {icon:'▶', text:'Operación iniciada', detail:null},
-    op_finished: {icon:'✅', text:'Operación terminada', detail:data&&data.obs?'Obs: '+data.obs:null},
-    op_paused:   {icon:'⏸', text:'Operación pausada',   detail:data&&data.reason?'Causa: '+data.reason:null},
-    op_resumed:  {icon:'▶', text:'Operación reanudada', detail:null},
-    op_valcal:   {icon:'🔍', text:'Validación solicitada', detail:data&&data.note?'Nota: '+data.note:null},
-    op_added:    {icon:'➕', text:'Op agregada por Supervisor', detail:null},
-    op_moved:    {icon:'↕',  text:'Ops reordenadas', detail:null},
-    ops_assigned:{icon:'👷', text:'Técnicos asignados', detail:null},
-  };
-  var m = msgs[event] || {icon:'📡', text:event, detail:null};
-  var n = {id:'cn_'+Date.now(), event:event, icon:m.icon,
-    text:m.text+(data&&data.of_sap?' — OF '+data.of_sap:''),
-    detail:m.detail, of_sap:data?data.of_sap:null, time:nowT()};
+  var _opName  = data && data.op_name  ? data.op_name  : '';
+  var _tecnico = data && data.tecnico  ? data.tecnico  : '';
+  var _ofSap   = data && data.of_sap   ? 'OF '+data.of_sap : '';
+  var _reason  = data && data.reason   ? data.reason   : '';
+  var _obs     = data && data.obs      ? data.obs      : '';
+  var _note    = data && data.note     ? data.note     : '';
+  var iconMap  = {op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷'};
+  var icon = iconMap[event] || '📡';
+  var text = '', detail = '';
+  if(event==='op_started'){
+    text   = '▶ Operación iniciada' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico:'');
+  } else if(event==='op_paused'){
+    text   = '⏸ Operación pausada' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico+'\n':'') + (_reason?'Causa: '+_reason:'');
+  } else if(event==='op_finished'){
+    text   = '✅ Operación terminada' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico+'\n':'') + (_obs?'Obs: '+_obs:'');
+  } else if(event==='op_resumed'){
+    text   = '▶▶ Operación reanudada' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opName?_opName:'') + (_tecnico?'\nTécnico: '+_tecnico:'');
+  } else if(event==='op_valcal'){
+    text   = '🔍 Validación solicitada' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opName?_opName+'\n':'') + (_note?'Nota: '+_note:'');
+  } else if(event==='op_added'){
+    text   = '➕ Op agregada' + (_ofSap?' — '+_ofSap:'');
+    detail = _opName||'';
+  } else {
+    text = icon+' '+event + (_ofSap?' — '+_ofSap:'');
+  }
+  var n = {id:'cn_'+Date.now(), event:event, icon:icon,
+    text:text.trim(), detail:detail.trim()||null,
+    of_sap:data?data.of_sap:null, time:nowT()};
   COORD_NOTIFS.unshift(n);
-  if (COORD_NOTIFS.length > 20) COORD_NOTIFS.pop();
+  if(COORD_NOTIFS.length>20) COORD_NOTIFS.pop();
   renderCoordNotifs();
+  // Badge en header
+  var badge = document.getElementById('notif-badge');
+  if(badge){ badge.textContent=COORD_NOTIFS.length; badge.style.display='inline-flex'; }
 }
 function renderCoordNotifs() {
   var container = document.getElementById('coord-notifs');
@@ -6002,7 +6055,7 @@ function renderCoordNotifs() {
     h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">';
     h += '<span style="font-size:.8rem;">'+n.icon+'</span>';
     h += '<div style="flex:1;min-width:0;"><div style="font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(n.text)+'</div>';
-    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.4;">'+esc(n.detail)+'</div>';
+    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.5;white-space:pre-line;">'+esc(n.detail)+'</div>';
     h += '<div style="font-size:.58rem;color:var(--muted);margin-top:1px;">'+n.time+'</div></div>';
     h += '<button onclick="event.stopPropagation();removeCoordNotif(\''+n.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;flex-shrink:0;" title="Eliminar">✕</button>';
     h += '</div></div>';
