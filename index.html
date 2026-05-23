@@ -6041,7 +6041,7 @@ function addCoordNotif(event, data) {
   var _reason  = data && data.reason   ? data.reason   : '';
   var _obs     = data && data.obs      ? data.obs      : '';
   var _note    = data && data.note     ? data.note     : '';
-  var iconMap  = {op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷'};
+  var iconMap  = {op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷',turno_traspaso:'🤝'};
   var icon = iconMap[event] || '📡';
   var text = '', detail = '';
   if(event==='op_started'){
@@ -6062,6 +6062,14 @@ function addCoordNotif(event, data) {
   } else if(event==='op_added'){
     text   = '➕ Op agregada' + (_ofSap?' — '+_ofSap:'');
     detail = _opName||'';
+  } else if(event==='turno_traspaso'){
+    var _newTech = data && data.nuevo_tech ? data.nuevo_tech : '';
+    var _pzas    = data && data.pzas       ? data.pzas       : '';
+    var _opNameB = data && data.op_name_b  ? data.op_name_b  : '';
+    text   = '🤝 Traspaso de turno' + (_ofSap?' — '+_ofSap:'');
+    detail = (_opNameB?_opNameB+'\n':'') +
+             (_newTech?'Turno B: '+_newTech+'\n':'') +
+             (_pzas?'Piezas pendientes: '+_pzas:'');
   } else {
     text = icon+' '+event + (_ofSap?' — '+_ofSap:'');
   }
