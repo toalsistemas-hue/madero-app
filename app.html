@@ -5563,11 +5563,15 @@ async function appSaveOpToSP(of_sap, opId) {
     const aof = DB.activeOFs.find(a=>a.of_sap===of_sap);
     const op = aof ? aof.ops.find(o=>o.id===opId) : null;
     if (!op) return;
-    // Hardcoded SP internal field names (confirmed: tipo→Tip, Ayudantes→Ayudantes_JSON)
+
+    // ── ISO para SP, display para pantalla ───────────────────────────────────
+    const inicioVal = op._inicioISO || (op.inicio && op.inicio.includes('T') ? op.inicio : '');
+    const finVal    = op._finISO    || (op.fin    && op.fin.includes('T')    ? op.fin    : '');
+
     const patchFields = {
       Status:         op.status || 'pending',
-      Inicio:         op.inicio ? (op.inicio.includes('T') ? op.inicio : op._inicioISO || '') : '',
-      Fin:            op.fin ? (op.fin.includes('T') ? op.fin : op._finISO || '') : '',
+      Inicio:         inicioVal,
+      Fin:            finVal,
       Mins:           op.mins || 0,
       Qty_Total:      op.qty_total || 10,
       Qty_OK:         op.qty_ok || 0,
@@ -5581,42 +5585,47 @@ async function appSaveOpToSP(of_sap, opId) {
     if (op.needsCal === true)    patchFields.NeedsCal = true;
     if (op.valcalNote)           patchFields.ValCalNote = op.valcalNote;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
-    // Guard: _spId must be a valid SP item ID (non-empty string)
+
+    // ── LOG DIAGNÓSTICO visible en Debug Console ──────────────────────────────
+    console.log('PATCH payload ['+opId+']: status='+patchFields.Status
+      +' Inicio='+patchFields.Inicio
+      +' Tecnico='+patchFields.Tecnico
+      +' Qty_Total='+patchFields.Qty_Total
+      +' _spId='+op._spId
+      +' _inicioISO='+op._inicioISO);
+
+    // ── Guard: _spId válido ───────────────────────────────────────────────────
     const validSpId = op._spId && String(op._spId).trim() !== '' && op._spId !== 'null';
     if (validSpId) {
       try {
         await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
-        console.log('✅ Op PATCH OK:', of_sap, opId, 'status:', op.status, '_spId:', op._spId);
+        console.log('✅ PATCH OK ['+opId+'] status='+op.status+' Inicio='+inicioVal);
       } catch(patchErr) {
-        // If item not found (404), clear _spId and fallback to POST
         if (patchErr.message && (patchErr.message.includes('404') || patchErr.message.includes('PATCH 404'))) {
-          console.warn('⚠ Op _spId inválido (404) — recreando en SP:', op._spId);
+          console.log('⚠ _spId 404 – limpiando: '+op._spId);
           op._spId = null;
-          // Fall through to POST below
         } else {
-          console.error('❌ Error PATCH op en SP:', of_sap, opId, '-', patchErr.message);
+          console.log('❌ PATCH error: '+patchErr.message);
           throw patchErr;
         }
       }
     }
     if (!op._spId || !validSpId) {
-      // Op not in SP yet — check if it already exists (duplicate guard)
       try {
         const existing = await appGraphGet(
-          'sites/'+appSiteId+'/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq \''+encodeURIComponent(of_sap)+'\''+
-          ' and fields/Op_ID eq \''+encodeURIComponent(opId)+'\'&$select=id&$top=1'
+          "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq '"+encodeURIComponent(of_sap)+"'"+
+          " and fields/Op_ID eq '"+encodeURIComponent(opId)+"'&$select=id&$top=1"
         );
         if (existing.value && existing.value.length) {
           op._spId = existing.value[0].id;
-          console.log('Op ya existía en SP, _spId restaurado:', op._spId);
+          console.log('Op encontrada en SP _spId='+op._spId+' → PATCH');
           await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
-          console.log('✅ Op PATCH (restaurada) OK:', of_sap, opId);
+          console.log('✅ PATCH (restaurada) OK ['+opId+']');
           return;
         }
       } catch(checkErr) {
-        console.warn('appSaveOpToSP check existente:', checkErr.message);
+        console.log('⚠ check existente: '+checkErr.message);
       }
-      // Confirmed: create new
       const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
       const postFields = Object.assign({
         Title:    op.nombre || op.id,
@@ -5628,12 +5637,13 @@ async function appSaveOpToSP(of_sap, opId) {
         Secuencia: seqNum,
         Qty_Total: op.qty_total||10,
       }, patchFields);
+      console.log('POST nueva op: '+op.nombre);
       const res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items', {fields: postFields});
       op._spId = res.id;
-      op.isTemplate = false; // ya está en SP, no es solo plantilla
-      console.log('✅ Op POST (nueva) OK:', op.nombre, '→ _spId:', res.id);
+      op.isTemplate = false;
+      console.log('✅ POST OK: '+op.nombre+' _spId='+res.id);
     }
-  } catch(e) { console.warn('appSaveOpToSP:', e.message); }
+  } catch(e) { console.log('❌ appSaveOpToSP crash: '+e.message); console.warn('appSaveOpToSP:', e.message); }
 }
 
 async function appSaveTimerToSP(key) {
