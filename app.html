@@ -7503,7 +7503,20 @@ function appConfirmPause(){
     }
   });
   closeAppModal("app-modal-pause");renderApp();_refreshStationViews();
-  fireSync("app","op_paused",{of_sap:ctx.of_sap,tipo:_pauseTipo});
+  // Guardar pausa en SP — async IIFE siempre ejecuta
+  (async function(){
+    try {
+      var _pOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
+      var _pOp = _pOf ? _pOf.ops.find(function(o){return o.id===ctx.op_id;}) : null;
+      console.log('Pausa SP — siteId:'+appSiteId+' _spId:'+(_pOp?_pOp._spId:'NULL')+' status:'+(_pOp?_pOp.status:'?')+' reason:'+(_pOp?(_pOp.pauseReason||'').substring(0,20):'?'));
+      if(!appSiteId) await appGetSiteId();
+      if(!_pOp){ console.warn('Op no encontrada para pausa'); return; }
+      await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+      console.log('✅ Pausa SP OK _spId:'+_pOp._spId);
+      if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
+    } catch(e){ console.warn('❌ Pausa SP error:',e.message||e); }
+  })();
+  fireSync("app","op_paused",{of_sap:ctx.of_sap, op_id:ctx.op_id, tipo:_pauseTipo});
 }
 
 // ── Traspaso de turno ──────────────────────────────────────
