@@ -3134,7 +3134,7 @@ function saveOFOps() {
     }
   });
   closeCModal('modal-of-ops');
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
@@ -3319,7 +3319,7 @@ function handleCoordNotifClick(id) {
   }
   if (n.of_sap) {
     showCoordPage('seguimiento', document.querySelector('.sb-item[onclick*="seguimiento"]'));
-    renderSeg();
+    if(document.getElementById('seg-list')) renderSeg();
     setTimeout(function(){
       var cards = document.querySelectorAll('#seg-list .prog-card, #seg-list > div');
       cards.forEach(function(card){
@@ -4124,7 +4124,7 @@ function renderSeg(){
 // ── 12: Funciones cierre de pedido ───────────────────────────
 function movePedidoCierre(pedido){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.pedidoCierre=true;});
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('coord','pedido_cierre',{pedido:pedido});
 }
 function cerrarPedido(pedido){
@@ -4141,7 +4141,7 @@ function cerrarPedido(pedido){
         var of=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
         return !of || !of.pedidoCerrado;
       });
-      renderSeg(); renderApp(); renderProg();
+      if(document.getElementById('seg-list')) renderSeg(); if(typeof renderApp==='function') renderApp(); if(typeof renderProg==='function') renderProg();
       fireSync('coord','pedido_cerrado',{pedido:pedido});
     }
   );
@@ -4862,10 +4862,13 @@ function qmgrRemove(idx){
   _refreshStationViews();
 }
 function _refreshStationViews(){
-  // Refresh whichever station view is currently visible
-  if(C.currentPage==='historial') renderHist();
-  else renderSeg();
-  renderApp(); // update cola badges in app
+  // Only call coordinator render functions if their DOM containers exist
+  if(typeof C !== 'undefined' && C.currentPage==='historial' && document.getElementById('hist-list')){
+    renderHist();
+  } else if(document.getElementById('seg-list')) {
+    if(document.getElementById('seg-list')) renderSeg();
+  }
+  if(typeof renderApp === 'function') renderApp();
 }
 function qmgrPrioritizeSelected(){
   var sap=document.getElementById('qmgr-prio-of-sel').value;
@@ -4906,7 +4909,7 @@ function qConflictPauseAll(){
   });
   closeCModal('modal-queue-conflict');
   renderQueueMgr();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   renderApp();
 }
 
@@ -5050,7 +5053,7 @@ function appSaveStationStatus(){
   ss.status=status; ss.nota=nota;
   closeAppModal('app-modal-station');
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('app','station_status',{station:_currentStation,status:status});
   // Persist to SP
   if (appSiteId) appSaveStationStatusToSP(_currentStation);
@@ -5064,7 +5067,7 @@ function appSetOpCola(sap, opId, val){
   op.cola=parseInt(val)||null;
   // Re-render KPIs without full app re-render
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
 }
 function clearTechFilters(){
   ['hist-tech-filter','hist-tech-from','hist-tech-to','hist-tech-of','hist-tech-ped'].forEach(function(id){
@@ -8152,7 +8155,7 @@ function saveOFOps() {
     }
   });
   closeCModal('modal-of-ops');
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
@@ -8337,7 +8340,7 @@ function handleCoordNotifClick(id) {
   }
   if (n.of_sap) {
     showCoordPage('seguimiento', document.querySelector('.sb-item[onclick*="seguimiento"]'));
-    renderSeg();
+    if(document.getElementById('seg-list')) renderSeg();
     setTimeout(function(){
       var cards = document.querySelectorAll('#seg-list .prog-card, #seg-list > div');
       cards.forEach(function(card){
@@ -9141,7 +9144,7 @@ function renderSeg(){
 // ── 12: Funciones cierre de pedido ───────────────────────────
 function movePedidoCierre(pedido){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.pedidoCierre=true;});
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('coord','pedido_cierre',{pedido:pedido});
 }
 function cerrarPedido(pedido){
@@ -9158,7 +9161,7 @@ function cerrarPedido(pedido){
         var of=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
         return !of || !of.pedidoCerrado;
       });
-      renderSeg(); renderApp(); renderProg();
+      if(document.getElementById('seg-list')) renderSeg(); if(typeof renderApp==='function') renderApp(); if(typeof renderProg==='function') renderProg();
       fireSync('coord','pedido_cerrado',{pedido:pedido});
     }
   );
@@ -9872,10 +9875,13 @@ function qmgrRemove(idx){
   _refreshStationViews();
 }
 function _refreshStationViews(){
-  // Refresh whichever station view is currently visible
-  if(C.currentPage==='historial') renderHist();
-  else renderSeg();
-  renderApp(); // update cola badges in app
+  // Only call coordinator render functions if their DOM containers exist
+  if(typeof C !== 'undefined' && C.currentPage==='historial' && document.getElementById('hist-list')){
+    renderHist();
+  } else if(document.getElementById('seg-list')) {
+    if(document.getElementById('seg-list')) renderSeg();
+  }
+  if(typeof renderApp === 'function') renderApp();
 }
 function qmgrPrioritizeSelected(){
   var sap=document.getElementById('qmgr-prio-of-sel').value;
@@ -9916,7 +9922,7 @@ function qConflictPauseAll(){
   });
   closeCModal('modal-queue-conflict');
   renderQueueMgr();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   renderApp();
 }
 
@@ -10061,7 +10067,7 @@ function appSaveStationStatus(){
   closeAppModal('app-modal-station');
   // Refresh KPIs
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
   fireSync('app','station_status',{station:_currentStation,status:status});
 }
 
@@ -10073,7 +10079,7 @@ function appSetOpCola(sap, opId, val){
   op.cola=parseInt(val)||null;
   // Re-render KPIs without full app re-render
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  if(document.getElementById('seg-list')) renderSeg();
 }
 function clearTechFilters(){
   ['hist-tech-filter','hist-tech-from','hist-tech-to','hist-tech-of','hist-tech-ped'].forEach(function(id){
