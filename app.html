@@ -3062,11 +3062,11 @@ function renderProg() {
     h += '</div>';
   });
   if (!h) h = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem">Sin resultados.</div>';
-  document.getElementById('prog-list').innerHTML = h;
-  document.getElementById('kpi-total').textContent = DB.ofs.length;
-  document.getElementById('kpi-alta').textContent  = DB.ofs.filter(function(o){return o.prioridad==='alta';}).length;
-  document.getElementById('kpi-media').textContent = DB.ofs.filter(function(o){return o.prioridad==='media';}).length;
-  document.getElementById('kpi-hoy').textContent   = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
+  (function(){var _e=document.getElementById('prog-list');if(_e)_e.innerHTML=h;})();
+  (function(){var _e=document.getElementById('kpi-total');if(_e)_e.textContent=DB.ofs.length;})();
+  (function(){var _e=document.getElementById('kpi-alta');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.prioridad==='alta';}).length;})();
+  (function(){var _e=document.getElementById('kpi-media');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.prioridad==='media';}).length;})();
+  (function(){var _e=document.getElementById('kpi-hoy');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.programadoHoy;}).length;})();
 }
 
 // ── 1: Modal asignación de técnicos a ops ────────────────
@@ -4112,13 +4112,13 @@ function renderSeg(){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
       (filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))+'</div>';
   }
-  document.getElementById('seg-list').innerHTML=h;
+  (function(){var _e=document.getElementById('seg-list');if(_e)_e.innerHTML=h;})();
   // KPIs
   var allOps=[]; DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
-  document.getElementById('seg-kpi-ofs').textContent=DB.activeOFs.length;
-  document.getElementById('seg-kpi-done').textContent=allOps.filter(function(o){return o.status==='done';}).length;
-  document.getElementById('seg-kpi-run').textContent=allOps.filter(function(o){return o.status==='running';}).length;
-  document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
+  (function(){var _e=document.getElementById('seg-kpi-ofs');if(_e)_e.textContent=DB.activeOFs.length;})();
+  (function(){var _e=document.getElementById('seg-kpi-done');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='done';}).length;})();
+  (function(){var _e=document.getElementById('seg-kpi-run');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='running';}).length;})();
+  (function(){var _e=document.getElementById('seg-kpi-val');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='validating';}).length;})();
 }
 
 // ── 12: Funciones cierre de pedido ───────────────────────────
@@ -8080,11 +8080,11 @@ function renderProg() {
     h += '</div>';
   });
   if (!h) h = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem">Sin resultados.</div>';
-  document.getElementById('prog-list').innerHTML = h;
-  document.getElementById('kpi-total').textContent = DB.ofs.length;
-  document.getElementById('kpi-alta').textContent  = DB.ofs.filter(function(o){return o.prioridad==='alta';}).length;
-  document.getElementById('kpi-media').textContent = DB.ofs.filter(function(o){return o.prioridad==='media';}).length;
-  document.getElementById('kpi-hoy').textContent   = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
+  (function(){var _e=document.getElementById('prog-list');if(_e)_e.innerHTML=h;})();
+  (function(){var _e=document.getElementById('kpi-total');if(_e)_e.textContent=DB.ofs.length;})();
+  (function(){var _e=document.getElementById('kpi-alta');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.prioridad==='alta';}).length;})();
+  (function(){var _e=document.getElementById('kpi-media');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.prioridad==='media';}).length;})();
+  (function(){var _e=document.getElementById('kpi-hoy');if(_e)_e.textContent=DB.ofs.filter(function(o){return o.programadoHoy;}).length;})();
 }
 
 // ── 1: Modal asignación de técnicos a ops ────────────────
@@ -9129,13 +9129,13 @@ function renderSeg(){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
       (filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))+'</div>';
   }
-  document.getElementById('seg-list').innerHTML=h;
+  (function(){var _e=document.getElementById('seg-list');if(_e)_e.innerHTML=h;})();
   // KPIs
   var allOps=[]; DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
-  document.getElementById('seg-kpi-ofs').textContent=DB.activeOFs.length;
-  document.getElementById('seg-kpi-done').textContent=allOps.filter(function(o){return o.status==='done';}).length;
-  document.getElementById('seg-kpi-run').textContent=allOps.filter(function(o){return o.status==='running';}).length;
-  document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
+  (function(){var _e=document.getElementById('seg-kpi-ofs');if(_e)_e.textContent=DB.activeOFs.length;})();
+  (function(){var _e=document.getElementById('seg-kpi-done');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='done';}).length;})();
+  (function(){var _e=document.getElementById('seg-kpi-run');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='running';}).length;})();
+  (function(){var _e=document.getElementById('seg-kpi-val');if(_e)_e.textContent=allOps.filter(function(o){return o.status==='validating';}).length;})();
 }
 
 // ── 12: Funciones cierre de pedido ───────────────────────────
