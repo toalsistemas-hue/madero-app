@@ -2480,7 +2480,17 @@ function appConfirmPause(){
       console.warn('❌ Pausa SP error:', e.message||e);
     }
   })();
-  fireSync("app","op_paused",{of_sap:ctx.of_sap, op_id:ctx.op_id, tipo:_pauseTipo});
+  // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
+  var _pauseCtxOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
+  var _pauseCtxOp = _pauseCtxOf ? _pauseCtxOf.ops.find(function(o){return o.id===ctx.op_id;}) : null;
+  fireSync("app","op_paused",{
+    of_sap: ctx.of_sap,
+    op_id:  ctx.op_id,
+    op_name: _pauseCtxOp ? _pauseCtxOp.nombre : '',
+    tecnico: _pauseCtxOp ? (_pauseCtxOp.tecnico||'') : '',
+    reason:  _pauseCtxOp ? (_pauseCtxOp.pauseReason||'') : '',
+    tipo:    _pauseTipo
+  });
 }
 
 // ── Traspaso de turno ──────────────────────────────────────
@@ -3296,20 +3306,58 @@ function showTplFlowModal(art) {
 // ── 12 & 15: Sistema de notificaciones mejorado ──────────
 COORD_NOTIFS = [];
 function addCoordNotif(event, data) {
-  var msgs = {
-    op_started:  {icon:'▶', text:'Operación iniciada', detail:null},
-    op_finished: {icon:'✅', text:'Operación terminada', detail:data&&data.obs?'Obs: '+data.obs:null},
-    op_paused:   {icon:'⏸', text:'Operación pausada',   detail:data&&data.reason?'Causa: '+data.reason:null},
-    op_resumed:  {icon:'▶', text:'Operación reanudada', detail:null},
-    op_valcal:   {icon:'🔍', text:'Validación solicitada', detail:data&&data.note?'Nota: '+data.note:null},
-    op_added:    {icon:'➕', text:'Op agregada por Supervisor', detail:null},
-    op_moved:    {icon:'↕',  text:'Ops reordenadas', detail:null},
-    ops_assigned:{icon:'👷', text:'Técnicos asignados', detail:null},
+  // Construir texto y detalle ricos con los datos del evento
+  var _opName  = data && data.op_name  ? data.op_name  : '';
+  var _tecnico = data && data.tecnico  ? data.tecnico  : '';
+  var _ofSap   = data && data.of_sap   ? 'OF '+data.of_sap : '';
+  var _reason  = data && data.reason   ? data.reason   : '';
+  var _obs     = data && data.obs      ? data.obs      : '';
+  var _note    = data && data.note     ? data.note     : '';
+
+  var iconMap = {
+    op_started:   '▶',
+    op_finished:  '✅',
+    op_paused:    '⏸',
+    op_resumed:   '▶',
+    op_valcal:    '🔍',
+    op_added:     '➕',
+    op_moved:     '↕',
+    ops_assigned: '👷',
   };
-  var m = msgs[event] || {icon:'📡', text:event, detail:null};
-  var n = {id:'cn_'+Date.now(), event:event, icon:m.icon,
-    text:m.text+(data&&data.of_sap?' — OF '+data.of_sap:''),
-    detail:m.detail, of_sap:data?data.of_sap:null, time:nowT()};
+  var icon = iconMap[event] || '📡';
+
+  var text = '', detail = '';
+  if(event === 'op_started'){
+    text   = '▶ Operación iniciada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') + (_tecnico ? 'Técnico: '+_tecnico : '');
+  } else if(event === 'op_paused'){
+    text   = '⏸ Operación pausada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') +
+             (_tecnico ? 'Técnico: '+_tecnico+'\n' : '') +
+             (_reason  ? 'Causa: '+_reason : '');
+  } else if(event === 'op_finished'){
+    text   = '✅ Operación terminada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') +
+             (_tecnico ? 'Técnico: '+_tecnico+'\n' : '') +
+             (_obs     ? 'Obs: '+_obs : '');
+  } else if(event === 'op_resumed'){
+    text   = '▶ Operación reanudada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName : '') + (_tecnico ? '\nTécnico: '+_tecnico : '');
+  } else if(event === 'op_valcal'){
+    text   = '🔍 Validación solicitada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') + (_note ? 'Nota: '+_note : '');
+  } else if(event === 'op_added'){
+    text   = '➕ Op agregada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = _opName || '';
+  } else {
+    text   = icon+' '+event + (_ofSap ? ' — '+_ofSap : '');
+  }
+
+  var n = {id:'cn_'+Date.now(), event:event, icon:icon,
+    text: text.trim(),
+    detail: detail.trim() || null,
+    of_sap: data ? data.of_sap : null,
+    time: nowT()};
   COORD_NOTIFS.unshift(n);
   if (COORD_NOTIFS.length > 20) COORD_NOTIFS.pop();
   renderCoordNotifs();
@@ -3324,7 +3372,7 @@ function renderCoordNotifs() {
     h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">';
     h += '<span style="font-size:.8rem;">'+n.icon+'</span>';
     h += '<div style="flex:1;min-width:0;"><div style="font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(n.text)+'</div>';
-    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.4;">'+esc(n.detail)+'</div>';
+    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.5;white-space:pre-line;">'+esc(n.detail)+'</div>';
     h += '<div style="font-size:.58rem;color:var(--muted);margin-top:1px;">'+n.time+'</div></div>';
     h += '<button onclick="event.stopPropagation();removeCoordNotif(\''+n.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;flex-shrink:0;" title="Eliminar">✕</button>';
     h += '</div></div>';
@@ -7516,7 +7564,17 @@ function appConfirmPause(){
       if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
     } catch(e){ console.warn('❌ Pausa SP error:',e.message||e); }
   })();
-  fireSync("app","op_paused",{of_sap:ctx.of_sap, op_id:ctx.op_id, tipo:_pauseTipo});
+  // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
+  var _pauseCtxOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
+  var _pauseCtxOp = _pauseCtxOf ? _pauseCtxOf.ops.find(function(o){return o.id===ctx.op_id;}) : null;
+  fireSync("app","op_paused",{
+    of_sap: ctx.of_sap,
+    op_id:  ctx.op_id,
+    op_name: _pauseCtxOp ? _pauseCtxOp.nombre : '',
+    tecnico: _pauseCtxOp ? (_pauseCtxOp.tecnico||'') : '',
+    reason:  _pauseCtxOp ? (_pauseCtxOp.pauseReason||'') : '',
+    tipo:    _pauseTipo
+  });
 }
 
 // ── Traspaso de turno ──────────────────────────────────────
@@ -7642,10 +7700,14 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     try {
       if(!appSiteId) await appGetSiteId();
       await appSaveOpToSP(sap, opId);
-      console.log('✅ Reanudar SP OK _spId:', DB.activeOFs.find(function(a){return a.of_sap===sap;})&&DB.activeOFs.find(function(a){return a.of_sap===sap;}).ops.find(function(o){return o.id===opId;})._spId);
+      console.log('✅ Reanudar SP OK');
       if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(sap+'_'+opId);
     } catch(e){ console.warn('❌ Reanudar SP error:', e.message||e); }
   })();
+  var _rOf2 = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+  var _rOp2 = _rOf2 ? _rOf2.ops.find(function(o){return o.id===opId;}) : null;
+  fireSync('app','op_resumed',{of_sap:sap, op_id:opId,
+    op_name:_rOp2?_rOp2.nombre:'', tecnico:_rOp2?(_rOp2.tecnico||''):''});
   renderApp();
   _refreshStationViews();
 }
@@ -8341,20 +8403,58 @@ function showTplFlowModal(art) {
 // ── 12 & 15: Sistema de notificaciones mejorado ──────────
 COORD_NOTIFS = [];
 function addCoordNotif(event, data) {
-  var msgs = {
-    op_started:  {icon:'▶', text:'Operación iniciada', detail:null},
-    op_finished: {icon:'✅', text:'Operación terminada', detail:data&&data.obs?'Obs: '+data.obs:null},
-    op_paused:   {icon:'⏸', text:'Operación pausada',   detail:data&&data.reason?'Causa: '+data.reason:null},
-    op_resumed:  {icon:'▶', text:'Operación reanudada', detail:null},
-    op_valcal:   {icon:'🔍', text:'Validación solicitada', detail:data&&data.note?'Nota: '+data.note:null},
-    op_added:    {icon:'➕', text:'Op agregada por Supervisor', detail:null},
-    op_moved:    {icon:'↕',  text:'Ops reordenadas', detail:null},
-    ops_assigned:{icon:'👷', text:'Técnicos asignados', detail:null},
+  // Construir texto y detalle ricos con los datos del evento
+  var _opName  = data && data.op_name  ? data.op_name  : '';
+  var _tecnico = data && data.tecnico  ? data.tecnico  : '';
+  var _ofSap   = data && data.of_sap   ? 'OF '+data.of_sap : '';
+  var _reason  = data && data.reason   ? data.reason   : '';
+  var _obs     = data && data.obs      ? data.obs      : '';
+  var _note    = data && data.note     ? data.note     : '';
+
+  var iconMap = {
+    op_started:   '▶',
+    op_finished:  '✅',
+    op_paused:    '⏸',
+    op_resumed:   '▶',
+    op_valcal:    '🔍',
+    op_added:     '➕',
+    op_moved:     '↕',
+    ops_assigned: '👷',
   };
-  var m = msgs[event] || {icon:'📡', text:event, detail:null};
-  var n = {id:'cn_'+Date.now(), event:event, icon:m.icon,
-    text:m.text+(data&&data.of_sap?' — OF '+data.of_sap:''),
-    detail:m.detail, of_sap:data?data.of_sap:null, time:nowT()};
+  var icon = iconMap[event] || '📡';
+
+  var text = '', detail = '';
+  if(event === 'op_started'){
+    text   = '▶ Operación iniciada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') + (_tecnico ? 'Técnico: '+_tecnico : '');
+  } else if(event === 'op_paused'){
+    text   = '⏸ Operación pausada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') +
+             (_tecnico ? 'Técnico: '+_tecnico+'\n' : '') +
+             (_reason  ? 'Causa: '+_reason : '');
+  } else if(event === 'op_finished'){
+    text   = '✅ Operación terminada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') +
+             (_tecnico ? 'Técnico: '+_tecnico+'\n' : '') +
+             (_obs     ? 'Obs: '+_obs : '');
+  } else if(event === 'op_resumed'){
+    text   = '▶ Operación reanudada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName : '') + (_tecnico ? '\nTécnico: '+_tecnico : '');
+  } else if(event === 'op_valcal'){
+    text   = '🔍 Validación solicitada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = (_opName  ? _opName+'\n' : '') + (_note ? 'Nota: '+_note : '');
+  } else if(event === 'op_added'){
+    text   = '➕ Op agregada' + (_ofSap ? ' — '+_ofSap : '');
+    detail = _opName || '';
+  } else {
+    text   = icon+' '+event + (_ofSap ? ' — '+_ofSap : '');
+  }
+
+  var n = {id:'cn_'+Date.now(), event:event, icon:icon,
+    text: text.trim(),
+    detail: detail.trim() || null,
+    of_sap: data ? data.of_sap : null,
+    time: nowT()};
   COORD_NOTIFS.unshift(n);
   if (COORD_NOTIFS.length > 20) COORD_NOTIFS.pop();
   renderCoordNotifs();
@@ -8369,7 +8469,7 @@ function renderCoordNotifs() {
     h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">';
     h += '<span style="font-size:.8rem;">'+n.icon+'</span>';
     h += '<div style="flex:1;min-width:0;"><div style="font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(n.text)+'</div>';
-    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.4;">'+esc(n.detail)+'</div>';
+    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.5;white-space:pre-line;">'+esc(n.detail)+'</div>';
     h += '<div style="font-size:.58rem;color:var(--muted);margin-top:1px;">'+n.time+'</div></div>';
     h += '<button onclick="event.stopPropagation();removeCoordNotif(\''+n.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;flex-shrink:0;" title="Eliminar">✕</button>';
     h += '</div></div>';
