@@ -10507,7 +10507,7 @@ function startSPPolling() {
     if (!appSiteId || !appToken) return;
     try {
       await spPollCheck();
-    } catch(e) { console.warn('SP poll error:', e.message); }
+    } catch(e) { if(e.message && !e.message.includes('fetch')) console.warn('SP poll error:', e.message); }
   }, 15000); // cada 15 segundos para seguimiento en tiempo real
 }
 
@@ -10539,7 +10539,7 @@ async function spPollCheck() {
     if (!_spLastOpsHash && latestOpMod) {
       _spLastOpsHash = latestOpMod;
     }
-  } catch(e) { console.warn('Poll ops error:', e.message); }
+  } catch(e) { if(!e.message||!e.message.includes('fetch')) console.warn('Poll ops error:', e.message); }
 
   try {
     // Check FT_OrdenesFabricacion for programacion changes
@@ -10567,7 +10567,7 @@ async function spPollCheck() {
     if (!_spLastProgramadas && latestOfsMod) {
       _spLastProgramadas = latestOfsMod;
     }
-  } catch(e) { console.warn('Poll OFs error:', e.message); }
+  } catch(e) { if(!e.message||!e.message.includes('fetch')) console.warn('Poll OFs error:', e.message); }
 }
 
 // Lightweight reload — only refresh ops without rebuilding DB.ofs
