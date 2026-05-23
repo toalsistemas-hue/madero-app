@@ -969,8 +969,38 @@ tr:last-child td{border-bottom:none;}
     <span style="width:1px;height:16px;background:rgba(255,255,255,.12);margin:0 6px;flex-shrink:0;align-self:center;"></span>
     <button class="coord-nav-pill" onclick="showCoordPage('seguimiento',this)">📡 Tiempo Real</button>
     <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
-    <div style="margin-left:auto;"><div id="coord-notifs" class="coord-notif-area" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"></div></div>
+    <!-- Notification bell button -->
+    <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
+      <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="
+        background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+        border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);
+        font-size:.78rem;display:flex;align-items:center;gap:5px;position:relative;
+        font-family:'Archivo',sans-serif;transition:background .15s;
+      " onmouseenter="this.style.background='rgba(255,255,255,.1)'" 
+         onmouseleave="this.style.background='rgba(255,255,255,.06)'">
+        🔔
+        <span id="notif-badge" style="
+          background:#ef4444;color:#fff;border-radius:99px;
+          font-size:.6rem;font-weight:700;padding:1px 5px;
+          min-width:16px;text-align:center;display:none;
+        ">0</span>
+        <span style="color:var(--text-dim);font-size:.7rem;" id="notif-btn-label">Sin notificaciones</span>
+        <span style="color:var(--text-dim);font-size:.6rem;" id="notif-caret">▼</span>
+      </button>
+      <!-- Dropdown panel -->
+      <div id="coord-notif-panel" style="
+        display:none;position:absolute;top:calc(100% + 8px);right:0;
+        width:340px;max-height:420px;overflow-y:auto;
+        background:#0f1623;border:1px solid rgba(255,255,255,.12);
+        border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);
+        z-index:9999;padding:8px;
+      ">
+        <div id="coord-notifs" class="coord-notif-area"></div>
+      </div>
+    </div>
   </div>
+  <!-- Overlay to close panel on outside click -->
+  <div id="coord-notif-overlay" onclick="closeCoordNotifPanel()" style="display:none;position:fixed;inset:0;z-index:9998;"></div>
 
 
   <!-- Main -->
@@ -6045,26 +6075,64 @@ function addCoordNotif(event, data) {
   var badge = document.getElementById('notif-badge');
   if(badge){ badge.textContent=COORD_NOTIFS.length; badge.style.display='inline-flex'; }
 }
+function toggleCoordNotifPanel(){
+  var panel=document.getElementById('coord-notif-panel');
+  var overlay=document.getElementById('coord-notif-overlay');
+  var caret=document.getElementById('notif-caret');
+  if(!panel) return;
+  var open=panel.style.display==='block';
+  panel.style.display=open?'none':'block';
+  if(overlay) overlay.style.display=open?'none':'block';
+  if(caret) caret.textContent=open?'▼':'▲';
+  if(!open){var badge=document.getElementById('notif-badge');if(badge)badge.style.display='none';}
+}
+function closeCoordNotifPanel(){
+  var panel=document.getElementById('coord-notif-panel');
+  var overlay=document.getElementById('coord-notif-overlay');
+  var caret=document.getElementById('notif-caret');
+  if(panel) panel.style.display='none';
+  if(overlay) overlay.style.display='none';
+  if(caret) caret.textContent='▼';
+}
+function _updateNotifBadge(){
+  var badge=document.getElementById('notif-badge');
+  var label=document.getElementById('notif-btn-label');
+  var panel=document.getElementById('coord-notif-panel');
+  var open=panel&&panel.style.display==='block';
+  if(badge){if(COORD_NOTIFS.length&&!open){badge.textContent=COORD_NOTIFS.length;badge.style.display='inline-flex';}else{badge.style.display='none';}}
+  if(label) label.textContent=COORD_NOTIFS.length?COORD_NOTIFS.length+' notificacion'+(COORD_NOTIFS.length>1?'es':''):'Sin notificaciones';
+}
 function renderCoordNotifs() {
   var container = document.getElementById('coord-notifs');
   if (!container) return;
-  if (!COORD_NOTIFS.length) { container.innerHTML='<div style="font-size:.7rem;color:var(--muted);padding:4px 6px;">Sin notificaciones</div>'; return; }
+  if (!COORD_NOTIFS.length) {
+    container.innerHTML='<div style="text-align:center;padding:18px 8px;color:var(--muted);font-size:.72rem;">🔔 Sin notificaciones</div>';
+    _updateNotifBadge(); return;
+  }
   var h = '';
   COORD_NOTIFS.forEach(function(n){
-    h += '<div class="coord-notif" id="cnotif-'+n.id+'" style="cursor:'+(n.of_sap?'pointer':'default')+';" onclick="handleCoordNotifClick(\''+n.id+'\')">';
-    h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px;">';
-    h += '<span style="font-size:.8rem;">'+n.icon+'</span>';
-    h += '<div style="flex:1;min-width:0;"><div style="font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(n.text)+'</div>';
-    if(n.detail) h += '<div style="font-size:.65rem;color:var(--dim);margin-top:2px;line-height:1.5;white-space:pre-line;">'+esc(n.detail)+'</div>';
-    h += '<div style="font-size:.58rem;color:var(--muted);margin-top:1px;">'+n.time+'</div></div>';
-    h += '<button onclick="event.stopPropagation();removeCoordNotif(\''+n.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;flex-shrink:0;" title="Eliminar">✕</button>';
-    h += '</div></div>';
+    var bc=n.event==='op_paused'?'rgba(245,158,11,.35)':
+           (n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.35)':
+           n.event==='op_finished'?'rgba(59,130,246,.35)':'rgba(255,255,255,.1)';
+    var bg=n.event==='op_paused'?'rgba(245,158,11,.06)':
+           (n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.06)':'rgba(255,255,255,.02)';
+    h+='<div class="coord-notif" id="cnotif-'+n.id+'" style="cursor:'+(n.of_sap?'pointer':'default')+';background:'+bg+';border-color:'+bc+';margin-bottom:5px;" onclick="handleCoordNotifClick(\''+n.id+'\')">';
+    h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">';
+    h+='<span style="font-size:.9rem;margin-top:1px;">'+n.icon+'</span>';
+    h+='<div style="flex:1;min-width:0;">';
+    h+='<div style="font-size:.72rem;font-weight:600;line-height:1.3;">'+esc(n.text)+'</div>';
+    if(n.detail) h+='<div style="font-size:.66rem;color:var(--adim);margin-top:3px;line-height:1.5;white-space:pre-line;">'+esc(n.detail)+'</div>';
+    h+='<div style="font-size:.58rem;color:var(--muted);margin-top:3px;">'+n.time+'</div>';
+    h+='</div>';
+    h+='<button onclick="event.stopPropagation();removeCoordNotif(\''+n.id+'\')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.75rem;flex-shrink:0;padding:2px 4px;" title="Eliminar">✕</button>';
+    h+='</div></div>';
   });
-  h += '<button onclick="clearAllCoordNotifs()" style="width:100%;margin-top:6px;padding:4px;background:rgba(207,51,51,.08);border:1px solid rgba(207,51,51,.2);border-radius:4px;color:var(--red);font-size:.68rem;cursor:pointer;font-family:\'Archivo\',sans-serif;">🗑 Eliminar todas</button>';
-  container.innerHTML = h;
+  h+='<button onclick="clearAllCoordNotifs()" style="width:100%;margin-top:6px;padding:5px;background:rgba(207,51,51,.08);border:1px solid rgba(207,51,51,.2);border-radius:6px;color:#f87171;font-size:.68rem;cursor:pointer;font-family:\'Archivo\',sans-serif;">🗑 Eliminar todas</button>';
+  container.innerHTML=h;
+  _updateNotifBadge();
 }
-function removeCoordNotif(id) { COORD_NOTIFS = COORD_NOTIFS.filter(function(n){return n.id!==id;}); renderCoordNotifs(); }
-function clearAllCoordNotifs() { COORD_NOTIFS=[]; renderCoordNotifs(); }
+function removeCoordNotif(id){COORD_NOTIFS=COORD_NOTIFS.filter(function(n){return n.id!==id;});renderCoordNotifs();}
+function clearAllCoordNotifs(){COORD_NOTIFS=[];renderCoordNotifs();closeCoordNotifPanel();}
 function handleCoordNotifClick(id) {
   var n = COORD_NOTIFS.find(function(x){return x.id===id;});
   if (!n) return;
