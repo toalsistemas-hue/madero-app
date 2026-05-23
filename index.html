@@ -3827,14 +3827,21 @@ function sqAddOF(of_sap){
 }
 
 // Sync op.cola numbers from queue position
+// Solo ops pending reciben número de cola (running/paused no se numeran en cola)
 function sqSyncColaNumbers(){
   STATIONS.forEach(function(st){
     var q=sqGetQueue(st);
-    q.forEach(function(item,i){
+    var colaIdx = 1;
+    q.forEach(function(item){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
       if(!aof) return;
       var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(op) op.cola=i+1;
+      if(!op) return;
+      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+        op.cola = null; // en operación/pausa — sin número de cola
+      } else if(op.status==='pending'||op.status==='retrabajo'){
+        op.cola = colaIdx++;
+      }
     });
   });
 }
@@ -4448,7 +4455,7 @@ function renderHist(){
     if(pending.length){
       h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
       pending.forEach(function(x,qi){
-        var colaN = x.op.cola||'—';
+        var colaN = qi+1; // número relativo en la cola visible (1,2,3...)
         h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
         h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
