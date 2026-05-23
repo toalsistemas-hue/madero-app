@@ -2860,7 +2860,15 @@ window._fabInitDone = false;
 function fabMobileInit(){
   if(window._fabInitDone) return;
   window._fabInitDone = true;
-  initActiveOFs();
+  // Si ya cargamos datos desde SP (activeOFs con ops reales), NO llamar initActiveOFs
+  // que resetearía todo a status pending desde plantillas de demo
+  var hasSpData = DB.activeOFs && DB.activeOFs.some(function(aof){
+    return aof.ops && aof.ops.some(function(op){ return op._spId; });
+  });
+  if(!hasSpData){
+    // Solo usar initActiveOFs si no hay datos SP (modo demo o primer arranque sin login)
+    initActiveOFs();
+  }
   (function seedQueues(){
     DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(o){ sqAddOF(o.of_sap); });
     sqSyncColaNumbers();
@@ -6935,7 +6943,9 @@ function applyHistFilter(){histFilter.from=document.getElementById("hist-from").
 // ═══════════════════════════════════════════════════════
 // APP MÓVIL — Lógica compartiendo DB con Coordinador
 // ═══════════════════════════════════════════════════════
-var APP = { role:"supervisor", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
+// APP already declared above — merge defaults without resetting expanded state
+if(typeof APP==='undefined') var APP = { role:"supervisor", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
+else { APP.calTimes=APP.calTimes||{}; APP.role=APP.role||"supervisor"; APP.view=APP.view||"hoy"; }
 APP.expanded["14489"]=true;
 
 // Recibir sync desde Coordinador
@@ -7868,7 +7878,15 @@ window._fabInitDone = false;
 function fabMobileInit(){
   if(window._fabInitDone) return;
   window._fabInitDone = true;
-  initActiveOFs();
+  // Si ya cargamos datos desde SP (activeOFs con ops reales), NO llamar initActiveOFs
+  // que resetearía todo a status pending desde plantillas de demo
+  var hasSpData = DB.activeOFs && DB.activeOFs.some(function(aof){
+    return aof.ops && aof.ops.some(function(op){ return op._spId; });
+  });
+  if(!hasSpData){
+    // Solo usar initActiveOFs si no hay datos SP (modo demo o primer arranque sin login)
+    initActiveOFs();
+  }
   (function seedQueues(){
     DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(o){ sqAddOF(o.of_sap); });
     sqSyncColaNumbers();
