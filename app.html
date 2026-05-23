@@ -5449,6 +5449,17 @@ async function appGraphPatch(endpoint, body, retry) {
   return true;
 }
 
+async function appGraphDelete(endpoint) {
+  const token = await appGetToken();
+  const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  if (!res.ok && res.status !== 204) throw new Error('DELETE ' + res.status);
+  return true;
+}
+
 async function appGraphPost(endpoint, body, retry) {
   const token = await appGetToken();
   const url = 'https://graph.microsoft.com/v1.0/' + endpoint;
@@ -5509,7 +5520,16 @@ async function appLoadDataFromSP() {
       rotacion: f.Rotacion||'', sub_articulos: f.Sub_Articulos?f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean):[],
       programadoHoy: f.Programado_Hoy===true, status: f.Status||'Sin programar',
     }));
-    const allOps = (opsRes.value||[]).map(i => i.fields);
+    // Deduplicar ops de SP: si hay dos items con mismo OF_SAP+Op_ID, mantener el de _spId mayor (más reciente)
+    var rawOps = (opsRes.value||[]).map(function(i){ var f=i.fields; f.ID=i.id; return f; });
+    var opsSeen = {};
+    rawOps.forEach(function(o){
+      var key = (o.OF_SAP||'')+'__'+(o.Op_ID||o.Title||'');
+      if(!opsSeen[key] || parseInt(o.ID||0) > parseInt(opsSeen[key].ID||0)){
+        opsSeen[key] = o;
+      }
+    });
+    const allOps = Object.values(opsSeen);
     DB.activeOFs = ofs.filter(f=>f.Programado_Hoy===true||['Planeacion','En Fabricacion'].includes(f.Status)).map(f => ({
       of_sap:      f.OF_SAP||f.Title||'',
       pedido:      f.Numero_Pedido||f.Pedido||'',
@@ -5557,12 +5577,63 @@ async function appLoadDataFromSP() {
     (stStatusRes.value||[]).forEach(i=>{const f=i.fields;const name=f.Estacion||f.Title||'';if(name)window.DB_STATION_STATUS[name]={status:f.Status||'activa',nota:f.Nota||'',plan:JSON.parse(f.Plan_JSON||'[]')};});
     window.STATIONS.forEach(s=>{if(!window.DB_STATION_STATUS[s])window.DB_STATION_STATUS[s]={status:'activa',nota:'',plan:[]};});
     DB.timers = {};
-    (timersRes.value||[]).forEach(i=>{const f=i.fields;const key=f.Timer_Key||f.Title||'';if(key)DB.timers[key]={start:parseInt(f.Start_MS||Date.now()),elapsed:parseInt(f.Elapsed_MS||0),running:f.Running===true,_spId:i.id};});
+    (timersRes.value||[]).forEach(function(i){
+      const f=i.fields;
+      const key=f.Timer_Key||f.Title||'';
+      if(!key) return;
+      var startMS = parseInt(f.Start_MS||Date.now());
+      var elapsedMS = parseInt(f.Elapsed_MS||0);
+      var isRunning = f.Running===true;
+      // Si el timer está running, recalcular start para que el elapsed acumulado sea correcto
+      // start = ahora - (elapsed acumulado + tiempo desde startMS)
+      if(isRunning && startMS > 0) {
+        // El timer arrancó en startMS con elapsedMS ya acumulado
+        // Para que fmtM() calcule bien: mantener start=startMS (la UI suma Date.now()-start)
+        // pero el elapsed previo se pierde. Compensar: start = Date.now() - elapsedMS - (Date.now()-startMS)
+        // = startMS - elapsedMS (ajustado para incluir el tiempo previo pausado)
+        startMS = startMS - elapsedMS;
+      }
+      DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
+    });
     window.DB_STATION_QUEUE=window.DB_STATION_QUEUE||{};
     window.STATIONS.forEach(s=>{if(!window.DB_STATION_QUEUE[s])window.DB_STATION_QUEUE[s]=[];});
     const colaItems=(colaRes.value||[]).map(i=>i.fields).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
     colaItems.forEach(c=>{const st=c.Estacion||c.Title||'';if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];window.DB_STATION_QUEUE[st].push({of_sap:c.OF_SAP||'',op_id:c.Op_ID||'',tipo:c.Tipo_Cola||'normal'});});
     sqSyncColaNumbers();
+    // Garantizar que ops con status=running tengan timer activo en memoria
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if(op.status === 'running'){
+          var timerKey = aof.of_sap + '_' + op.id;
+          if(!DB.timers[timerKey] || !DB.timers[timerKey].running){
+            // Crear/reparar timer en memoria basado en op.inicio (hora de inicio)
+            var nowMs = Date.now();
+            var startMs = nowMs; // fallback: asumir que acaba de iniciar
+            if(op.inicio){
+              // Convertir "06:36 p.m." a timestamp de hoy
+              var parts = op.inicio.match(/(\d+):(\d+)\s*(a|p)\.m\./i);
+              if(parts){
+                var h = parseInt(parts[1]); var m2 = parseInt(parts[2]);
+                var pm = parts[3].toLowerCase()==='p';
+                if(pm && h!==12) h+=12;
+                if(!pm && h===12) h=0;
+                var d = new Date();
+                d.setHours(h, m2, 0, 0);
+                startMs = d.getTime();
+              }
+            }
+            var existingTimer = DB.timers[timerKey];
+            DB.timers[timerKey] = {
+              start: startMs,
+              elapsed: existingTimer ? (existingTimer.elapsed||0) : 0,
+              running: true,
+              _spId: existingTimer ? existingTimer._spId : null
+            };
+            console.log('Timer restaurado para op running:', timerKey, 'inicio:', op.inicio);
+          }
+        }
+      });
+    });
     // Load templates for filling ops when FT_Operaciones is empty
     DB.templates = DB.templates || {};
     (tplRes.value||[]).forEach(function(i){
@@ -5574,6 +5645,26 @@ async function appLoadDataFromSP() {
       DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
         subarts:[], ops:ops};
     });
+    // Limpiar duplicados en SP (eliminar items con ID menor que tienen mismo OF_SAP+Op_ID)
+    var dupesToDelete = [];
+    var checkMap = {};
+    rawOps.forEach(function(o){
+      var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
+      if(!k.includes('__')) return;
+      if(!checkMap[k]){ checkMap[k]=o; return; }
+      // Hay duplicado — marcar el de ID menor para borrar
+      var older = parseInt(checkMap[k].ID||0) < parseInt(o.ID||0) ? checkMap[k] : o;
+      if(older.ID) dupesToDelete.push(older.ID);
+      checkMap[k] = parseInt(checkMap[k].ID||0) > parseInt(o.ID||0) ? checkMap[k] : o;
+    });
+    if(dupesToDelete.length && appSiteId){
+      console.log('Limpiando', dupesToDelete.length, 'duplicados en FT_Operaciones...');
+      dupesToDelete.forEach(function(spId){
+        appGraphDelete('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+spId)
+          .then(function(){ console.log('Duplicado eliminado:', spId); })
+          .catch(function(e){ console.warn('No se pudo eliminar duplicado:', spId, e.message); });
+      });
+    }
     console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
   } catch(e) { console.warn('appLoadDataFromSP error:', e); }
 }
@@ -10283,7 +10374,14 @@ async function appReloadOpsFromSP() {
   try {
     const siteId = await appGetSiteId();
     var opsRes = await appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
-    var allOps = (opsRes.value||[]).map(function(i){ return i.fields; });
+    // Deduplicar: mantener solo el item con ID mayor (más reciente) por OF_SAP+Op_ID
+    var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields; f.ID=i.id; return f; });
+    var seenR = {};
+    rawOpsR.forEach(function(o){
+      var k=(o.OF_SAP||'')+'__'+(o.Op_ID||o.Title||'');
+      if(!seenR[k]||parseInt(o.ID||0)>parseInt(seenR[k].ID||0)) seenR[k]=o;
+    });
+    var allOps = Object.values(seenR);
     // Update ops on existing activeOFs — don't replace the whole array
     DB.activeOFs.forEach(function(aof) {
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
