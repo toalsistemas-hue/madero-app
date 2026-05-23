@@ -3043,7 +3043,20 @@ async function ftLoadDataFromSP() {
 
     // Build DB.activeOFs with their operations
     // Preserve both fields AND the item id (needed for PATCH)
-    const allOps = (opsRes.value||[]).map(i => Object.assign({}, i.fields, { _itemId: i.id }));
+    // Deduplicar ops de SP: priorizar running>paused>done>pending, luego ID mayor
+    var _rawOps = (opsRes.value||[]).map(i => Object.assign({}, i.fields, { _itemId: i.id, _numId: parseInt(i.id||0) }));
+    var _spPrio = {running:5, paused:4, validating:3, done:2, pending:1};
+    var _seen = {};
+    _rawOps.forEach(function(o){
+      var k = (o.OF_SAP||'')+'__'+(o.Op_ID||'');
+      if(!k||k==='__') return;
+      var ex = _seen[k];
+      if(!ex){ _seen[k]=o; return; }
+      var nP=_spPrio[o.Status||'pending']||1, eP=_spPrio[ex.Status||'pending']||1;
+      if(nP>eP||(nP===eP&&o._numId>ex._numId)) _seen[k]=o;
+    });
+    const allOps = Object.values(_seen);
+    if(_rawOps.length !== allOps.length) console.log('Portal: ops deduplicadas', _rawOps.length, '→', allOps.length);
     DB.activeOFs = ofs
       .filter(f => f.Programado_Hoy === true || ['Planeacion','En Fabricacion'].includes(f.Status))
       .map(f => {
