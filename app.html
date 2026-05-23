@@ -5350,6 +5350,13 @@ async function appLoginSuccess() {
   document.getElementById('app-login-status').textContent = '';
   await appLoadDataFromSP();
   try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load:', e); }
+  // Auto-expandir OFs con operaciones activas (running/paused) para que sean visibles
+  DB.activeOFs.forEach(function(aof){
+    var hasActive = aof.ops.some(function(op){
+      return op.status==='running' || op.status==='paused' || op.status==='validating';
+    });
+    if(hasActive) APP.expanded[aof.of_sap] = true;
+  });
   fabMobileInit();
   renderApp();
   if (typeof startSPPolling === 'function') startSPPolling();
