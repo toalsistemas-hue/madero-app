@@ -2550,6 +2550,12 @@ function appConfirmReanudar(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   if(_traspasoTipo==='mismo'){
+    // Mismo técnico continúa — actualizar qty_ok parcial del turno anterior si existe
+    var turnoAData = op.turnos&&op.turnos.length ? op.turnos[op.turnos.length-1] : null;
+    if(turnoAData && turnoAData.qty_ok>0){
+      op.qty_ok = (op.qty_ok||0) + turnoAData.qty_ok;
+      op.qty_def = (op.qty_def||0) + (turnoAData.qty_def||0);
+    }
     closeAppModal('app-modal-traspaso');
     _doResumeOp(ctx.of_sap,ctx.op_id,op.tecnico,op.ayudantes||[]);
   } else {
@@ -2589,8 +2595,50 @@ function appConfirmReanudar(){
       time:nowT(),read:false
     });
     closeAppModal('app-modal-traspaso');
+    // ── Persistir en SP ────────────────────────────────────────────────────────
+    (async function(){
+      try {
+        if(!appSiteId) await appGetSiteId();
+        // 1. Guardar op A como done (con piezas parciales del turno A)
+        await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+        console.log('✅ Turno A done guardado en SP');
+        // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
+        if(newOp && typeof appGraphPost==='function'){
+          var seqNum = of.ops.indexOf(newOp)+1;
+          var postFields = {
+            Title:     newOp.nombre,
+            OF_SAP:    ctx.of_sap,
+            Op_ID:     newOp.id,
+            Estacion:  newOp.estacion||'',
+            Tip:       newOp.tipo||'Secuencial',
+            Tecnico:   newOp.tecnico||'',
+            Status:    'pending',
+            Qty_Total: newOp.qty_total||0,
+            Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
+            Secuencia: seqNum,
+            Mins:      0,
+            Inicio:    '', Fin:''
+          };
+          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items',{fields:postFields});
+          newOp._spId = res.id;
+          newOp.isTemplate = false;
+          console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+        }
+        // 3. Guardar timer de turno A como finalizado
+        if(typeof appSaveTimerToSP==='function'){
+          await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
+        }
+      } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
+    })();
+    sqSyncColaNumbers();
     renderApp();
-    fireSync('app','turno_traspaso',{of_sap:ctx.of_sap,nuevo_tech:nuevoTech,pzas:pzRest});
+    fireSync('app','turno_traspaso',{
+      of_sap:      ctx.of_sap,
+      nuevo_tech:  nuevoTech,
+      pzas:        pzRest,
+      op_name:     op.nombre,
+      op_name_b:   newOp.nombre,
+    });
   }
 }
 function _doResumeOp(sap,opId,tecnico,ayudantes){
@@ -7634,6 +7682,12 @@ function appConfirmReanudar(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   if(_traspasoTipo==='mismo'){
+    // Mismo técnico continúa — actualizar qty_ok parcial del turno anterior si existe
+    var turnoAData = op.turnos&&op.turnos.length ? op.turnos[op.turnos.length-1] : null;
+    if(turnoAData && turnoAData.qty_ok>0){
+      op.qty_ok = (op.qty_ok||0) + turnoAData.qty_ok;
+      op.qty_def = (op.qty_def||0) + (turnoAData.qty_def||0);
+    }
     closeAppModal('app-modal-traspaso');
     _doResumeOp(ctx.of_sap,ctx.op_id,op.tecnico,op.ayudantes||[]);
   } else {
@@ -7673,8 +7727,50 @@ function appConfirmReanudar(){
       time:nowT(),read:false
     });
     closeAppModal('app-modal-traspaso');
+    // ── Persistir en SP ────────────────────────────────────────────────────────
+    (async function(){
+      try {
+        if(!appSiteId) await appGetSiteId();
+        // 1. Guardar op A como done (con piezas parciales del turno A)
+        await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+        console.log('✅ Turno A done guardado en SP');
+        // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
+        if(newOp && typeof appGraphPost==='function'){
+          var seqNum = of.ops.indexOf(newOp)+1;
+          var postFields = {
+            Title:     newOp.nombre,
+            OF_SAP:    ctx.of_sap,
+            Op_ID:     newOp.id,
+            Estacion:  newOp.estacion||'',
+            Tip:       newOp.tipo||'Secuencial',
+            Tecnico:   newOp.tecnico||'',
+            Status:    'pending',
+            Qty_Total: newOp.qty_total||0,
+            Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
+            Secuencia: seqNum,
+            Mins:      0,
+            Inicio:    '', Fin:''
+          };
+          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items',{fields:postFields});
+          newOp._spId = res.id;
+          newOp.isTemplate = false;
+          console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+        }
+        // 3. Guardar timer de turno A como finalizado
+        if(typeof appSaveTimerToSP==='function'){
+          await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
+        }
+      } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
+    })();
+    sqSyncColaNumbers();
     renderApp();
-    fireSync('app','turno_traspaso',{of_sap:ctx.of_sap,nuevo_tech:nuevoTech,pzas:pzRest});
+    fireSync('app','turno_traspaso',{
+      of_sap:      ctx.of_sap,
+      nuevo_tech:  nuevoTech,
+      pzas:        pzRest,
+      op_name:     op.nombre,
+      op_name_b:   newOp.nombre,
+    });
   }
 }
 function _doResumeOp(sap,opId,tecnico,ayudantes){
