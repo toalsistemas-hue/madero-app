@@ -4768,48 +4768,66 @@ function renderQueueMgr(){
     document.getElementById('qmgr-subtitle').textContent='0 operaciones';
     return;
   }
-  document.getElementById('qmgr-subtitle').textContent=q.length+' operaciones · '+q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
-  var h='';
+  // Separar running/paused de pending para mostrarlos diferente
+  var runningItems=[], pendingItems=[];
   q.forEach(function(item,i){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
-    var isRunning=op.status==='running';
-    var isPrio=item.tipo==='prioritaria';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(46,160,67,.08)':isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
-    var borderCol=isRunning?'rgba(46,160,67,.35)':isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    item._op=op; item._aof=aof; item._origIdx=i;
+    if(op.status==='running'||op.status==='paused') runningItems.push(item);
+    else pendingItems.push(item);
+  });
+  document.getElementById('qmgr-subtitle').textContent=
+    (runningItems.length?runningItems.length+' en curso · ':'')+
+    pendingItems.length+' en cola · '+
+    q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
+  var h='';
+  // ── En operación / Pausa ──────────────────────────────────────────
+  runningItems.forEach(function(item){
+    var op=item._op; var isRunning=op.status==='running';
+    var bgCol=isRunning?'rgba(46,160,67,.1)':'rgba(245,158,11,.08)';
+    var borderCol=isRunning?'rgba(46,160,67,.4)':'rgba(245,158,11,.35)';
+    var icon=isRunning?'▶':'⏸'; var iconCol=isRunning?'var(--agreen)':'var(--yellow)';
+    var label=isRunning?'En operación':'En pausa';
     h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
-    // Slot number badge
-    var slotCol=isTop5?'#f59e0b':'var(--dim)';
-    var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
-    h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
-    // Op info
+    h+='<div style="min-width:28px;height:28px;background:'+borderCol.replace('.4','0.2').replace('.35','0.2')+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.85rem;">'+icon+'</div>';
     h+='<div style="flex:1;min-width:0;">';
-    h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
+    h+='<div style="font-size:.8rem;font-weight:600;color:'+iconCol+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
     h+='</div>';
-    // Status
-    if(isRunning){
-      h+='<span style="font-size:.65rem;color:var(--green);font-weight:700;">▶ En curso</span>';
-    } else if(isPrio){
-      h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
-    }
-    // Move buttons (disabled if running)
-    h+='<div style="display:flex;flex-direction:column;gap:2px;">';
-    if(!isRunning){
-      h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
-      h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
-    } else {
-      h+='<span style="font-size:.6rem;color:var(--muted);">—</span>';
-    }
-    h+='</div>';
-    // Remove from queue
-    if(!isRunning){
-      h+='<button onclick="qmgrRemove('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px 4px;" title="Quitar de cola">✕</button>';
-    }
+    h+='<span style="font-size:.65rem;color:'+iconCol+';font-weight:700;white-space:nowrap;">'+label+'</span>';
     h+='</div>';
   });
+  // ── Cola de espera ────────────────────────────────────────────────
+  if(pendingItems.length){
+    if(runningItems.length){
+      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">★ Cola de espera</div>';
+    }
+    pendingItems.forEach(function(item,pendIdx){
+      var op=item._op; var i=item._origIdx;
+      var isPrio=item.tipo==='prioritaria';
+      var isTop5=pendIdx<5;
+      var bgCol=isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
+      var borderCol=isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+      var slotNum=pendIdx+1;
+      var slotCol=isTop5?'#f59e0b':'var(--adim)';
+      var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
+      h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+slotNum+'</div>';
+      h+='<div style="flex:1;min-width:0;">';
+      h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
+      h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
+      h+='</div>';
+      if(isPrio) h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
+      h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+      h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
+      h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
+      h+='</div>';
+      h+='<button onclick="qmgrRemove('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px 4px;" title="Quitar de cola">✕</button>';
+      h+='</div>';
+    });
+  }
   document.getElementById('qmgr-list').innerHTML=h;
 }
 function qmgrMove(idx, dir){
@@ -9629,48 +9647,66 @@ function renderQueueMgr(){
     document.getElementById('qmgr-subtitle').textContent='0 operaciones';
     return;
   }
-  document.getElementById('qmgr-subtitle').textContent=q.length+' operaciones · '+q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
-  var h='';
+  // Separar running/paused de pending para mostrarlos diferente
+  var runningItems=[], pendingItems=[];
   q.forEach(function(item,i){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
-    var isRunning=op.status==='running';
-    var isPrio=item.tipo==='prioritaria';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(46,160,67,.08)':isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
-    var borderCol=isRunning?'rgba(46,160,67,.35)':isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    item._op=op; item._aof=aof; item._origIdx=i;
+    if(op.status==='running'||op.status==='paused') runningItems.push(item);
+    else pendingItems.push(item);
+  });
+  document.getElementById('qmgr-subtitle').textContent=
+    (runningItems.length?runningItems.length+' en curso · ':'')+
+    pendingItems.length+' en cola · '+
+    q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
+  var h='';
+  // ── En operación / Pausa ──────────────────────────────────────────
+  runningItems.forEach(function(item){
+    var op=item._op; var isRunning=op.status==='running';
+    var bgCol=isRunning?'rgba(46,160,67,.1)':'rgba(245,158,11,.08)';
+    var borderCol=isRunning?'rgba(46,160,67,.4)':'rgba(245,158,11,.35)';
+    var icon=isRunning?'▶':'⏸'; var iconCol=isRunning?'var(--agreen)':'var(--yellow)';
+    var label=isRunning?'En operación':'En pausa';
     h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
-    // Slot number badge
-    var slotCol=isTop5?'#f59e0b':'var(--dim)';
-    var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
-    h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
-    // Op info
+    h+='<div style="min-width:28px;height:28px;background:'+borderCol.replace('.4','0.2').replace('.35','0.2')+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:.85rem;">'+icon+'</div>';
     h+='<div style="flex:1;min-width:0;">';
-    h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
+    h+='<div style="font-size:.8rem;font-weight:600;color:'+iconCol+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
     h+='</div>';
-    // Status
-    if(isRunning){
-      h+='<span style="font-size:.65rem;color:var(--green);font-weight:700;">▶ En curso</span>';
-    } else if(isPrio){
-      h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
-    }
-    // Move buttons (disabled if running)
-    h+='<div style="display:flex;flex-direction:column;gap:2px;">';
-    if(!isRunning){
-      h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
-      h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
-    } else {
-      h+='<span style="font-size:.6rem;color:var(--muted);">—</span>';
-    }
-    h+='</div>';
-    // Remove from queue
-    if(!isRunning){
-      h+='<button onclick="qmgrRemove('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px 4px;" title="Quitar de cola">✕</button>';
-    }
+    h+='<span style="font-size:.65rem;color:'+iconCol+';font-weight:700;white-space:nowrap;">'+label+'</span>';
     h+='</div>';
   });
+  // ── Cola de espera ────────────────────────────────────────────────
+  if(pendingItems.length){
+    if(runningItems.length){
+      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">★ Cola de espera</div>';
+    }
+    pendingItems.forEach(function(item,pendIdx){
+      var op=item._op; var i=item._origIdx;
+      var isPrio=item.tipo==='prioritaria';
+      var isTop5=pendIdx<5;
+      var bgCol=isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
+      var borderCol=isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+      var slotNum=pendIdx+1;
+      var slotCol=isTop5?'#f59e0b':'var(--adim)';
+      var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
+      h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+slotNum+'</div>';
+      h+='<div style="flex:1;min-width:0;">';
+      h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
+      h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
+      h+='</div>';
+      if(isPrio) h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
+      h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+      h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
+      h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
+      h+='</div>';
+      h+='<button onclick="qmgrRemove('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px 4px;" title="Quitar de cola">✕</button>';
+      h+='</div>';
+    });
+  }
   document.getElementById('qmgr-list').innerHTML=h;
 }
 function qmgrMove(idx, dir){
@@ -10263,9 +10299,9 @@ async function appReloadOpsFromSP() {
           tecnico:     o.Tecnico || '',
           ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
           status:      o.Status || 'pending',
-          inicio:      o.Inicio ? new Date(o.Inicio).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
+          inicio:      o.Inicio || '',
           _inicioISO:  '',
-          fin:         o.Fin ? new Date(o.Fin).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
+          fin:         o.Fin || '',
           _finISO:     '',
           mins:        parseInt(o.Mins||0),
           qty_total:   parseInt(o.Qty_Total||10),
