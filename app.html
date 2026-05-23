@@ -7624,8 +7624,10 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
-  var prev=DB.timers[key]?DB.timers[key].elapsed||0:0;
-  DB.timers[key]={start:Date.now()-prev,elapsed:prev,running:true};
+  // elapsed acumulado antes de reanudar (de pausa)
+  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
+  // start = now - prevElapsed → getEl = 0 + (now-start) = prevElapsed cuando inmediatamente reanuda
+  DB.timers[key] = {start: Date.now()-prevElapsed, elapsed: 0, running: true};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original
   // Reanudar timers de ayudantes
@@ -7633,8 +7635,17 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now()-prev2,elapsed:prev2,running:true};
+    DB.timers[ak]={start:Date.now()-prev2,elapsed:0,running:true};
   });
+  // SP save al reanudar
+  (async function(){
+    try {
+      if(!appSiteId) await appGetSiteId();
+      await appSaveOpToSP(sap, opId);
+      console.log('✅ Reanudar SP OK _spId:', DB.activeOFs.find(function(a){return a.of_sap===sap;})&&DB.activeOFs.find(function(a){return a.of_sap===sap;}).ops.find(function(o){return o.id===opId;})._spId);
+      if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(sap+'_'+opId);
+    } catch(e){ console.warn('❌ Reanudar SP error:', e.message||e); }
+  })();
   renderApp();
   _refreshStationViews();
 }
