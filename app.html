@@ -2456,22 +2456,30 @@ function appConfirmPause(){
     }
   });
   closeAppModal("app-modal-pause");renderApp();_refreshStationViews();
-  // Guardar pausa en SP directamente (sin depender de fireSync)
-  if(typeof appSaveOpToSP==='function' && appSiteId){
-    var _pauseOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
-    var _pauseOp = _pauseOf ? _pauseOf.ops.find(function(o){return o.id===ctx.op_id;}) : null;
-    console.log('Guardando pausa en SP — _spId:', _pauseOp?_pauseOp._spId:'OP NO ENCONTRADA',
-      'status:', _pauseOp?_pauseOp.status:'?',
-      'pauseReason:', _pauseOp?_pauseOp.pauseReason:'?');
-    appSaveOpToSP(ctx.of_sap, ctx.op_id).then(function(){
-      console.log('✅ Pausa guardada en SP');
-    }).catch(function(e){
-      console.warn('❌ SP pause save:', e.message||e);
-    });
-    if(typeof appSaveTimerToSP==='function'){
-      appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id).catch(function(e){console.warn('SP timer pause:',e.message);});
+  // Guardar pausa en SP — siempre intentar, obtener siteId si no está cargado
+  (async function(){
+    try {
+      var _pauseOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
+      var _pauseOp = _pauseOf ? _pauseOf.ops.find(function(o){return o.id===ctx.op_id;}) : null;
+      console.log('Pausa SP — siteId:', appSiteId,
+        '_spId:', _pauseOp?_pauseOp._spId:'OP NO ENCONTRADA',
+        'status:', _pauseOp?_pauseOp.status:'?',
+        'reason:', _pauseOp?(_pauseOp.pauseReason||'').substring(0,30):'?');
+      if(!appSiteId) {
+        console.log('Obteniendo siteId...');
+        await appGetSiteId();
+        console.log('siteId obtenido:', appSiteId);
+      }
+      if(!_pauseOp) { console.warn('Op no encontrada en DB para pausa SP'); return; }
+      await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+      console.log('✅ Pausa guardada en SP — status:', _pauseOp.status, '_spId:', _pauseOp._spId);
+      if(typeof appSaveTimerToSP==='function'){
+        await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
+      }
+    } catch(e) {
+      console.warn('❌ Pausa SP error:', e.message||e);
     }
-  }
+  })();
   fireSync("app","op_paused",{of_sap:ctx.of_sap, op_id:ctx.op_id, tipo:_pauseTipo});
 }
 
