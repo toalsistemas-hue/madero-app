@@ -2437,7 +2437,7 @@ function appConfirmPause(){
     if(!op.turnos)op.turnos=[];
     op.turnos.push({
       tecnico:op.tecnico,ayudantes:(op.ayudantes||[]).slice(),
-      inicio:op.inicio,_inicioISO:op._inicioISO||'',fin:nowT(),_finISO:nowISO(),mins:turnoMins,
+      inicio:op.inicio,fin:nowT(),mins:turnoMins,
       qty_ok:pzOk,qty_def:pzDef,qty_rest:pzRest
     });
     op.status='paused';
@@ -2531,7 +2531,7 @@ function appConfirmReanudar(){
     var pzAok=turnoA?turnoA.qty_ok:0;
     var pzAdef=turnoA?turnoA.qty_def:0;
     // Marcar op original como completada por turno A (parcialmente)
-    op.status='done';op.fin=nowT();op._finISO=nowISO();
+    op.status='done';op.fin=nowT();
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
@@ -3350,7 +3350,7 @@ function doFinish(ctx, el, ok, def, rej) {
   if (!op) return;
   var key = ctx.of_sap+'_'+ctx.op_id;
   var obs = document.getElementById('app-finish-obs').value;
-  op.status='done'; op.fin=nowT(); op._finISO=nowISO(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
+  op.status='done'; op.fin=nowT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
   if(obs) op.obs=obs;
   if (DB.timers[key]) DB.timers[key].running=false;
   // Auto-cerrar timers de ayudantes que sigan corriendo → heredan el tiempo total de la op
@@ -3478,7 +3478,7 @@ function appConfirmFinish(){
 
   function doFinishLocal(){
     var elFinal = getEl(key); // recalculate at actual confirm moment
-    op.status="done";op.fin=nowT();op._finISO=nowISO();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op.status="done";op.fin=nowT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -3877,7 +3877,7 @@ function _doStartOp(sap, opId){
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op = of ? of.ops.find(function(o){return o.id===opId;}) : null;
   if(!op) return;
-  op.status='running'; op.inicio=nowT(); op._inicioISO=nowISO(); op.calResult=null; op.needsCal=false;
+  op.status='running'; op.inicio=nowT(); op.calResult=null; op.needsCal=false;
   DB.timers[sap+'_'+opId]={start:Date.now(),elapsed:0,running:true};
   // Iniciar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){
@@ -3887,6 +3887,14 @@ function _doStartOp(sap, opId){
     }
   });
   renderApp();
+  // Persistir en SP directamente (fireSync override puede haber sido pisado por patches)
+  if (typeof appSaveOpToSP === 'function' && appSiteId) {
+    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('appSaveOpToSP (start):', e.message); });
+  }
+  if (typeof appSaveTimerToSP === 'function' && appSiteId) {
+    var _timerKey = sap + '_' + opId;
+    appSaveTimerToSP(_timerKey).catch(function(e){ console.warn('appSaveTimerToSP (start):', e.message); });
+  }
   fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
 
@@ -5500,11 +5508,7 @@ async function appLoadDataFromSP() {
         ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
                  : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
         status: o.Status||'pending',
-        inicio: o.Inicio ? new Date(o.Inicio).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
-        _inicioISO: o.Inicio||'',
-        fin: o.Fin ? new Date(o.Fin).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
-        _finISO: o.Fin||'',
-        mins: parseInt(o.Mins||0),
+        inicio: o.Inicio||'', fin: o.Fin||'', mins: parseInt(o.Mins||0),
         qty_total: parseInt(o.Qty_Total||10), qty_ok: parseInt(o.Qty_OK||0),
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
         cola: parseInt(o.Cola||0)||null, isRetrabajo: o.isRetrabajo===true,
@@ -5565,8 +5569,8 @@ async function appSaveOpToSP(of_sap, opId) {
     if (!op) return;
 
     // ── ISO para SP, display para pantalla ───────────────────────────────────
-    const inicioVal = op._inicioISO || (op.inicio && op.inicio.includes('T') ? op.inicio : '');
-    const finVal    = op._finISO    || (op.fin    && op.fin.includes('T')    ? op.fin    : '');
+    const inicioVal = op.inicio || '';
+    const finVal    = op.fin    || '';
 
     const patchFields = {
       Status:         op.status || 'pending',
@@ -5592,7 +5596,7 @@ async function appSaveOpToSP(of_sap, opId) {
       +' Tecnico='+patchFields.Tecnico
       +' Qty_Total='+patchFields.Qty_Total
       +' _spId='+op._spId
-      +' _inicioISO='+op._inicioISO);
+      +' _inicioISO='+inicioVal);
 
     // ── Guard: _spId válido ───────────────────────────────────────────────────
     const validSpId = op._spId && String(op._spId).trim() !== '' && op._spId !== 'null';
@@ -7306,7 +7310,7 @@ function appConfirmPause(){
     if(!op.turnos)op.turnos=[];
     op.turnos.push({
       tecnico:op.tecnico,ayudantes:(op.ayudantes||[]).slice(),
-      inicio:op.inicio,_inicioISO:op._inicioISO||'',fin:nowT(),_finISO:nowISO(),mins:turnoMins,
+      inicio:op.inicio,fin:nowT(),mins:turnoMins,
       qty_ok:pzOk,qty_def:pzDef,qty_rest:pzRest
     });
     op.status='paused';
@@ -7399,7 +7403,7 @@ function appConfirmReanudar(){
     var pzAok=turnoA?turnoA.qty_ok:0;
     var pzAdef=turnoA?turnoA.qty_def:0;
     // Marcar op original como completada por turno A (parcialmente)
-    op.status='done';op.fin=nowT();op._finISO=nowISO();
+    op.status='done';op.fin=nowT();
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
@@ -8216,7 +8220,7 @@ function doFinish(ctx, el, ok, def, rej) {
   if (!op) return;
   var key = ctx.of_sap+'_'+ctx.op_id;
   var obs = document.getElementById('app-finish-obs').value;
-  op.status='done'; op.fin=nowT(); op._finISO=nowISO(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
+  op.status='done'; op.fin=nowT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
   if(obs) op.obs=obs;
   if (DB.timers[key]) DB.timers[key].running=false;
   // Auto-cerrar timers de ayudantes que sigan corriendo → heredan el tiempo total de la op
@@ -8343,7 +8347,7 @@ function appConfirmFinish(){
 
   function doFinishLocal(){
     var elFinal = getEl(key); // recalculate at actual confirm moment
-    op.status="done";op.fin=nowT();op._finISO=nowISO();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op.status="done";op.fin=nowT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -8742,7 +8746,7 @@ function _doStartOp(sap, opId){
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op = of ? of.ops.find(function(o){return o.id===opId;}) : null;
   if(!op) return;
-  op.status='running'; op.inicio=nowT(); op._inicioISO=nowISO(); op.calResult=null; op.needsCal=false;
+  op.status='running'; op.inicio=nowT(); op.calResult=null; op.needsCal=false;
   DB.timers[sap+'_'+opId]={start:Date.now(),elapsed:0,running:true};
   // Iniciar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){
@@ -8752,6 +8756,14 @@ function _doStartOp(sap, opId){
     }
   });
   renderApp();
+  // Persistir en SP directamente (fireSync override puede haber sido pisado por patches)
+  if (typeof appSaveOpToSP === 'function' && appSiteId) {
+    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('appSaveOpToSP (start):', e.message); });
+  }
+  if (typeof appSaveTimerToSP === 'function' && appSiteId) {
+    var _timerKey = sap + '_' + opId;
+    appSaveTimerToSP(_timerKey).catch(function(e){ console.warn('appSaveTimerToSP (start):', e.message); });
+  }
   fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
 
@@ -10219,9 +10231,9 @@ async function appReloadOpsFromSP() {
           ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
           status:      o.Status || 'pending',
           inicio:      o.Inicio ? new Date(o.Inicio).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
-          _inicioISO:  o.Inicio || '',
+          _inicioISO:  '',
           fin:         o.Fin ? new Date(o.Fin).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) : '',
-          _finISO:     o.Fin || '',
+          _finISO:     '',
           mins:        parseInt(o.Mins||0),
           qty_total:   parseInt(o.Qty_Total||10),
           qty_ok:      parseInt(o.Qty_OK||0),
