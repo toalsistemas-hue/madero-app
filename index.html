@@ -3286,7 +3286,7 @@ async function ftLoadDataFromSP() {
           var q = window.DB_STATION_QUEUE[op.estacion];
           if (q) {
             var qIdx = q.findIndex(function(e){ return e.of_sap===aof.of_sap && e.op_id===op.id; });
-            if (qIdx >= 0) op.cola = qIdx;
+            if (qIdx >= 0) op.cola = qIdx + 1;
           }
         }
       });
@@ -3296,9 +3296,10 @@ async function ftLoadDataFromSP() {
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
     DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
     // Renumerar cola DESPUÉS de sqAddOF para que la queue esté completamente poblada
-    if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
     if(typeof sqPurge==='function') sqPurge();
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+    // Re-render con números de cola ya corregidos
+    renderApp();
   // Start real-time polling so portal auto-updates when app mobile makes changes
   if (!window._coordPollTimer && !state.isDemoMode) {
     window._coordLastOpsMod = '';
