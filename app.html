@@ -2119,7 +2119,7 @@ function renderAppOpsPanel(of){
     if(op.isRetrabajo && op.nombre.indexOf('Retrabajo')===-1) h+=" <span style='font-size:.68rem;color:var(--ared);font-weight:700;'>— Retrabajo</span>";
     if(op.isTurnoB) h+=" <span style='font-size:.62rem;color:#c084fc;font-weight:700;background:rgba(139,92,246,.15);border-radius:4px;padding:1px 5px;'>Turno B</span>";
     if(op.tipo==="retorno")h+=" <span style='font-size:.58rem;color:var(--ayellow)'>↩</span>";
-    if(op.tipo==="simultanea")h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
+    if(op.tipo==="simultanea"&&!(op.cola&&op.cola>0))h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
     h+="</div>";
     // Segmentos de turno previos
     if(op.turnos && op.turnos.length){
@@ -5645,12 +5645,6 @@ async function appGraphGet(endpoint, retry) {
     }
     return appGraphGet(endpoint, true);
   }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
-    return appGraphGet(endpoint, true);
-  }
   if (!res.ok) throw new Error('Graph ' + res.status + ': ' + (await res.text().catch(function(){return '';})).slice(0,200));
   return res.json();
 }
@@ -5677,12 +5671,6 @@ async function appGraphPatch(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('PATCH 401 no-refresh'); }
-    return appGraphPatch(endpoint, body, true);
-  }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPatch(endpoint, body, true);
   }
   if (!res.ok && res.status !== 204) {
@@ -5725,12 +5713,6 @@ async function appGraphPost(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('POST 401 no-refresh'); }
-    return appGraphPost(endpoint, body, true);
-  }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('POST throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPost(endpoint, body, true);
   }
   if (!res.ok) {
@@ -5879,10 +5861,10 @@ async function appLoadDataFromSP() {
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
     });
-    window.DB_STATION_QUEUE=window.DB_STATION_QUEUE||{};
-    window.STATIONS.forEach(s=>{if(!window.DB_STATION_QUEUE[s])window.DB_STATION_QUEUE[s]=[];});
+    window.DB_STATION_QUEUE={};
+    window.STATIONS.forEach(s=>{window.DB_STATION_QUEUE[s]=[];});
     const colaItems=(colaRes.value||[]).map(i=>i.fields).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
-    colaItems.forEach(c=>{const st=c.Estacion||c.Title||'';if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];window.DB_STATION_QUEUE[st].push({of_sap:c.OF_SAP||'',op_id:c.Op_ID||'',tipo:c.Tipo_Cola||'normal'});});
+    colaItems.forEach(c=>{const st=c.Estacion||c.Title||'';if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];const alreadyIn=window.DB_STATION_QUEUE[st].find(function(x){return x.of_sap===c.OF_SAP&&x.op_id===c.Op_ID;});if(!alreadyIn)window.DB_STATION_QUEUE[st].push({of_sap:c.OF_SAP||'',op_id:c.Op_ID||'',tipo:c.Tipo_Cola||'normal'});});
     sqSyncColaNumbers();
     // Garantizar que ops con status=running tengan timer activo en memoria
     DB.activeOFs.forEach(function(aof){
@@ -7439,7 +7421,7 @@ function renderAppOpsPanel(of){
     if(op.isRetrabajo && op.nombre.indexOf('Retrabajo')===-1) h+=" <span style='font-size:.68rem;color:var(--ared);font-weight:700;'>— Retrabajo</span>";
     if(op.isTurnoB) h+=" <span style='font-size:.62rem;color:#c084fc;font-weight:700;background:rgba(139,92,246,.15);border-radius:4px;padding:1px 5px;'>Turno B</span>";
     if(op.tipo==="retorno")h+=" <span style='font-size:.58rem;color:var(--ayellow)'>↩</span>";
-    if(op.tipo==="simultanea")h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
+    if(op.tipo==="simultanea"&&!(op.cola&&op.cola>0))h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
     h+="</div>";
     // Segmentos de turno previos
     if(op.turnos && op.turnos.length){
@@ -11041,7 +11023,7 @@ async function appReloadOpsFromSP() {
           qty_ok:      parseInt(o.Qty_OK||0),
           qty_def:     parseInt(o.Qty_Def||0),
           qty_rej:     parseInt(o.Qty_Rej||0),
-          cola:        parseInt(o.Cola||0)||0,  // from SP — will be overridden by FT_Cola_Estacion fetch
+          cola:        0,  // siempre se asigna desde FT_Cola_Estacion, no desde campo Cola de SP
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
