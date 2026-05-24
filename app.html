@@ -7607,12 +7607,14 @@ function renderAppStats(){
 }
 function toggleAppOF(sap){APP.expanded[sap]=!APP.expanded[sap];renderApp();}
 function appMoveOp(sap,idx,dir){
+  console.log('🔀 appMoveOp LLAMADO sap:'+sap+' idx:'+idx+' dir:'+dir);
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
-  if(!of)return;
-  var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
+  if(!of){ console.warn('❌ appMoveOp: OF no encontrada'); return; }
+  var ni=idx+dir;if(ni<0||ni>=of.ops.length){ console.warn('❌ appMoveOp: idx fuera de rango'); return; }
   var opA=of.ops[idx],opB=of.ops[ni];
-  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')) return;
-  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
+  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')){ console.warn('❌ appMoveOp: opA no es pending'); return; }
+  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')){ console.warn('❌ appMoveOp: opB no es pending'); return; }
+  console.log('✅ swap: '+of.ops[idx].nombre+' ↔ '+of.ops[ni].nombre);
   var tmp=of.ops[idx];of.ops[idx]=of.ops[ni];of.ops[ni]=tmp;
   sqSyncColaNumbers();
   renderApp();
@@ -8867,19 +8869,28 @@ appConfirmValCal = function() {
   fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
 
-// ── 14: appMoveOp ya llama fireSync — mejorar para coord ──
-var _origAppMoveOp = appMoveOp;
+// ── 14: appMoveOp — versión final con SP save y debug logs ──
+// Sobreescribir la última versión con la que incluye appSaveMoveToSP
 appMoveOp = function(sap, idx, dir) {
+  console.log('🔀 appMoveOp FINAL sap:'+sap+' idx:'+idx+' dir:'+dir);
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
-  if (!of) return;
+  if (!of){ console.warn('❌ OF no encontrada:'+sap); return; }
   var ni = idx+dir;
-  if (ni<0 || ni>=of.ops.length) return;
+  if (ni<0 || ni>=of.ops.length){ console.warn('❌ idx fuera de rango'); return; }
+  var opA=of.ops[idx],opB=of.ops[ni];
+  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')){ console.warn('❌ opA no movible:'+opA.status); return; }
+  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')){ console.warn('❌ opB no movible:'+opB.status); return; }
+  console.log('  swap: '+of.ops[idx].nombre+' ↔ '+of.ops[ni].nombre);
   var tmp=of.ops[idx]; of.ops[idx]=of.ops[ni]; of.ops[ni]=tmp;
+  sqSyncColaNumbers();
   renderApp();
-  if (C.currentPage==='seguimiento') renderSeg();
-  fireSync('app','op_moved',{of_sap:sap});
+  if(typeof C!=='undefined'&&C.currentPage==='seguimiento') renderSeg();
+  // Llamar función dedicada de SP save
+  if(typeof appSaveMoveToSP==='function'){
+    appSaveMoveToSP(sap, of);
+  } else { console.warn('❌ appSaveMoveToSP no encontrada'); }
+  fireSync('app','op_moved',{of_sap:sap, moved_by:'supervisor'});
 };
-
 // ── 4: markNotifRead con highlight ────────────────────────
 var _origMarkNotifRead = markNotifRead;
 markNotifRead = function(id) {
