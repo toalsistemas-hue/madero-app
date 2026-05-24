@@ -6670,39 +6670,50 @@ function saveTplModal(){
           // and never operate on stale in-memory ops from previous supervisor reorders
           try {
             var freshRes = await graphGet(
-              'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?'+
-              '$filter=fields%2FOF_SAP+eq+%27'+encodeURIComponent(aof.of_sap)+'%27'+
-              '&$expand=fields&$select=id,fields&$top=100'
+              "sites/"+FT_SITE_ID+"/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq '"+aof.of_sap+"'&$expand=fields&$select=id,fields&$top=100"
             );
             if(freshRes && freshRes.value && freshRes.value.length){
-              // Build fresh ops map by Op_ID → {_spId, nombre, estacion, status}
-              var spOpsMap = {};
+              // Build two lookup maps:
+              // 1. By Op_ID (authoritative key)
+              // 2. By nombre+estacion (fallback for ops without Op_ID)
+              var byOpId = {};
+              var byNameStation = {};
+              var prio = {running:4,paused:3,done:2,pending:1};
               (freshRes.value||[]).forEach(function(item){
                 var f = item.fields;
-                var key = (f.Op_ID||'')+'|'+(f.Nombre||f.Title||'')+'|'+(f.Estacion||'');
-                // Deduplicate: keep highest-status (running>paused>done>pending) or highest ID
-                var prio = {running:4,paused:3,done:2,pending:1};
-                var existing = spOpsMap[key];
-                if(!existing || (prio[f.Status||'pending']||1) > (prio[existing.status||'pending']||1) ||
-                   parseInt(item.id)>parseInt(existing._spId)){
-                  spOpsMap[key] = {
-                    _spId: item.id,
-                    id: f.Op_ID||f.Title||'',
-                    nombre: f.Nombre||f.Title||'',
-                    estacion: f.Estacion||'',
-                    status: f.Status||'pending',
-                    tecnico: f.Tecnico||'',
-                    qty_ok: parseInt(f.Qty_OK||0),
-                    mins: parseInt(f.Mins||0)
-                  };
+                var opId = f.Op_ID||'';
+                var nameKey = (f.Nombre||f.Title||'')+'|'+(f.Estacion||'');
+                var p = prio[f.Status||'pending']||1;
+                var data = {_spId: item.id, nombre: f.Nombre||f.Title||'',
+                  estacion: f.Estacion||'', status: f.Status||'pending'};
+                // Op_ID map — keep highest priority/ID
+                if(!byOpId[opId] || p > (prio[byOpId[opId].status]||1) ||
+                   parseInt(item.id) > parseInt(byOpId[opId]._spId)){
+                  byOpId[opId] = data;
+                }
+                // nombre+estacion map (consumed per OF to handle duplicates)
+                if(!byNameStation[nameKey]) byNameStation[nameKey] = [];
+                byNameStation[nameKey].push(data);
+              });
+              // Match aof.ops to SP items
+              var consumed = {};
+              aof.ops.forEach(function(op){
+                if(op._spId) return; // already has spId
+                // Try Op_ID first
+                if(op.id && byOpId[op.id]){
+                  op._spId = byOpId[op.id]._spId;
+                  return;
+                }
+                // Fallback: nombre+estacion (consume one item to avoid duplicate matches)
+                var nk = op.nombre+'|'+op.estacion;
+                var candidates = byNameStation[nk];
+                if(candidates && candidates.length){
+                  var ci = consumed[nk]||0;
+                  if(candidates[ci]){ op._spId = candidates[ci]._spId; consumed[nk] = ci+1; }
                 }
               });
-              // Refresh aof.ops _spId from fresh SP data
-              aof.ops.forEach(function(op){
-                var key = op.id+'|'+op.nombre+'|'+op.estacion;
-                if(spOpsMap[key]) op._spId = spOpsMap[key]._spId;
-              });
-              console.log('🔄 SP ops recargadas para OF '+aof.of_sap+': '+Object.keys(spOpsMap).length);
+              var matched = aof.ops.filter(function(o){return !!o._spId;}).length;
+              console.log('🔄 SP ops cargadas para OF '+aof.of_sap+': '+freshRes.value.length+' items, '+matched+'/'+aof.ops.length+' ops con _spId');
             }
           } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); }
 
