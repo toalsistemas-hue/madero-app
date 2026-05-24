@@ -2155,7 +2155,7 @@ function renderAppOpsPanel(of){
       h+="</div>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
-    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote?": "+esc(op.valcalNote):"")+"</div>";
+    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
     if(op.calResult){var cM={liberado:{bg:"rgba(34,197,94,.12)",col:"var(--agreen)",lbl:"✅ Liberado"},retrabajo:{bg:"rgba(212,160,23,.12)",col:"var(--ayellow)",lbl:"🔄 Retrabajo"},chatarra:{bg:"rgba(239,68,68,.12)",col:"var(--ared)",lbl:"🗑 Chatarra"}};var cm=cM[op.calResult]||cM.liberado;h+="<div class='app-op-note' style='background:"+cm.bg+";color:"+cm.col+";'>"+cm.lbl+(op.calComment?" — "+esc(op.calComment):"")+(op.qty_rej>0?" · "+op.qty_rej+" rec / "+(op.qty_total-op.qty_rej)+" lib":"")+"</div>";}
     h+="</div></div>";
     // BOTONES
@@ -5709,15 +5709,15 @@ async function appLoadDataFromSP() {
         _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
         // Restaurar datos del turno A desde valcalNote JSON (guardado al pausar fin de turno)
         _pzasRestantes: (function(){
-          // Primero intentar desde valcalNote JSON
-          try { var d=JSON.parse(o.ValCalNote||''); if(d._turnoData) return d.qty_rest||0; } catch(e){}
+          // Primero intentar desde campo dedicado TurnoData
+          try { var d=JSON.parse(o.TurnoData||''); if(d._turnoData) return d.qty_rest||0; } catch(e){}
           // Fallback: parsear desde pauseReason
           var m=(o.PauseReason||'').match(/(\d+) restantes/);
           return m?parseInt(m[1]):null;
         })(),
         turnos: (function(){
           try {
-            var d=JSON.parse(o.ValCalNote||'');
+            var d=JSON.parse(o.TurnoData||'');
             if(d._turnoData){
               return [{tecnico:d.tecnico||'',mins:d.mins||0,
                 qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,
@@ -5880,8 +5880,11 @@ async function appSaveOpToSP(of_sap, opId) {
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)    patchFields.NeedsCal = true;
-    if (op.valcalNote)           patchFields.ValCalNote = op.valcalNote;
+    // Only save ValCalNote if it's a real cal note (not turno JSON accidentally stored there)
+    if (op.valcalNote && op.valcalNote.charAt(0) !== '{') patchFields.ValCalNote = op.valcalNote;
+    else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = ''; // clear old JSON contamination
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
+    if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
     // ── LOG DIAGNÓSTICO visible en Debug Console ──────────────────────────────
     console.log('PATCH payload ['+opId+']: status='+patchFields.Status
@@ -7346,7 +7349,7 @@ function renderAppOpsPanel(of){
       h+="</div>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
-    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote?": "+esc(op.valcalNote):"")+"</div>";
+    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
     if(op.calResult){var cM={liberado:{bg:"rgba(34,197,94,.12)",col:"var(--agreen)",lbl:"✅ Liberado"},retrabajo:{bg:"rgba(212,160,23,.12)",col:"var(--ayellow)",lbl:"🔄 Retrabajo"},chatarra:{bg:"rgba(239,68,68,.12)",col:"var(--ared)",lbl:"🗑 Chatarra"}};var cm=cM[op.calResult]||cM.liberado;h+="<div class='app-op-note' style='background:"+cm.bg+";color:"+cm.col+";'>"+cm.lbl+(op.calComment?" — "+esc(op.calComment):"")+(op.qty_rej>0?" · "+op.qty_rej+" rec / "+(op.qty_total-op.qty_rej)+" lib":"")+"</div>";}
     h+="</div></div>";
     // BOTONES
@@ -7611,8 +7614,8 @@ function appConfirmPause(){
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
     op._pzasRestantes=pzRest;
-    // Serializar datos del turno A en valcalNote para recuperarlos desde SP
-    op.valcalNote = JSON.stringify({
+    // Serializar datos del turno A en campo dedicado TurnoData (no contaminar ValCalNote de calidad)
+    op.turnoData = JSON.stringify({
       _turnoData: true,
       tecnico:    op.tecnico,
       mins:       turnoMins,
@@ -10753,8 +10756,8 @@ async function appReloadOpsFromSP() {
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
-          _pzasRestantes: (function(){ try{var d=JSON.parse(o.ValCalNote||'');if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
-          turnos: (function(){ try{var d=JSON.parse(o.ValCalNote||'');if(d._turnoData)return [{tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||''}];}catch(e){}; return []; })(),
+          _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
+          turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnoData)return [{tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||''}];}catch(e){}; return []; })(),
           needsCal:    o.NeedsCal === true,
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,
