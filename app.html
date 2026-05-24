@@ -10978,6 +10978,30 @@ async function appReloadOpsFromSP() {
       });
     });
     console.log('Poll: ops recargadas OK');
+    // Sort station queues by Cola value from SP so mobile reflects portal reorder
+    DB.activeOFs.forEach(function(aof){
+      if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
+    });
+    // Sort each station queue by the Cola position loaded from SP
+    if(typeof STATIONS!=='undefined'){
+      STATIONS.forEach(function(st){
+        var q = (window.DB_STATION_QUEUE||{})[st];
+        if(!q||!q.length) return;
+        q.sort(function(a,b){
+          var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
+          var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
+          var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
+          var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
+          var ca=op_a&&op_a.cola?op_a.cola:999;
+          var cb=op_b&&op_b.cola?op_b.cola:999;
+          // Running ops (cola=null/0) stay at top
+          if(!op_a||op_a.status==='running'||op_a.status==='paused') return -1;
+          if(!op_b||op_b.status==='running'||op_b.status==='paused') return 1;
+          return ca-cb;
+        });
+      });
+    }
+    if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
   } catch(e) { console.warn('appReloadOpsFromSP error:', e.message); }
 }
 </script>

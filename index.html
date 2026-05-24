@@ -3327,6 +3327,11 @@ async function ftLoadDataFromSP() {
                 _spId:o.ID||null};
             });
           });
+          // Refresh queue order based on Cola values loaded from SP
+          DB.activeOFs.forEach(function(aof){
+            if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
+          });
+          if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
           });
@@ -3374,6 +3379,8 @@ async function ftSaveOpToSP(of_sap, opId) {
     };
     if (op.needsCal === true)   fields.NeedsCal = true;
     if (op.valcalNote&&op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
+    // Always save Cola so mobile app sees current queue position
+    fields.Cola = op.cola !== undefined ? (op.cola || 0) : 0;
     if (op.isRetrabajo === true) fields.isRetrabajo = true;
     if (op._spId) {
       try {
@@ -7947,6 +7954,34 @@ function qmgrMove(idx, dir){
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
+  // Persist updated cola numbers to SP for all affected OFs
+  portalSaveColaToSP(_qmgrStation);
+}
+
+// Save Cola column to FT_Operaciones for all ops in a station queue
+async function portalSaveColaToSP(estacion){
+  if(!FT_SITE_ID) return;
+  var q = sqGetQueue(estacion);
+  console.log('💾 Guardando cola en SP para estación:', estacion, '|', q.length, 'ops');
+  var savedCount = 0;
+  for(var i=0; i<q.length; i++){
+    var item = q[i];
+    var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
+    if(!aof) continue;
+    var op = aof.ops.find(function(o){ return o.id===item.op_id; });
+    if(!op || !op._spId) continue;
+    var colaNum = op.cola || 0; // already set by sqSyncColaNumbers
+    try {
+      await graphPatch(
+        'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+        {Cola: colaNum}
+      );
+      savedCount++;
+    } catch(e){ console.warn('Cola PATCH error:', e.message); }
+  }
+  console.log('✅ Cola SP guardada: '+savedCount+'/'+q.length+' ops — '+estacion);
+  // Also notify mobile app via fireSync
+  fireSync('coord','op_moved',{estacion: estacion, moved_by:'coordinador'});
 }
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
