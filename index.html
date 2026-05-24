@@ -3291,13 +3291,13 @@ async function ftLoadDataFromSP() {
         }
       });
     });
-    // Sync cola numbers
-    sqSyncColaNumbers();
-
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
     DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
+    // Renumerar cola DESPUÉS de sqAddOF para que la queue esté completamente poblada
+    if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+    if(typeof sqPurge==='function') sqPurge();
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
   // Start real-time polling so portal auto-updates when app mobile makes changes
   if (!window._coordPollTimer && !state.isDemoMode) {
@@ -4526,7 +4526,7 @@ function renderHist(){
     if(pending.length){
       h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
       pending.forEach(function(x,qi){
-        var colaN = qi+1;
+        var colaN = x.op.cola || (qi+1);
         h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
         h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
