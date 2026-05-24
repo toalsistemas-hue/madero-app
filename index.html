@@ -3352,6 +3352,9 @@ async function ftSaveOpToSP(of_sap, opId) {
     const op = aof ? aof.ops.find(o => o.id === opId) : null;
     if (!op) return;
     // Hardcoded writable field names for FT_Operaciones PATCH
+    // Determine Secuencia from current position in OF
+    var _seqIdx = aof ? aof.ops.indexOf(op) : -1;
+    var _secuencia = _seqIdx >= 0 ? _seqIdx + 1 : 0;
     const fields = {
       Status:         op.status || 'pending',
       Inicio:         op.inicio || '',
@@ -3363,8 +3366,8 @@ async function ftSaveOpToSP(of_sap, opId) {
       Tecnico:        op.tecnico || '',
       Ayudantes_JSON: (op.ayudantes || []).join(','),
       PauseReason:    op.pauseReason || '',
-      // Cola NOT patched — maintained in FT_Cola_Estacion.Posicion
       Tip:            op.tipo || 'Secuencial',
+      Secuencia:      _secuencia,  // persist current position
     };
     if (op.needsCal === true)   fields.NeedsCal = true;
     if (op.valcalNote&&op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
@@ -3981,7 +3984,7 @@ function showCoordNotif(event, data){
     op_paused:"⏸ Operación pausada",
     op_valcal:"🔍 Solicitud de validación de Calidad",
     op_added:"➕ Nueva operación agregada por Supervisor",
-    op_moved:"↕ Operaciones reordenadas por Supervisor",
+    op_moved:"↕ Operaciones reordenadas",
   }[event] || "📡 Actualización desde App";
   var container = document.getElementById("coord-notifs");
   if(!container) return;
@@ -6022,6 +6025,10 @@ function addCoordNotif(event, data) {
   } else if(event==='op_valcal'){
     text='🔍 Validación solicitada'+(_ofSap?' — '+_ofSap:'');
     detail=(_opName?_opName+'\n':'')+(_note?'Nota: '+_note:'');
+  } else if(event==='op_moved'){
+    var _movedBy=data&&data.moved_by?data.moved_by:'';
+    text='↕ Ops reordenadas'+(_ofSap?' — '+_ofSap:'');
+    detail=_movedBy?'Reordenado por: '+_movedBy:'';
   } else if(event==='op_added'){
     text='➕ Op agregada'+(_ofSap?' — '+_ofSap:'');
     detail=_opName||'';
@@ -6194,10 +6201,28 @@ appMoveOp = function(sap, idx, dir) {
   if (!of) return;
   var ni = idx+dir;
   if (ni<0 || ni>=of.ops.length) return;
+  // Don't move running/paused/done ops
+  var opA=of.ops[idx],opB=of.ops[ni];
+  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')) return;
+  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
   var tmp=of.ops[idx]; of.ops[idx]=of.ops[ni]; of.ops[ni]=tmp;
+  sqSyncColaNumbers();
   renderApp();
   if (C.currentPage==='seguimiento') renderSeg();
-  fireSync('app','op_moved',{of_sap:sap});
+  // Persist Secuencia to SP
+  if(typeof FT_SITE_ID!=='undefined' && FT_SITE_ID){
+    of.ops.forEach(function(op,i){
+      if(!op._spId) return;
+      graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+        {Secuencia: i+1}
+      ).catch(function(e){ console.warn('MoveOp portal SP:', e.message); });
+    });
+  }
+  // Coordinator notification (to supervisor via fireSync)
+  if(typeof addCoordNotif==='function'){
+    addCoordNotif('op_moved',{of_sap:sap, moved_by:'coordinador'});
+  }
+  fireSync('app','op_moved',{of_sap:sap, moved_by:'coordinador'});
 };
 
 // -- 4: markNotifRead con highlight ------------------------
