@@ -2345,9 +2345,33 @@ function renderAppStats(){
 function toggleAppOF(sap){APP.expanded[sap]=!APP.expanded[sap];renderApp();}
 function appMoveOp(sap,idx,dir){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
-  if(!of)return;var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
+  if(!of)return;
+  var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
+  // Don't move ops that are running/paused/done
+  var opA=of.ops[idx],opB=of.ops[ni];
+  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')) return;
+  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
   var tmp=of.ops[idx];of.ops[idx]=of.ops[ni];of.ops[ni]=tmp;
-  renderApp();fireSync("app","op_moved",{of_sap:sap});
+  sqSyncColaNumbers();
+  renderApp();
+  // Persist new Secuencia to SP for all ops of this OF
+  if(typeof appSiteId!=='undefined'&&appSiteId){
+    of.ops.forEach(function(op,i){
+      if(!op._spId) return;
+      appGraphPatch(
+        'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+        {Secuencia: i+1}
+      ).catch(function(e){ console.warn('MoveOp SP error:', e.message); });
+    });
+  }
+  // Notify coordinator and show notification to supervisor too
+  // Notify supervisor locally that reorder was saved
+  if(typeof APP!=='undefined' && APP.role==='supervisor'){
+    var _movedOf = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+    var _movedOF_sap = sap;
+    console.log('✅ Ops reordenadas en OF '+sap+' — guardado en SP');
+  }
+  fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
 }
 function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
@@ -2636,6 +2660,17 @@ function appConfirmReanudar(){
           newOp._spId = res.id;
           newOp.isTemplate = false;
           console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+          // 2b. Register Turno B in FT_Cola_Estacion
+          if(newOp.estacion){
+            var colFields2={
+              Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
+              Estacion: newOp.estacion, Posicion: 999, // will be corrected by sqSyncColaNumbers
+              Tipo_Cola:'normal', Status:'pending', Activo: true
+            };
+            appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',{fields:colFields2})
+              .then(function(r2){ newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
+              .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
+          }
         }
         // 3. Guardar timer de turno A como finalizado
         if(typeof appSaveTimerToSP==='function'){
@@ -6023,12 +6058,14 @@ async function appSaveQueueToSP(of_sap) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
       var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
+      // Find position in queue (pending position, not running)
       var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
+      var isDone = op.status === 'done';
       var fields = {
         Title:    of_sap+'_'+op.id, OF_SAP: of_sap, Op_ID: op.id,
-        Estacion: op.estacion, Posicion: pos>=0?pos:i,
+        Estacion: op.estacion, Posicion: (isDone?0:(pos>=0?pos:i)),
         Tipo_Cola: op.tipo||'normal', Status: op.status||'pending',
-        Activo:   op.status !== 'done',
+        Activo:   !isDone,   // false when done — fixes stale Activo=true bug
       };
       try {
         if (op._queueSpId) {
@@ -7415,6 +7452,15 @@ function renderAppOpsPanel(of){
           h+="<span style='font-family:monospace;font-size:.72rem;color:var(--aaccent);font-weight:700;'>"+op.cola+"</span>";
           h+="</div>";
         }
+        // ↑↓ Reorder arrows — Supervisor can reorder pending ops within OF
+        if(APP.role==='supervisor'){
+          var canUp=(idx>0&&of.ops[idx-1]&&of.ops[idx-1].status==='pending');
+          var canDn=(idx<of.ops.length-1&&of.ops[idx+1]&&of.ops[idx+1].status==='pending');
+          h+='<div style="display:flex;flex-direction:column;gap:1px;margin-left:2px;">';
+          h+='<button onclick="appMoveOp(\''+of.of_sap+'\','+idx+',-1)" '+(canUp?'':'disabled ')+' style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,'+(canUp?'.15':'.06')+');color:var(--'+(canUp?'adim':'muted')+');border-radius:4px;padding:0 6px;cursor:'+(canUp?'pointer':'default')+';font-size:.75rem;">↑</button>';
+          h+='<button onclick="appMoveOp(\''+of.of_sap+'\','+idx+',1)" '+(canDn?'':'disabled ')+' style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,'+(canDn?'.15':'.06')+');color:var(--'+(canDn?'adim':'muted')+');border-radius:4px;padding:0 6px;cursor:'+(canDn?'pointer':'default')+';font-size:.75rem;">↓</button>';
+          h+='</div>';
+        }
       }
       if(op.status==="running"){h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
       if(op.status==="paused"){h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
@@ -7562,9 +7608,33 @@ function renderAppStats(){
 function toggleAppOF(sap){APP.expanded[sap]=!APP.expanded[sap];renderApp();}
 function appMoveOp(sap,idx,dir){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
-  if(!of)return;var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
+  if(!of)return;
+  var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
+  // Don't move ops that are running/paused/done
+  var opA=of.ops[idx],opB=of.ops[ni];
+  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')) return;
+  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
   var tmp=of.ops[idx];of.ops[idx]=of.ops[ni];of.ops[ni]=tmp;
-  renderApp();fireSync("app","op_moved",{of_sap:sap});
+  sqSyncColaNumbers();
+  renderApp();
+  // Persist new Secuencia to SP for all ops of this OF
+  if(typeof appSiteId!=='undefined'&&appSiteId){
+    of.ops.forEach(function(op,i){
+      if(!op._spId) return;
+      appGraphPatch(
+        'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+        {Secuencia: i+1}
+      ).catch(function(e){ console.warn('MoveOp SP error:', e.message); });
+    });
+  }
+  // Notify coordinator and show notification to supervisor too
+  // Notify supervisor locally that reorder was saved
+  if(typeof APP!=='undefined' && APP.role==='supervisor'){
+    var _movedOf = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+    var _movedOF_sap = sap;
+    console.log('✅ Ops reordenadas en OF '+sap+' — guardado en SP');
+  }
+  fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
 }
 function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
@@ -7850,6 +7920,17 @@ function appConfirmReanudar(){
           newOp._spId = res.id;
           newOp.isTemplate = false;
           console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+          // 2b. Register Turno B in FT_Cola_Estacion
+          if(newOp.estacion){
+            var colFields2={
+              Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
+              Estacion: newOp.estacion, Posicion: 999, // will be corrected by sqSyncColaNumbers
+              Tipo_Cola:'normal', Status:'pending', Activo: true
+            };
+            appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',{fields:colFields2})
+              .then(function(r2){ newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
+              .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
+          }
         }
         // 3. Guardar timer de turno A como finalizado
         if(typeof appSaveTimerToSP==='function'){
