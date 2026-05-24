@@ -7623,34 +7623,50 @@ function appMoveOp(sap,idx,dir){
 
 // Async: save new Secuencia for all ops after reorder — handles missing _spId
 async function appSaveMoveToSP(of_sap, of){
+  console.log('🔄 appSaveMoveToSP inicio — OF:', of_sap, '| ops:', of.ops.length, '| siteId:', appSiteId);
   try {
-    if(!appSiteId) await appGetSiteId();
-    if(!appSiteId){ console.warn('appSaveMoveToSP: no siteId'); return; }
+    // Ensure auth token is valid first
+    if(!appSiteId){
+      console.log('🔑 Obteniendo siteId...');
+      await appGetSiteId();
+    }
+    if(!appSiteId){ console.warn('❌ appSaveMoveToSP: sin siteId'); return; }
+    // Ensure token is fresh
+    // no appEnsureToken — rely on appGraphPatch auto-refresh
+    console.log('✅ siteId OK:', appSiteId);
     var savedCount = 0;
     for(var i=0; i<of.ops.length; i++){
       var op = of.ops[i];
       var newSeq = i+1;
+      console.log('  Op['+i+'] id:'+op.id+' _spId:'+op._spId+' → Secuencia:'+newSeq);
       // If _spId missing, look it up in SP by Op_ID
       if(!op._spId && op.id){
         try {
-          var _opFilter = "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields%2FOp_ID+eq+%27"+encodeURIComponent(op.id)+"%27&$select=id&$top=1";
-          var searchRes = await appGraphGet(_opFilter);
+          // SP Graph OData filter - plain string format
+          var _filter = "sites/"+appSiteId+"/lists/FT_Operaciones/items?"+
+            "$filter=fields/Op_ID eq '"+op.id+"'&$select=id,fields/Op_ID&$top=2";
+          console.log('  🔍 Buscando _spId para:', op.id);
+          var searchRes = await appGraphGet(_filter);
           if(searchRes && searchRes.value && searchRes.value.length>0){
             op._spId = searchRes.value[0].id;
+            console.log('  📌 _spId encontrado:', op._spId);
+          } else {
+            console.warn('  ⚠ No encontrado en SP:', op.id);
           }
-        } catch(e2){ /* ignore lookup error */ }
+        } catch(e2){ console.warn('  ⚠ Lookup error:', e2.message||e2); }
       }
-      if(!op._spId){ console.warn('appSaveMoveToSP: sin _spId para '+op.id); continue; }
+      if(!op._spId){ console.warn('  ❌ Sin _spId para '+op.id+' — saltando'); continue; }
       try {
         await appGraphPatch(
           'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
           {Secuencia: newSeq}
         );
         savedCount++;
-      } catch(pe){ console.warn('MoveOp PATCH error '+op.id+':', pe.message||pe); }
+        console.log('  ✅ Secuencia '+newSeq+' → op '+op.id+' (_spId:'+op._spId+')');
+      } catch(pe){ console.warn('  ❌ PATCH error '+op.id+':', pe.message||pe); }
     }
-    console.log('✅ Secuencia SP guardada: '+savedCount+'/'+of.ops.length+' ops — OF '+of_sap);
-  } catch(e){ console.warn('appSaveMoveToSP error:', e.message||e); }
+    console.log('✅ Secuencia guardada: '+savedCount+'/'+of.ops.length+' — OF '+of_sap);
+  } catch(e){ console.warn('❌ appSaveMoveToSP error:', e.message||e); }
 }
 function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
