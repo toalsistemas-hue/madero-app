@@ -6662,29 +6662,111 @@ function saveTplModal(){
         console.log('Sincronizando plantilla', art, 'a', affectedOFs.length, 'OFs activas en SP');
         for (var ai = 0; ai < affectedOFs.length; ai++) {
           var aof = affectedOFs[ai];
-          // Rebuild ops from updated template
           var tpl = DB.templates[art];
           if (!tpl || !tpl.ops) continue;
-          // Keep existing ops that have progress, add/update the rest
-          var existingOpsWithProgress = aof.ops.filter(function(op){
-            return op._spId && (op.status !== 'pending' || op.qty_ok > 0 || op.mins > 0);
+
+          // ── SAFE SYNC: Always reload current ops from SP before making changes ──
+          // This ensures we use the true SP state (with correct _spId values)
+          // and never operate on stale in-memory ops from previous supervisor reorders
+          try {
+            var freshRes = await graphGet(
+              'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?'+
+              '$filter=fields%2FOF_SAP+eq+%27'+encodeURIComponent(aof.of_sap)+'%27'+
+              '&$expand=fields&$select=id,fields&$top=100'
+            );
+            if(freshRes && freshRes.value && freshRes.value.length){
+              // Build fresh ops map by Op_ID → {_spId, nombre, estacion, status}
+              var spOpsMap = {};
+              (freshRes.value||[]).forEach(function(item){
+                var f = item.fields;
+                var key = (f.Op_ID||'')+'|'+(f.Nombre||f.Title||'')+'|'+(f.Estacion||'');
+                // Deduplicate: keep highest-status (running>paused>done>pending) or highest ID
+                var prio = {running:4,paused:3,done:2,pending:1};
+                var existing = spOpsMap[key];
+                if(!existing || (prio[f.Status||'pending']||1) > (prio[existing.status||'pending']||1) ||
+                   parseInt(item.id)>parseInt(existing._spId)){
+                  spOpsMap[key] = {
+                    _spId: item.id,
+                    id: f.Op_ID||f.Title||'',
+                    nombre: f.Nombre||f.Title||'',
+                    estacion: f.Estacion||'',
+                    status: f.Status||'pending',
+                    tecnico: f.Tecnico||'',
+                    qty_ok: parseInt(f.Qty_OK||0),
+                    mins: parseInt(f.Mins||0)
+                  };
+                }
+              });
+              // Refresh aof.ops _spId from fresh SP data
+              aof.ops.forEach(function(op){
+                var key = op.id+'|'+op.nombre+'|'+op.estacion;
+                if(spOpsMap[key]) op._spId = spOpsMap[key]._spId;
+              });
+              console.log('🔄 SP ops recargadas para OF '+aof.of_sap+': '+Object.keys(spOpsMap).length);
+            }
+          } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); }
+
+          // ── Reorder: match tpl ops to existing SP ops, only PATCH Secuencia ──
+          // Use a consumed-copy to handle duplicate names correctly
+          var availableOps = aof.ops.slice();
+          var reordered = [];
+          var needsCreate = [];
+
+          tpl.ops.forEach(function(tplOp, i){
+            // Find first unconsumed match in availableOps
+            var matchIdx = -1;
+            for(var j=0; j<availableOps.length; j++){
+              if(availableOps[j] &&
+                 availableOps[j].nombre === tplOp.nombre &&
+                 availableOps[j].estacion === tplOp.estacion){
+                matchIdx = j; break;
+              }
+            }
+            if(matchIdx >= 0){
+              reordered.push(availableOps[matchIdx]);
+              availableOps[matchIdx] = null; // consume it
+            } else {
+              needsCreate.push({tplOp:tplOp, idx:i});
+            }
           });
-          // Rebuild ops array from template (preserving progress on existing ones)
-          aof.ops = tpl.ops.map(function(tplOp, i){
-            var existingOp = aof.ops.find(function(o){ return o.nombre === tplOp.nombre && o.estacion === tplOp.estacion; });
-            if (existingOp) return existingOp; // keep existing with progress
-            return {
-              id: 'op_'+aof.of_sap+'_'+i,
-              nombre: tplOp.nombre, estacion: tplOp.estacion, tipo: tplOp.tipo||'Secuencial',
-              tecnico: '', ayudantes: [], qty_total: 10,
-              qty_ok: 0, qty_def: 0, qty_rej: 0, status: 'pending',
-              inicio: null, fin: null, mins: 0, isTemplate: true,
-              pauseReason: null, valcalNote: null, needsCal: false, calResult: null, calComment: null,
-            };
-          });
-          // Save all ops to SP
-          for (var oi = 0; oi < aof.ops.length; oi++) {
-            await ftSaveOpToSP(aof.of_sap, aof.ops[oi].id);
+
+          // Build final ops list
+          aof.ops = reordered.filter(Boolean);
+
+          if(needsCreate.length === 0){
+            // Pure reorder — only PATCH Secuencia, never POST
+            var patchCount = 0;
+            for(var oi=0; oi<aof.ops.length; oi++){
+              var op = aof.ops[oi];
+              if(op._spId){
+                try {
+                  await graphPatch(
+                    'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+                    {Secuencia: oi+1}
+                  );
+                  patchCount++;
+                } catch(pe){ console.warn('PATCH Secuencia:', pe.message); }
+              } else {
+                console.warn('⚠ sin _spId para op: '+op.nombre+' — no se puede PATCH');
+              }
+            }
+            console.log('✅ Secuencia actualizada: '+patchCount+'/'+aof.ops.length+' ops');
+          } else {
+            // Has new ops — add them at the end, PATCH existing + POST new
+            needsCreate.forEach(function(nc, i){
+              aof.ops.push({
+                id: 'op_'+aof.of_sap+'_tpl_'+Date.now()+'_'+i,
+                nombre: nc.tplOp.nombre, estacion: nc.tplOp.estacion,
+                tipo: nc.tplOp.tipo||'Secuencial',
+                tecnico: '', ayudantes: [], qty_total: 10,
+                qty_ok: 0, qty_def: 0, qty_rej: 0, status: 'pending',
+                inicio: null, fin: null, mins: 0, isTemplate: true,
+                pauseReason: null, valcalNote: null, needsCal: false
+              });
+            });
+            for(var oi=0; oi<aof.ops.length; oi++){
+              await ftSaveOpToSP(aof.of_sap, aof.ops[oi].id);
+            }
           }
           await ftSaveQueueToSP(aof.of_sap);
         }
