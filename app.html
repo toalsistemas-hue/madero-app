@@ -6073,11 +6073,15 @@ async function appSaveQueueToSP(of_sap) {
       // Find position in queue (pending position, not running)
       var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
       var isDone = op.status === 'done';
+      // FT_Cola_Estacion col map: Title=Estacion, OF_SAP, Op_ID, Posicion, Tipo_Cola, Activo
+      var colaPos = isDone ? 0 : (op.cola||0);
       var fields = {
-        Title:    of_sap+'_'+op.id, OF_SAP: of_sap, Op_ID: op.id,
-        Estacion: op.estacion, Posicion: (isDone?0:(pos>=0?pos:i)),
-        Tipo_Cola: op.tipo||'normal', Status: op.status||'pending',
-        Activo:   !isDone,   // false when done — fixes stale Activo=true bug
+        Title:     op.estacion,   // Title IS Estacion in this list
+        OF_SAP:    of_sap,
+        Op_ID:     op.id,
+        Posicion:  colaPos,
+        Tipo_Cola: 'normal',
+        Activo:    !isDone,
       };
       try {
         if (op._queueSpId) {
@@ -11097,7 +11101,29 @@ async function appReloadOpsFromSP() {
     });
     // Step 4: Now sqSyncColaNumbers assigns 1,2,3 in the correct sorted order
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+    // Debug: log simultanea ops and their cola values
+    var _simOps = [];
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if(op.tipo==='simultanea'&&op.status==='pending'){
+          _simOps.push({id:op.id,cola:op.cola,est:op.estacion});
+        }
+      });
+    });
+    if(_simOps.length) console.log('🔀 Simultaneas tras rebuild:', JSON.stringify(_simOps));
     console.log('🔀 Cola reordenada en memoria por Posicion SP');
+    // Fallback: any pending op with no cola assigned gets a relative position
+    DB.activeOFs.forEach(function(aof){
+      var stationPendingIdx = {};
+      aof.ops.forEach(function(op){
+        if(op.status==='done'||op.status==='running'||op.status==='paused'||op.status==='validating') return;
+        if(!op.cola || op.cola <= 0){
+          var est = op.estacion || '_';
+          stationPendingIdx[est] = (stationPendingIdx[est]||0) + 1;
+          op.cola = stationPendingIdx[est];
+        }
+      });
+    });
   } catch(e) { console.warn('appReloadOpsFromSP error:', e.message); }
 }
 </script>
