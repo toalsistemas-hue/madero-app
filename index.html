@@ -3404,7 +3404,7 @@ async function ftSaveOpToSP(of_sap, opId) {
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)   fields.NeedsCal = true;
-    if (op.valcalNote)          fields.ValCalNote = op.valcalNote;
+    if (op.valcalNote && op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
     if (op.isRetrabajo === true) fields.isRetrabajo = true;
     if (op._spId) {
       try {
@@ -4814,7 +4814,7 @@ function renderAppOpsPanel(of){
       h+="</div>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
-    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote?": "+esc(op.valcalNote):"")+"</div>";
+    if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
     if(op.calResult){var cM={liberado:{bg:"rgba(34,197,94,.12)",col:"var(--agreen)",lbl:"✅ Liberado"},retrabajo:{bg:"rgba(212,160,23,.12)",col:"var(--ayellow)",lbl:"🔄 Retrabajo"},chatarra:{bg:"rgba(239,68,68,.12)",col:"var(--ared)",lbl:"🗑 Chatarra"}};var cm=cM[op.calResult]||cM.liberado;h+="<div class='app-op-note' style='background:"+cm.bg+";color:"+cm.col+";'>"+cm.lbl+(op.calComment?" — "+esc(op.calComment):"")+(op.qty_rej>0?" · "+op.qty_rej+" rec / "+(op.qty_total-op.qty_rej)+" lib":"")+"</div>";}
     h+="</div></div>";
     // BOTONES
@@ -7119,7 +7119,7 @@ function renderSeg(){
         // Comentarios de la operación
         var comments=[];
         if(op.pauseReason) comments.push({ico:'⏸',col:'var(--yellow)',txt:op.pauseReason});
-        if(op.valcalNote) comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
+        if(op.valcalNote && op.valcalNote.charAt(0)!=='{') comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
         if(op.qty_ok>0||op.qty_def>0){
