@@ -2,6 +2,9 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Automatizaciones Madero</title>
 <script>/* MSAL Browser v5.10.0 — embebido */
@@ -505,7 +508,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.6.2</div>
+    <div class="login-version">v1.6.3</div>
   </div>
 </div>
 
@@ -6744,8 +6747,11 @@ function saveTplModal(){
           // Build final ops list
           aof.ops = reordered.filter(Boolean);
 
-          if(needsCreate.length === 0){
-            // Pure reorder — only PATCH Secuencia, never POST
+          // Count how many ops have _spId after reload
+          var opsWithSpId = aof.ops.filter(function(o){return !!o._spId;}).length;
+
+          if(needsCreate.length === 0 && opsWithSpId === aof.ops.length){
+            // Pure reorder and all ops found in SP — only PATCH Secuencia
             var patchCount = 0;
             for(var oi=0; oi<aof.ops.length; oi++){
               var op = aof.ops[oi];
@@ -6757,11 +6763,16 @@ function saveTplModal(){
                   );
                   patchCount++;
                 } catch(pe){ console.warn('PATCH Secuencia:', pe.message); }
-              } else {
-                console.warn('⚠ sin _spId para op: '+op.nombre+' — no se puede PATCH');
               }
             }
             console.log('✅ Secuencia actualizada: '+patchCount+'/'+aof.ops.length+' ops');
+          } else if(needsCreate.length === 0 && opsWithSpId < aof.ops.length){
+            // Reorder attempted but some/all ops missing from SP (empty list or partial)
+            // → fall through to ftSaveOpToSP which will POST missing ones
+            console.log('⚠ '+( aof.ops.length - opsWithSpId)+' ops sin _spId — creando en SP...');
+            for(var oi=0; oi<aof.ops.length; oi++){
+              await ftSaveOpToSP(aof.of_sap, aof.ops[oi].id);
+            }
           } else {
             // Has new ops — add them at the end, PATCH existing + POST new
             needsCreate.forEach(function(nc, i){
