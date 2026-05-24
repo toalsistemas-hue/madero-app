@@ -5645,6 +5645,12 @@ async function appGraphGet(endpoint, retry) {
     }
     return appGraphGet(endpoint, true);
   }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
+    return appGraphGet(endpoint, true);
+  }
   if (!res.ok) throw new Error('Graph ' + res.status + ': ' + (await res.text().catch(function(){return '';})).slice(0,200));
   return res.json();
 }
@@ -5671,6 +5677,12 @@ async function appGraphPatch(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('PATCH 401 no-refresh'); }
+    return appGraphPatch(endpoint, body, true);
+  }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPatch(endpoint, body, true);
   }
   if (!res.ok && res.status !== 204) {
@@ -5713,6 +5725,12 @@ async function appGraphPost(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('POST 401 no-refresh'); }
+    return appGraphPost(endpoint, body, true);
+  }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('POST throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPost(endpoint, body, true);
   }
   if (!res.ok) {

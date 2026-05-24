@@ -1805,6 +1805,13 @@ async function graphGet(endpoint, retry) {
     return graphGet(endpoint, true); // reintentar
   }
 
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
+    return graphGet(endpoint, true);
+  }
+
   if (!res.ok) throw new Error(`Graph ${res.status}: ${endpoint}`);
   return res.json();
 }
@@ -1823,6 +1830,13 @@ async function graphPatch(endpoint, body, retry) {
     console.warn('Token expirado en PATCH (401), renovando...');
     state.token = null;
     await getToken(true);
+    return graphPatch(endpoint, body, true);
+  }
+
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return graphPatch(endpoint, body, true);
   }
 
@@ -6785,6 +6799,8 @@ function saveTplModal(){
                   );
                   patchCount++;
                 } catch(pe){ console.warn('PATCH Secuencia:', pe.message); }
+                // Delay entre PATCHes para evitar throttling (503/429) en OFs con muchas ops
+                if(oi < aof.ops.length - 1) await new Promise(function(r){ setTimeout(r, 150); });
               }
             }
             console.log('✅ Secuencia actualizada: '+patchCount+'/'+aof.ops.length+' ops');
