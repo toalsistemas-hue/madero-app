@@ -11005,11 +11005,37 @@ async function appReloadOpsFromSP() {
       });
     });
     console.log('Poll: ops recargadas OK');
-    // Sort station queues by Cola value from SP so mobile reflects portal reorder
+    // Load FT_Cola_Estacion to get authoritative queue positions
+    // This reflects coordinator reorders immediately
+    try {
+      var colaEstRes = await appGraphGet(
+        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$select=id,fields&$top=500'
+      );
+      // Build posicion map: Op_ID → Posicion
+      var _posMap = {};
+      (colaEstRes.value||[]).forEach(function(item){
+        if(item.fields && item.fields.Op_ID !== undefined){
+          _posMap[item.fields.Op_ID] = parseInt(item.fields.Posicion||999);
+        }
+      });
+      // Update op.cola from FT_Cola_Estacion.Posicion (overrides FT_Operaciones.Cola)
+      DB.activeOFs.forEach(function(aof){
+        aof.ops.forEach(function(op){
+          if(_posMap[op.id] !== undefined){
+            // Posicion=0 means running/current; >0 means queue position
+            op.cola = _posMap[op.id] === 0
+              ? (op.status==='running'||op.status==='paused' ? null : 0)
+              : _posMap[op.id];
+          }
+        });
+      });
+      console.log('📋 Cola cargada desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops');
+    } catch(e){ console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
+
+    // Rebuild station queues sorted by Cola from FT_Cola_Estacion
     DB.activeOFs.forEach(function(aof){
       if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
     });
-    // Sort each station queue by the Cola position loaded from SP
     if(typeof STATIONS!=='undefined'){
       STATIONS.forEach(function(st){
         var q = (window.DB_STATION_QUEUE||{})[st];
@@ -11019,11 +11045,10 @@ async function appReloadOpsFromSP() {
           var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
           var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
           var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
-          var ca=op_a&&op_a.cola?op_a.cola:999;
-          var cb=op_b&&op_b.cola?op_b.cola:999;
-          // Running ops (cola=null/0) stay at top
           if(!op_a||op_a.status==='running'||op_a.status==='paused') return -1;
           if(!op_b||op_b.status==='running'||op_b.status==='paused') return 1;
+          var ca = op_a&&op_a.cola!=null ? op_a.cola : 999;
+          var cb = op_b&&op_b.cola!=null ? op_b.cola : 999;
           return ca-cb;
         });
       });
