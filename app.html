@@ -2633,6 +2633,10 @@ function appConfirmReanudar(){
         }
       } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
     })();
+    // Ensure newOp enters the station queue correctly
+    if(newOp.estacion){
+      sqAddOF(ctx.of_sap);  // refresh queue for this OF
+    }
     sqSyncColaNumbers();
     renderApp();
     fireSync('app','turno_traspaso',{
@@ -3524,6 +3528,7 @@ appMoveOp = function(sap, idx, dir) {
   var tmp=of.ops[idx]; of.ops[idx]=of.ops[ni]; of.ops[ni]=tmp;
   renderApp();
   if (C.currentPage==='seguimiento') renderSeg();
+  if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-table')) renderHist();
   fireSync('app','op_moved',{of_sap:sap});
 };
 
@@ -7803,6 +7808,10 @@ function appConfirmReanudar(){
         }
       } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
     })();
+    // Ensure newOp enters the station queue correctly
+    if(newOp.estacion){
+      sqAddOF(ctx.of_sap);  // refresh queue for this OF
+    }
     sqSyncColaNumbers();
     renderApp();
     fireSync('app','turno_traspaso',{
@@ -9742,7 +9751,7 @@ function renderHist(){
       techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--red);">'+(s.minsRetrabajo>0?fmtM(s.minsRetrabajo):'—')+'</td>';
       techH+='<td style="font-family:\'DM Mono\',monospace;font-weight:700;color:var(--accent-l);">'+fmtM(minsTotal)+'</td>';
       techH+='<td style="min-width:90px;">'+refCalCell+'</td>';
-      techH+='<td style="color:var(--green);">'+s.ok+'</td>';
+        techH+='<tr><td colspan="14" style="padding:0;">';
       techH+='<td style="color:'+(s.def>0?'var(--yellow)':'var(--dim)')+';">'+s.def+'</td>';
       techH+='<td style="color:'+(s.chat>0?'var(--red)':'var(--dim)')+';">'+(s.chat||0)+'</td>';
       techH+='<td style="font-weight:700;color:'+col+';">'+calPct+'%</td></tr>';
