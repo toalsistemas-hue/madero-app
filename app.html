@@ -10990,7 +10990,7 @@ async function appReloadOpsFromSP() {
           qty_ok:      parseInt(o.Qty_OK||0),
           qty_def:     parseInt(o.Qty_Def||0),
           qty_rej:     parseInt(o.Qty_Rej||0),
-          cola:        existing ? existing.cola : 0,
+          cola:        parseInt(o.Cola||0)||0,  // from SP — will be overridden by FT_Cola_Estacion fetch
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
@@ -11009,7 +11009,7 @@ async function appReloadOpsFromSP() {
     // This reflects coordinator reorders immediately
     try {
       var colaEstRes = await appGraphGet(
-        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$select=id,fields&$top=500'
+        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
       );
       // Build posicion map: Op_ID → Posicion
       var _posMap = {};
@@ -11030,7 +11030,7 @@ async function appReloadOpsFromSP() {
         });
       });
       console.log('📋 Cola cargada desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops');
-    } catch(e){ console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
+    } catch(e){ if(!e.message||!e.message.includes('fetch')) console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
 
     // Rebuild station queues sorted by Cola from FT_Cola_Estacion
     DB.activeOFs.forEach(function(aof){
