@@ -7610,31 +7610,47 @@ function appMoveOp(sap,idx,dir){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   if(!of)return;
   var ni=idx+dir;if(ni<0||ni>=of.ops.length)return;
-  // Don't move ops that are running/paused/done
   var opA=of.ops[idx],opB=of.ops[ni];
   if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')) return;
   if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
   var tmp=of.ops[idx];of.ops[idx]=of.ops[ni];of.ops[ni]=tmp;
   sqSyncColaNumbers();
   renderApp();
-  // Persist new Secuencia to SP for all ops of this OF
-  if(typeof appSiteId!=='undefined'&&appSiteId){
-    of.ops.forEach(function(op,i){
-      if(!op._spId) return;
-      appGraphPatch(
-        'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-        {Secuencia: i+1}
-      ).catch(function(e){ console.warn('MoveOp SP error:', e.message); });
-    });
-  }
-  // Notify coordinator and show notification to supervisor too
-  // Notify supervisor locally that reorder was saved
-  if(typeof APP!=='undefined' && APP.role==='supervisor'){
-    var _movedOf = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-    var _movedOF_sap = sap;
-    console.log('✅ Ops reordenadas en OF '+sap+' — guardado en SP');
-  }
+  // Persist Secuencia to SP with dedicated async function
+  appSaveMoveToSP(sap, of);
   fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
+}
+
+// Async: save new Secuencia for all ops after reorder — handles missing _spId
+async function appSaveMoveToSP(of_sap, of){
+  try {
+    if(!appSiteId) await appGetSiteId();
+    if(!appSiteId){ console.warn('appSaveMoveToSP: no siteId'); return; }
+    var savedCount = 0;
+    for(var i=0; i<of.ops.length; i++){
+      var op = of.ops[i];
+      var newSeq = i+1;
+      // If _spId missing, look it up in SP by Op_ID
+      if(!op._spId && op.id){
+        try {
+          var _opFilter = "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields%2FOp_ID+eq+%27"+encodeURIComponent(op.id)+"%27&$select=id&$top=1";
+          var searchRes = await appGraphGet(_opFilter);
+          if(searchRes && searchRes.value && searchRes.value.length>0){
+            op._spId = searchRes.value[0].id;
+          }
+        } catch(e2){ /* ignore lookup error */ }
+      }
+      if(!op._spId){ console.warn('appSaveMoveToSP: sin _spId para '+op.id); continue; }
+      try {
+        await appGraphPatch(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+          {Secuencia: newSeq}
+        );
+        savedCount++;
+      } catch(pe){ console.warn('MoveOp PATCH error '+op.id+':', pe.message||pe); }
+    }
+    console.log('✅ Secuencia SP guardada: '+savedCount+'/'+of.ops.length+' ops — OF '+of_sap);
+  } catch(e){ console.warn('appSaveMoveToSP error:', e.message||e); }
 }
 function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
