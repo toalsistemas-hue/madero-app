@@ -1934,7 +1934,10 @@ function sqClass(op){
 }
 function sqLabel(op,idx){
   if(op.status==="done")return"✓";if(op.status==="running")return"▶";if(op.status==="paused")return"⏸";if(op.status==="validating")return"🔍";
-  if(op.tipo==="retorno")return"↩";if(op.tipo==="simultanea")return"≈";return idx+1;
+  if(op.tipo==="retorno")return"↩";
+  // Simultanea: show ≈ only if no queue position, otherwise show number
+  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?op.cola:"≈";
+  return idx+1;
 }
 function opCls(op){
   var c="opr";if(op.status==="running")c+=" running";else if(op.status==="paused")c+=" paused";else if(op.status==="validating")c+=" validating";else if(op.status==="done")c+=" done";else if(op.status==="retrabajo"||op.status==="chatarra")c+=" rejected";return c;
@@ -7220,7 +7223,10 @@ function sqClass(op){
 }
 function sqLabel(op,idx){
   if(op.status==="done")return"✓";if(op.status==="running")return"▶";if(op.status==="paused")return"⏸";if(op.status==="validating")return"🔍";
-  if(op.tipo==="retorno")return"↩";if(op.tipo==="simultanea")return"≈";return idx+1;
+  if(op.tipo==="retorno")return"↩";
+  // Simultanea: show ≈ only if no queue position, otherwise show number
+  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?op.cola:"≈";
+  return idx+1;
 }
 function opCls(op){
   var c="opr";if(op.status==="running")c+=" running";else if(op.status==="paused")c+=" paused";else if(op.status==="validating")c+=" validating";else if(op.status==="done")c+=" done";else if(op.status==="retrabajo"||op.status==="chatarra")c+=" rejected";return c;
@@ -11026,17 +11032,15 @@ async function appReloadOpsFromSP() {
       // Update op.cola from FT_Cola_Estacion.Posicion
       DB.activeOFs.forEach(function(aof){
         aof.ops.forEach(function(op){
+          // Running/paused ops ALWAYS get cola=null regardless of SP value
+          if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+            op.cola = null;
+            return;
+          }
           var pos = _posMap[op.id];
           if(pos === undefined) return; // not in FT_Cola_Estacion — keep existing
-          var isActive = op.status==='running'||op.status==='paused'||op.status==='validating';
-          if(pos === 0){
-            // Posicion=0 = currently running or first in queue
-            op.cola = isActive ? null : 1;
-          } else if(pos >= 999){
-            // Skip — bad data
-          } else {
-            op.cola = pos; // 1,2,3... queue position
-          }
+          if(pos <= 0 || pos >= 999) return; // bad/unset value — keep existing
+          op.cola = pos; // 1,2,3... queue position
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
