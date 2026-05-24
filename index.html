@@ -6672,9 +6672,16 @@ function saveTplModal(){
           // This ensures we use the true SP state (with correct _spId values)
           // and never operate on stale in-memory ops from previous supervisor reorders
           try {
+            // Graph API doesn't support $filter with $expand on SP lists — fetch all and filter in JS
             var freshRes = await graphGet(
-              "sites/"+FT_SITE_ID+"/lists/FT_Operaciones/items?$filter=fields/OF_SAP eq '"+aof.of_sap+"'&$expand=fields&$select=id,fields&$top=100"
+              "sites/"+FT_SITE_ID+"/lists/FT_Operaciones/items?$expand=fields&$select=id,fields&$top=500"
             );
+            // Filter in JS to only keep items for this OF
+            if(freshRes && freshRes.value){
+              freshRes.value = freshRes.value.filter(function(item){
+                return item.fields && String(item.fields.OF_SAP) === String(aof.of_sap);
+              });
+            }
             if(freshRes && freshRes.value && freshRes.value.length){
               // Build two lookup maps:
               // 1. By Op_ID (authoritative key)
