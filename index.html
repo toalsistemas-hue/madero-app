@@ -3524,28 +3524,35 @@ async function ftSaveQueueToSP(of_sap) {
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
-    // For each op in the OF, upsert a queue record
+
+    // ── Step 1: Load existing FT_Cola_Estacion items for this OF ──────────────
+    // Build a map Op_ID → SP item ID to avoid duplicate POSTs after reload
+    if(!window._queueSpIdCache) window._queueSpIdCache = {};
+    try {
+      var existingRes = await graphGet(
+        'sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$select=id,fields&$top=500'
+      );
+      (existingRes.value||[]).forEach(function(item){
+        var opId = item.fields && item.fields.Op_ID;
+        if(opId) window._queueSpIdCache[opId] = item.id;
+      });
+    } catch(e){ console.warn('ftSaveQueueToSP: error loading existing items:', e.message); }
+
+    // ── Step 2: Restore _queueSpId on all ops from cache ──────────────────────
+    DB.activeOFs.forEach(function(a){
+      a.ops.forEach(function(op){
+        if(!op._queueSpId && window._queueSpIdCache[op.id]){
+          op._queueSpId = window._queueSpIdCache[op.id];
+        }
+      });
+    });
+
+    // ── Step 3: Upsert each op using _queueSpId (PATCH) or create new (POST) ──
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
       var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
       var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
-      // FT_Cola_Estacion: get actual SP internal column names
-      if (!window._ftQueueColMap) {
-        try {
-          const qColRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/columns?$select=name,displayName,readOnly,hidden&$top=50');
-          window._ftQueueColMap = {};
-          (qColRes.value||[]).forEach(function(c){
-            if (!c.readOnly && !c.hidden) {
-              window._ftQueueColMap[c.displayName]=c.name;
-              window._ftQueueColMap[c.name]=c.name;
-            }
-          });
-          console.log('FT_Cola_Estacion col map (writable):', JSON.stringify(window._ftQueueColMap));
-        } catch(e) { window._ftQueueColMap = {}; }
-      }
-      // Hardcoded writable SP field names for FT_Cola_Estacion
-      // Estacion display col → LinkTitleNoMenu (read-only) — use Title instead
       var queuePos = pos >= 0 ? pos : i;
       var fields = {
         Title:     op.estacion || of_sap,
@@ -3555,18 +3562,17 @@ async function ftSaveQueueToSP(of_sap) {
         Tipo_Cola: 'normal',
         Activo:    op.status !== 'done',
       };
-      op.cola = queuePos; // update for later patch to FT_Operaciones
+      op.cola = queuePos;
       try {
         if (op._queueSpId) {
           await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
         } else {
           var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items', { fields });
           op._queueSpId = res.id;
+          window._queueSpIdCache[op.id] = res.id;
         }
       } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
     }
-    // Cola position is maintained in FT_Cola_Estacion.Posicion only
-    // FT_Operaciones.Cola is not used to avoid SP internal name conflicts
   } catch(e) { console.warn('ftSaveQueueToSP error:', e.message); }
 }
 
@@ -7958,29 +7964,57 @@ function qmgrMove(idx, dir){
   portalSaveColaToSP(_qmgrStation);
 }
 
-// Save Cola column to FT_Operaciones for all ops in a station queue
+// Save Cola position to both FT_Operaciones and FT_Cola_Estacion for a station queue
 async function portalSaveColaToSP(estacion){
   if(!FT_SITE_ID) return;
   var q = sqGetQueue(estacion);
-  console.log('💾 Guardando cola en SP para estación:', estacion, '|', q.length, 'ops');
-  var savedCount = 0;
+  console.log('💾 Guardando cola SP — estación:', estacion, '|', q.length, 'ops');
+
+  // Ensure _queueSpIdCache is populated (load all FT_Cola_Estacion once)
+  if(!window._queueSpIdCache){
+    window._queueSpIdCache = {};
+    try {
+      var existRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$select=id,fields&$top=500');
+      (existRes.value||[]).forEach(function(item){
+        if(item.fields && item.fields.Op_ID) window._queueSpIdCache[item.fields.Op_ID] = item.id;
+      });
+    } catch(e){ console.warn('queueSpIdCache load:', e.message); }
+  }
+
+  // Restore _queueSpId on ops from cache
+  DB.activeOFs.forEach(function(a){
+    a.ops.forEach(function(op){
+      if(!op._queueSpId && window._queueSpIdCache[op.id]) op._queueSpId = window._queueSpIdCache[op.id];
+    });
+  });
+
+  var savedOps = 0, savedQueue = 0;
   for(var i=0; i<q.length; i++){
     var item = q[i];
     var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
     if(!aof) continue;
     var op = aof.ops.find(function(o){ return o.id===item.op_id; });
-    if(!op || !op._spId) continue;
-    var colaNum = op.cola || 0; // already set by sqSyncColaNumbers
-    try {
-      await graphPatch(
-        'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-        {Cola: colaNum}
-      );
-      savedCount++;
-    } catch(e){ console.warn('Cola PATCH error:', e.message); }
+    if(!op) continue;
+    var colaNum = op.cola || 0;
+
+    // PATCH FT_Operaciones.Cola
+    if(op._spId){
+      try {
+        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', {Cola: colaNum});
+        savedOps++;
+      } catch(e){ console.warn('Cola PATCH FT_Op error:', e.message); }
+    }
+
+    // PATCH FT_Cola_Estacion.Posicion (never POST — avoid duplicates)
+    if(op._queueSpId){
+      try {
+        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields',
+          {Posicion: colaNum, Activo: op.status!=='done'});
+        savedQueue++;
+      } catch(e){ console.warn('Cola PATCH FT_Cola error:', e.message); }
+    }
   }
-  console.log('✅ Cola SP guardada: '+savedCount+'/'+q.length+' ops — '+estacion);
-  // Also notify mobile app via fireSync
+  console.log('✅ Cola SP — FT_Op: '+savedOps+', FT_Cola: '+savedQueue+'/'+q.length+' ops');
   fireSync('coord','op_moved',{estacion: estacion, moved_by:'coordinador'});
 }
 function qmgrRemove(idx){
