@@ -1280,11 +1280,17 @@ function sqAddOF(of_sap){
 function sqSyncColaNumbers(){
   STATIONS.forEach(function(st){
     var q=sqGetQueue(st);
-    q.forEach(function(item,i){
+    var colaIdx=1;
+    q.forEach(function(item){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
       if(!aof) return;
       var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(op) op.cola=i+1;
+      if(!op) return;
+      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+        op.cola=null;
+      } else if(op.status==='pending'||op.status==='retrabajo'){
+        op.cola=colaIdx++;
+      }
     });
   });
 }
@@ -2578,8 +2584,11 @@ function appConfirmReanudar(){
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
     // Generar nueva op para turno B
+    // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
+    var _turnoIdx = of.ops.length; // índice al final (antes del push)
+    var _turnoOpId = 'op_'+ctx.of_sap+'_turnoB'+_turnoIdx;
     var newOp={
-      id:'op_turnoB_'+Date.now(),
+      id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
@@ -2591,7 +2600,8 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    of.ops.splice(of.ops.indexOf(op)+1,0,newOp);
+    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
+    of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -2607,7 +2617,7 @@ function appConfirmReanudar(){
         console.log('✅ Turno A done guardado en SP');
         // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
         if(newOp && typeof appGraphPost==='function'){
-          var seqNum = of.ops.indexOf(newOp)+1;
+          var seqNum = of.ops.length; // newOp already pushed → length = correct sequence
           var postFields = {
             Title:     newOp.nombre,
             OF_SAP:    ctx.of_sap,
@@ -5109,6 +5119,35 @@ function appQueueSave(){
   sqSyncColaNumbers();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
+  // Persist new Secuencia values to SP for all ops of all active OFs
+  // This ensures the portal reflects the new order after reload
+  if(typeof appSiteId !== 'undefined' && appSiteId){
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op, idx){
+        if(!op._spId) return;
+        var newSeq = idx + 1;
+        var newCola = op.cola || 0;
+        appGraphPatch(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+          {Secuencia: newSeq, Cola: newCola}
+        ).then(function(){
+          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
+        }).catch(function(e){
+          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
+        });
+      });
+    });
+    // Also save queue to FT_Cola_Estacion
+    var savedOFs = {};
+    DB.activeOFs.forEach(function(aof){
+      if(!savedOFs[aof.of_sap]){
+        savedOFs[aof.of_sap] = true;
+        appSaveQueueToSP(aof.of_sap).catch(function(e){
+          console.warn('appSaveQueueToSP:', e.message);
+        });
+      }
+    });
+  }
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
@@ -6490,11 +6529,17 @@ function sqAddOF(of_sap){
 function sqSyncColaNumbers(){
   STATIONS.forEach(function(st){
     var q=sqGetQueue(st);
-    q.forEach(function(item,i){
+    var colaIdx=1;
+    q.forEach(function(item){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
       if(!aof) return;
       var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(op) op.cola=i+1;
+      if(!op) return;
+      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+        op.cola=null;
+      } else if(op.status==='pending'||op.status==='retrabajo'){
+        op.cola=colaIdx++;
+      }
     });
   });
 }
@@ -7753,8 +7798,11 @@ function appConfirmReanudar(){
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
     // Generar nueva op para turno B
+    // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
+    var _turnoIdx = of.ops.length; // índice al final (antes del push)
+    var _turnoOpId = 'op_'+ctx.of_sap+'_turnoB'+_turnoIdx;
     var newOp={
-      id:'op_turnoB_'+Date.now(),
+      id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
@@ -7766,7 +7814,8 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    of.ops.splice(of.ops.indexOf(op)+1,0,newOp);
+    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
+    of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -7782,7 +7831,7 @@ function appConfirmReanudar(){
         console.log('✅ Turno A done guardado en SP');
         // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
         if(newOp && typeof appGraphPost==='function'){
-          var seqNum = of.ops.indexOf(newOp)+1;
+          var seqNum = of.ops.length; // newOp already pushed → length = correct sequence
           var postFields = {
             Title:     newOp.nombre,
             OF_SAP:    ctx.of_sap,
@@ -10288,6 +10337,35 @@ function appQueueSave(){
   sqSyncColaNumbers();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
+  // Persist new Secuencia values to SP for all ops of all active OFs
+  // This ensures the portal reflects the new order after reload
+  if(typeof appSiteId !== 'undefined' && appSiteId){
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op, idx){
+        if(!op._spId) return;
+        var newSeq = idx + 1;
+        var newCola = op.cola || 0;
+        appGraphPatch(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+          {Secuencia: newSeq, Cola: newCola}
+        ).then(function(){
+          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
+        }).catch(function(e){
+          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
+        });
+      });
+    });
+    // Also save queue to FT_Cola_Estacion
+    var savedOFs = {};
+    DB.activeOFs.forEach(function(aof){
+      if(!savedOFs[aof.of_sap]){
+        savedOFs[aof.of_sap] = true;
+        appSaveQueueToSP(aof.of_sap).catch(function(e){
+          console.warn('appSaveQueueToSP:', e.message);
+        });
+      }
+    });
+  }
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
