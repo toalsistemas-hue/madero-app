@@ -11023,42 +11023,59 @@ async function appReloadOpsFromSP() {
           _posMap[item.fields.Op_ID] = parseInt(item.fields.Posicion||999);
         }
       });
-      // Update op.cola from FT_Cola_Estacion.Posicion (overrides FT_Operaciones.Cola)
+      // Update op.cola from FT_Cola_Estacion.Posicion
       DB.activeOFs.forEach(function(aof){
         aof.ops.forEach(function(op){
-          if(_posMap[op.id] !== undefined){
-            // Posicion=0 means running/current; >0 means queue position
-            op.cola = _posMap[op.id] === 0
-              ? (op.status==='running'||op.status==='paused' ? null : 0)
-              : _posMap[op.id];
+          var pos = _posMap[op.id];
+          if(pos === undefined) return; // not in FT_Cola_Estacion — keep existing
+          var isActive = op.status==='running'||op.status==='paused'||op.status==='validating';
+          if(pos === 0){
+            // Posicion=0 = currently running or first in queue
+            op.cola = isActive ? null : 1;
+          } else if(pos >= 999){
+            // Skip — bad data
+          } else {
+            op.cola = pos; // 1,2,3... queue position
           }
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
     } catch(e){ if(!e.message||!e.message.includes('fetch')) console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
 
-    // Rebuild station queues sorted by Cola from FT_Cola_Estacion
-    DB.activeOFs.forEach(function(aof){
-      if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
-    });
-    if(typeof STATIONS!=='undefined'){
-      STATIONS.forEach(function(st){
-        var q = (window.DB_STATION_QUEUE||{})[st];
-        if(!q||!q.length) return;
-        q.sort(function(a,b){
-          var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
-          var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
-          var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
-          var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
-          if(!op_a||op_a.status==='running'||op_a.status==='paused') return -1;
-          if(!op_b||op_b.status==='running'||op_b.status==='paused') return 1;
-          var ca = op_a&&op_a.cola!=null ? op_a.cola : 999;
-          var cb = op_b&&op_b.cola!=null ? op_b.cola : 999;
-          return ca-cb;
-        });
-      });
+    // Sort station queues by Cola from FT_Cola_Estacion
+    // Step 1: Clear and rebuild queues fresh
+    if(typeof window.DB_STATION_QUEUE === 'undefined') window.DB_STATION_QUEUE = {};
+    if(typeof STATIONS !== 'undefined'){
+      STATIONS.forEach(function(st){ window.DB_STATION_QUEUE[st] = []; });
     }
+    // Step 2: Add ops in Cola order (not Secuencia order)
+    // Build a flat list of all pending ops across all OFs, sorted by Cola
+    var allPendingOps = [];
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if(op.estacion && op.status !== 'done'){
+          allPendingOps.push({of_sap: aof.of_sap, op_id: op.id, op: op, estacion: op.estacion});
+        }
+      });
+    });
+    // Sort: running/paused first (cola=null), then by cola ascending
+    allPendingOps.sort(function(a,b){
+      var isRunA = a.op.status==='running'||a.op.status==='paused'||a.op.status==='validating';
+      var isRunB = b.op.status==='running'||b.op.status==='paused'||b.op.status==='validating';
+      if(isRunA && !isRunB) return -1;
+      if(!isRunA && isRunB) return 1;
+      var ca = (a.op.cola!=null && a.op.cola>0) ? a.op.cola : 0;
+      var cb = (b.op.cola!=null && b.op.cola>0) ? b.op.cola : 0;
+      return ca - cb;
+    });
+    // Step 3: Push into station queues in sorted order
+    allPendingOps.forEach(function(item){
+      if(!window.DB_STATION_QUEUE[item.estacion]) window.DB_STATION_QUEUE[item.estacion] = [];
+      window.DB_STATION_QUEUE[item.estacion].push({of_sap: item.of_sap, op_id: item.op_id});
+    });
+    // Step 4: Now sqSyncColaNumbers assigns 1,2,3 in the correct sorted order
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+    console.log('🔀 Cola reordenada en memoria por Posicion SP');
   } catch(e) { console.warn('appReloadOpsFromSP error:', e.message); }
 }
 </script>
