@@ -10887,15 +10887,15 @@ async function spPollCheck() {
 
     // Only trigger if we have a valid baseline AND a real new timestamp
     if (_spLastOpsHash && latestOpMod && latestOpMod !== _spLastOpsHash) {
-      console.log('Poll: op actualizada en SP →', latestOpMod);
+      console.log('🔔 Poll OPS cambio detectado →', latestOpMod);
       _spLastOpsHash = latestOpMod;
-      // Reload only ops, keep DB.ofs intact to avoid losing activeOFs
-      await appReloadOpsFromSP();
-      await appReloadOpsFromSP();
-      renderApp();
-      _refreshStationViews(); // refresh station queue display after cola reorder from SP
+      try {
+        await appReloadOpsFromSP();
+        console.log('✅ Ops reload completo — actualizando UI');
+        renderApp();
+        _refreshStationViews();
+      } catch(pe){ console.warn('❌ Poll ops reload error:', pe.message||pe); }
     }
-    // Set baseline on first successful poll
     if (!_spLastOpsHash && latestOpMod) {
       _spLastOpsHash = latestOpMod;
     }
@@ -10909,10 +10909,15 @@ async function spPollCheck() {
     if(!window._spLastColaMod && latestColaMod){ window._spLastColaMod = latestColaMod; }
     else if(window._spLastColaMod && latestColaMod && latestColaMod !== window._spLastColaMod){
       window._spLastColaMod = latestColaMod;
-      console.log('Poll: cola reordenada en SP →', latestColaMod);
-      await appReloadOpsFromSP();
-      renderApp();
-      _refreshStationViews();
+      console.log('🔔 Poll COLA cambio detectado →', latestColaMod);
+      console.log('🔄 Iniciando reload de ops...');
+      try {
+        await appReloadOpsFromSP();
+        console.log('✅ Reload OK — llamando renderApp');
+        renderApp();
+        _refreshStationViews();
+        console.log('✅ UI actualizada por poll cola');
+      } catch(pe){ console.warn('❌ Poll cola reload error:', pe.message||pe); }
     }
   } catch(e){ /* silencioso */ }
 
@@ -11029,7 +11034,7 @@ async function appReloadOpsFromSP() {
           }
         });
       });
-      console.log('📋 Cola cargada desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops');
+      console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
     } catch(e){ if(!e.message||!e.message.includes('fetch')) console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
 
     // Rebuild station queues sorted by Cola from FT_Cola_Estacion
