@@ -1930,13 +1930,22 @@ function showAppNotif(event, data){
 
 function sqClass(op){
   if(op.status==="done")return"sq-done";if(op.status==="running")return"sq-run";if(op.status==="paused")return"sq-pause";if(op.status==="validating")return"sq-val";
-  if(op.status==="retrabajo"||op.status==="chatarra")return"sq-rej";if(op.tipo==="simultanea")return"sq-sim";return"sq-pend";
+  if(op.status==="retrabajo"||op.status==="chatarra")return"sq-rej";
+  // Simultanea with queue position → show as normal pending (numbered)
+  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?"sq-pend":"sq-sim";
+  return"sq-pend";
 }
 function sqLabel(op,idx){
-  if(op.status==="done")return"✓";if(op.status==="running")return"▶";if(op.status==="paused")return"⏸";if(op.status==="validating")return"🔍";
-  if(op.tipo==="retorno")return"↩";
-  // Simultanea: show ≈ only if no queue position, otherwise show number
-  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?op.cola:"≈";
+  if(op.status==="done")    return "✓";
+  if(op.status==="running")  return "▶";
+  if(op.status==="paused")   return "⏸";
+  if(op.status==="validating")return "🔍";
+  if(op.tipo==="retorno")    return "↩";
+  // For all pending ops (including simultanea): show station queue position if available
+  if(op.cola && op.cola > 0) return op.cola;
+  // Simultanea with no queue position yet → ≈
+  if(op.tipo==="simultanea") return "≈";
+  // Fallback: OF sequence position
   return idx+1;
 }
 function opCls(op){
@@ -7219,13 +7228,22 @@ function showAppNotif(event, data){
 
 function sqClass(op){
   if(op.status==="done")return"sq-done";if(op.status==="running")return"sq-run";if(op.status==="paused")return"sq-pause";if(op.status==="validating")return"sq-val";
-  if(op.status==="retrabajo"||op.status==="chatarra")return"sq-rej";if(op.tipo==="simultanea")return"sq-sim";return"sq-pend";
+  if(op.status==="retrabajo"||op.status==="chatarra")return"sq-rej";
+  // Simultanea with queue position → show as normal pending (numbered)
+  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?"sq-pend":"sq-sim";
+  return"sq-pend";
 }
 function sqLabel(op,idx){
-  if(op.status==="done")return"✓";if(op.status==="running")return"▶";if(op.status==="paused")return"⏸";if(op.status==="validating")return"🔍";
-  if(op.tipo==="retorno")return"↩";
-  // Simultanea: show ≈ only if no queue position, otherwise show number
-  if(op.tipo==="simultanea") return(op.cola&&op.cola>0)?op.cola:"≈";
+  if(op.status==="done")    return "✓";
+  if(op.status==="running")  return "▶";
+  if(op.status==="paused")   return "⏸";
+  if(op.status==="validating")return "🔍";
+  if(op.tipo==="retorno")    return "↩";
+  // For all pending ops (including simultanea): show station queue position if available
+  if(op.cola && op.cola > 0) return op.cola;
+  // Simultanea with no queue position yet → ≈
+  if(op.tipo==="simultanea") return "≈";
+  // Fallback: OF sequence position
   return idx+1;
 }
 function opCls(op){
