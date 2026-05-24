@@ -3283,6 +3283,8 @@ async function ftLoadDataFromSP() {
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
+    DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
+    if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
   // Start real-time polling so portal auto-updates when app mobile makes changes
   if (!window._coordPollTimer && !state.isDemoMode) {
     window._coordLastOpsMod = '';
@@ -3551,18 +3553,19 @@ async function ftSaveQueueToSP(of_sap) {
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
-      var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
-      var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
-      var queuePos = pos >= 0 ? pos : i;
+      // Use op.cola set by sqSyncColaNumbers (1,2,3... for pending, null for running)
+      // Running/paused ops get Posicion=0, pending get their consecutive number
+      var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating')
+                    ? 0
+                    : (op.cola || 0);
       var fields = {
         Title:     op.estacion || of_sap,
         OF_SAP:    of_sap,
         Op_ID:     op.id,
-        Posicion:  queuePos,
+        Posicion:  colaVal,
         Tipo_Cola: 'normal',
         Activo:    op.status !== 'done',
       };
-      op.cola = queuePos;
       try {
         if (op._queueSpId) {
           await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
@@ -7969,6 +7972,8 @@ async function portalSaveColaToSP(estacion){
   if(!FT_SITE_ID) return;
   var q = sqGetQueue(estacion);
   console.log('💾 Guardando cola SP — estación:', estacion, '|', q.length, 'ops');
+  // Ensure Cola numbers are fresh before saving
+  if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
 
   // Ensure _queueSpIdCache is populated (load all FT_Cola_Estacion once)
   if(!window._queueSpIdCache){
