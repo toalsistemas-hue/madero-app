@@ -3329,7 +3329,7 @@ async function ftLoadDataFromSP() {
           });
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
-          if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-table')) renderHist();
+          if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
           var ind=document.getElementById('auto-refresh-indicator');
           if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
             setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 15s';},2500);}
@@ -7411,7 +7411,7 @@ function renderHist(){
       var col=calPct>=95?'var(--green)':(calPct>=85?'var(--yellow)':'var(--red)');
       var isExp=C.techExpanded&&C.techExpanded[t];
 
-      techH+='<tr style="cursor:pointer;" onclick="toggleTechDetail(\'+esc(t)+\')">';
+      techH+='<tr style="cursor:pointer;" onclick="toggleTechDetail(\''+esc(t)+'\')">';
       techH+='<td style="padding:6px 8px;font-size:.75rem;color:var(--dim);">'+(isExp?'▲':'▼')+'</td>';
       techH+='<td style="font-weight:600;">'+esc(t)+'</td>';
       techH+='<td>'+s.done+'</td>';
