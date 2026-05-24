@@ -969,37 +969,18 @@ tr:last-child td{border-bottom:none;}
     <span style="width:1px;height:16px;background:rgba(255,255,255,.12);margin:0 6px;flex-shrink:0;align-self:center;"></span>
     <button class="coord-nav-pill" onclick="showCoordPage('seguimiento',this)">📡 Tiempo Real</button>
     <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
-    <!-- Notification bell button -->
     <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
-      <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="
-        background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
-        border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);
-        font-size:.78rem;display:flex;align-items:center;gap:5px;position:relative;
-        font-family:'Archivo',sans-serif;transition:background .15s;
-      " onmouseenter="this.style.background='rgba(255,255,255,.1)'" 
-         onmouseleave="this.style.background='rgba(255,255,255,.06)'">
+      <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);font-size:.78rem;display:flex;align-items:center;gap:5px;font-family:'Archivo',sans-serif;transition:background .15s;" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='rgba(255,255,255,.06)'">
         🔔
-        <span id="notif-badge" style="
-          background:#ef4444;color:#fff;border-radius:99px;
-          font-size:.6rem;font-weight:700;padding:1px 5px;
-          min-width:16px;text-align:center;display:none;
-        ">0</span>
+        <span id="notif-badge" style="background:#ef4444;color:#fff;border-radius:99px;font-size:.6rem;font-weight:700;padding:1px 5px;min-width:16px;text-align:center;display:none;">0</span>
         <span style="color:var(--text-dim);font-size:.7rem;" id="notif-btn-label">Sin notificaciones</span>
         <span style="color:var(--text-dim);font-size:.6rem;" id="notif-caret">▼</span>
       </button>
-      <!-- Dropdown panel -->
-      <div id="coord-notif-panel" style="
-        display:none;position:absolute;top:calc(100% + 8px);right:0;
-        width:340px;max-height:420px;overflow-y:auto;
-        background:#0f1623;border:1px solid rgba(255,255,255,.12);
-        border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);
-        z-index:9999;padding:8px;
-      ">
+      <div id="coord-notif-panel" style="display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;max-height:420px;overflow-y:auto;background:#0f1623;border:1px solid rgba(255,255,255,.12);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:9999;padding:8px;">
         <div id="coord-notifs" class="coord-notif-area"></div>
       </div>
     </div>
   </div>
-  <!-- Overlay to close panel on outside click -->
   <div id="coord-notif-overlay" onclick="closeCoordNotifPanel()" style="display:none;position:fixed;inset:0;z-index:9998;"></div>
 
 
@@ -3073,20 +3054,19 @@ async function ftLoadDataFromSP() {
 
     // Build DB.activeOFs with their operations
     // Preserve both fields AND the item id (needed for PATCH)
-    // Deduplicar ops de SP: priorizar running>paused>done>pending, luego ID mayor
-    var _rawOps = (opsRes.value||[]).map(i => Object.assign({}, i.fields, { _itemId: i.id, _numId: parseInt(i.id||0) }));
-    var _spPrio = {running:5, paused:4, validating:3, done:2, pending:1};
-    var _seen = {};
+    var _rawOps=(opsRes.value||[]).map(i=>Object.assign({},i.fields,{_itemId:i.id,_numId:parseInt(i.id||0)}));
+    var _spPrio={running:5,paused:4,validating:3,done:2,pending:1};
+    var _seen={};
     _rawOps.forEach(function(o){
-      var k = (o.OF_SAP||'')+'__'+(o.Op_ID||'');
+      var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
       if(!k||k==='__') return;
-      var ex = _seen[k];
-      if(!ex){ _seen[k]=o; return; }
-      var nP=_spPrio[o.Status||'pending']||1, eP=_spPrio[ex.Status||'pending']||1;
+      var ex=_seen[k];
+      if(!ex){_seen[k]=o;return;}
+      var nP=_spPrio[o.Status||'pending']||1,eP=_spPrio[ex.Status||'pending']||1;
       if(nP>eP||(nP===eP&&o._numId>ex._numId)) _seen[k]=o;
     });
-    const allOps = Object.values(_seen);
-    if(_rawOps.length !== allOps.length) console.log('Portal: ops deduplicadas', _rawOps.length, '→', allOps.length);
+    const allOps=Object.values(_seen);
+    if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
     DB.activeOFs = ofs
       .filter(f => f.Programado_Hoy === true || ['Planeacion','En Fabricacion'].includes(f.Status))
       .map(f => {
@@ -3316,37 +3296,21 @@ async function ftLoadDataFromSP() {
           // Lightweight: reload only ops fields, no full page rebuild
           var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
           var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
-          // Detectar cambios de status para generar notificaciones
-          var _statusEvents = [];
+          var _statusEvents=[];
           DB.activeOFs.forEach(function(aof){
-            var spOps = allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
-                              .sort(function(a,b){return (a.Secuencia||0)-(b.Secuencia||0);});
+            var spOps=allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
+                            .sort(function(a,b){return (a.Secuencia||0)-(b.Secuencia||0);});
             if(!spOps.length) return;
-            aof.ops = spOps.map(function(o){
+            aof.ops=spOps.map(function(o){
               var ex=aof.ops.find(function(e){return e.id===(o.Op_ID||o.Title||'');});
-              var newStatus = o.Status||'pending';
-              var oldStatus = ex ? ex.status : 'pending';
-              // Detectar transición de status para notificación
-              if(ex && oldStatus !== newStatus){
-                var evtMap = {
-                  running:    'op_started',
-                  paused:     'op_paused',
-                  done:       'op_finished',
-                  validating: 'op_valcal',
-                };
-                var evt = evtMap[newStatus];
-                if(evt){
-                  _statusEvents.push({
-                    event:   evt,
-                    of_sap:  aof.of_sap,
-                    op_id:   o.Op_ID||'',
-                    op_name: o.Nombre||o.Title||'',
-                    tecnico: o.Tecnico||'',
-                    reason:  o.PauseReason||'',
-                    obs:     o.Obs||'',
-                    note:    o.ValCalNote||'',
-                  });
-                }
+              var newStatus=o.Status||'pending';
+              var oldStatus=ex?ex.status:'pending';
+              if(ex&&oldStatus!==newStatus){
+                var evtMap={running:'op_started',paused:'op_paused',done:'op_finished',validating:'op_valcal'};
+                var evt=evtMap[newStatus];
+                if(evt) _statusEvents.push({event:evt,of_sap:aof.of_sap,op_id:o.Op_ID||'',
+                  op_name:o.Nombre||o.Title||'',tecnico:o.Tecnico||'',
+                  reason:o.PauseReason||'',obs:o.Obs||'',note:o.ValCalNote||''});
               }
               return {id:o.Op_ID||o.Title||'',nombre:o.Nombre||o.Title||'',
                 estacion:o.Estacion||'',tipo:o.Tip||o.Tipo||o.tipo||'Secuencial',
@@ -3360,13 +3324,12 @@ async function ftLoadDataFromSP() {
                 _spId:o.ID||null};
             });
           });
-          // Disparar notificaciones por cambios detectados
           _statusEvents.forEach(function(e){
-            if(typeof addCoordNotif==='function') addCoordNotif(e.event, e);
+            if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
           });
-          console.log('Coord poll: ops cambiaron →', latestMod, '| notifs:', _statusEvents.length);
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
+          if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-table')) renderHist();
           var ind=document.getElementById('auto-refresh-indicator');
           if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
             setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 15s';},2500);}
@@ -3404,7 +3367,7 @@ async function ftSaveOpToSP(of_sap, opId) {
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)   fields.NeedsCal = true;
-    if (op.valcalNote && op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
+    if (op.valcalNote&&op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
     if (op.isRetrabajo === true) fields.isRetrabajo = true;
     if (op._spId) {
       try {
@@ -3901,20 +3864,19 @@ function sqAddOF(of_sap){
 }
 
 // Sync op.cola numbers from queue position
-// Solo ops pending reciben número de cola (running/paused no se numeran en cola)
 function sqSyncColaNumbers(){
   STATIONS.forEach(function(st){
     var q=sqGetQueue(st);
-    var colaIdx = 1;
+    var colaIdx=1;
     q.forEach(function(item){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
       if(!aof) return;
       var op=aof.ops.find(function(o){return o.id===item.op_id;});
       if(!op) return;
       if(op.status==='running'||op.status==='paused'||op.status==='validating'){
-        op.cola = null; // en operación/pausa — sin número de cola
+        op.cola=null;
       } else if(op.status==='pending'||op.status==='retrabajo'){
-        op.cola = colaIdx++;
+        op.cola=colaIdx++;
       }
     });
   });
@@ -4529,7 +4491,7 @@ function renderHist(){
     if(pending.length){
       h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
       pending.forEach(function(x,qi){
-        var colaN = qi+1; // número relativo en la cola visible (1,2,3...)
+        var colaN = qi+1;
         h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
         h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
@@ -5190,6 +5152,7 @@ function appConfirmReanudar(){
       time:nowT(),read:false
     });
     closeAppModal('app-modal-traspaso');
+    if(newOp&&newOp.estacion){sqAddOF(ctx.of_sap);sqSyncColaNumbers();}
     renderApp();
     fireSync('app','turno_traspaso',{of_sap:ctx.of_sap,nuevo_tech:nuevoTech,pzas:pzRest});
   }
@@ -6035,58 +5998,52 @@ function showTplFlowModal(art) {
 // -- 12 & 15: Sistema de notificaciones mejorado ----------
 COORD_NOTIFS = [];
 function addCoordNotif(event, data) {
-  var _opName  = data && data.op_name  ? data.op_name  : '';
-  var _tecnico = data && data.tecnico  ? data.tecnico  : '';
-  var _ofSap   = data && data.of_sap   ? 'OF '+data.of_sap : '';
-  var _reason  = data && data.reason   ? data.reason   : '';
-  var _obs     = data && data.obs      ? data.obs      : '';
-  var _note    = data && data.note     ? data.note     : '';
-  var iconMap  = {op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷',turno_traspaso:'🤝'};
-  var icon = iconMap[event] || '📡';
-  var text = '', detail = '';
+  var _opName=data&&data.op_name?data.op_name:'';
+  var _tecnico=data&&data.tecnico?data.tecnico:'';
+  var _ofSap=data&&data.of_sap?'OF '+data.of_sap:'';
+  var _reason=data&&data.reason?data.reason:'';
+  var _obs=data&&data.obs?data.obs:'';
+  var _note=data&&data.note?data.note:'';
+  var iconMap={op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷',turno_traspaso:'🤝'};
+  var icon=iconMap[event]||'📡';
+  var text='',detail='';
   if(event==='op_started'){
-    text   = '▶ Operación iniciada' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico:'');
+    text='▶ Operación iniciada'+(_ofSap?' — '+_ofSap:'');
+    detail=(_opName?_opName+'\n':'')+(_tecnico?'Técnico: '+_tecnico:'');
   } else if(event==='op_paused'){
-    text   = '⏸ Operación pausada' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico+'\n':'') + (_reason?'Causa: '+_reason:'');
+    text='⏸ Operación pausada'+(_ofSap?' — '+_ofSap:'');
+    detail=(_opName?_opName+'\n':'')+(_tecnico?'Técnico: '+_tecnico+'\n':'')+(_reason?'Causa: '+_reason:'');
   } else if(event==='op_finished'){
-    text   = '✅ Operación terminada' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opName?_opName+'\n':'') + (_tecnico?'Técnico: '+_tecnico+'\n':'') + (_obs?'Obs: '+_obs:'');
+    text='✅ Operación terminada'+(_ofSap?' — '+_ofSap:'');
+    detail=(_opName?_opName+'\n':'')+(_tecnico?'Técnico: '+_tecnico+'\n':'')+(_obs?'Obs: '+_obs:'');
   } else if(event==='op_resumed'){
-    text   = '▶▶ Operación reanudada' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opName?_opName:'') + (_tecnico?'\nTécnico: '+_tecnico:'');
+    text='▶▶ Operación reanudada'+(_ofSap?' — '+_ofSap:'');
+    detail=(_opName?_opName:'')+(_tecnico?'\nTécnico: '+_tecnico:'');
   } else if(event==='op_valcal'){
-    text   = '🔍 Validación solicitada' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opName?_opName+'\n':'') + (_note?'Nota: '+_note:'');
+    text='🔍 Validación solicitada'+(_ofSap?' — '+_ofSap:'');
+    detail=(_opName?_opName+'\n':'')+(_note?'Nota: '+_note:'');
   } else if(event==='op_added'){
-    text   = '➕ Op agregada' + (_ofSap?' — '+_ofSap:'');
-    detail = _opName||'';
+    text='➕ Op agregada'+(_ofSap?' — '+_ofSap:'');
+    detail=_opName||'';
   } else if(event==='turno_traspaso'){
-    var _newTech = data && data.nuevo_tech ? data.nuevo_tech : '';
-    var _pzas    = data && data.pzas       ? data.pzas       : '';
-    var _opNameB = data && data.op_name_b  ? data.op_name_b  : '';
-    text   = '🤝 Traspaso de turno' + (_ofSap?' — '+_ofSap:'');
-    detail = (_opNameB?_opNameB+'\n':'') +
-             (_newTech?'Turno B: '+_newTech+'\n':'') +
-             (_pzas?'Piezas pendientes: '+_pzas:'');
+    var _newTech=data&&data.nuevo_tech?data.nuevo_tech:'';
+    var _pzas=data&&data.pzas?data.pzas:'';
+    text='🤝 Traspaso de turno'+(_ofSap?' — '+_ofSap:'');
+    detail=(data&&data.op_name_b?data.op_name_b+'\n':'')+(_newTech?'Turno B: '+_newTech+'\n':'')+(_pzas?'Piezas pendientes: '+_pzas:'');
   } else {
-    text = icon+' '+event + (_ofSap?' — '+_ofSap:'');
+    text=icon+' '+event+(_ofSap?' — '+_ofSap:'');
   }
-  var n = {id:'cn_'+Date.now(), event:event, icon:icon,
-    text:text.trim(), detail:detail.trim()||null,
-    of_sap:data?data.of_sap:null, time:nowT()};
+  var n={id:'cn_'+Date.now(),event:event,icon:icon,
+    text:text.trim(),detail:detail.trim()||null,
+    of_sap:data?data.of_sap:null,time:nowT()};
   COORD_NOTIFS.unshift(n);
   if(COORD_NOTIFS.length>20) COORD_NOTIFS.pop();
   renderCoordNotifs();
-  // Badge en header
-  var badge = document.getElementById('notif-badge');
-  if(badge){ badge.textContent=COORD_NOTIFS.length; badge.style.display='inline-flex'; }
+  var badge=document.getElementById('notif-badge');
+  if(badge){badge.textContent=COORD_NOTIFS.length;badge.style.display='inline-flex';}
 }
 function toggleCoordNotifPanel(){
-  var panel=document.getElementById('coord-notif-panel');
-  var overlay=document.getElementById('coord-notif-overlay');
-  var caret=document.getElementById('notif-caret');
+  var panel=document.getElementById('coord-notif-panel'),overlay=document.getElementById('coord-notif-overlay'),caret=document.getElementById('notif-caret');
   if(!panel) return;
   var open=panel.style.display==='block';
   panel.style.display=open?'none':'block';
@@ -6095,36 +6052,26 @@ function toggleCoordNotifPanel(){
   if(!open){var badge=document.getElementById('notif-badge');if(badge)badge.style.display='none';}
 }
 function closeCoordNotifPanel(){
-  var panel=document.getElementById('coord-notif-panel');
-  var overlay=document.getElementById('coord-notif-overlay');
-  var caret=document.getElementById('notif-caret');
+  var panel=document.getElementById('coord-notif-panel'),overlay=document.getElementById('coord-notif-overlay'),caret=document.getElementById('notif-caret');
   if(panel) panel.style.display='none';
   if(overlay) overlay.style.display='none';
   if(caret) caret.textContent='▼';
 }
 function _updateNotifBadge(){
-  var badge=document.getElementById('notif-badge');
-  var label=document.getElementById('notif-btn-label');
-  var panel=document.getElementById('coord-notif-panel');
-  var open=panel&&panel.style.display==='block';
-  if(badge){if(COORD_NOTIFS.length&&!open){badge.textContent=COORD_NOTIFS.length;badge.style.display='inline-flex';}else{badge.style.display='none';}}
+  var badge=document.getElementById('notif-badge'),label=document.getElementById('notif-btn-label');
+  var panel=document.getElementById('coord-notif-panel'),open=panel&&panel.style.display==='block';
+  if(badge){if(COORD_NOTIFS.length&&!open){badge.textContent=COORD_NOTIFS.length;badge.style.display='inline-flex';}else badge.style.display='none';}
   if(label) label.textContent=COORD_NOTIFS.length?COORD_NOTIFS.length+' notificacion'+(COORD_NOTIFS.length>1?'es':''):'Sin notificaciones';
 }
-function renderCoordNotifs() {
-  var container = document.getElementById('coord-notifs');
-  if (!container) return;
-  if (!COORD_NOTIFS.length) {
-    container.innerHTML='<div style="text-align:center;padding:18px 8px;color:var(--muted);font-size:.72rem;">🔔 Sin notificaciones</div>';
-    _updateNotifBadge(); return;
-  }
-  var h = '';
+function renderCoordNotifs(){
+  var container=document.getElementById('coord-notifs');
+  if(!container) return;
+  if(!COORD_NOTIFS.length){container.innerHTML='<div style="text-align:center;padding:18px 8px;color:var(--muted);font-size:.72rem;">🔔 Sin notificaciones</div>';_updateNotifBadge();return;}
+  var h='';
   COORD_NOTIFS.forEach(function(n){
-    var bc=n.event==='op_paused'?'rgba(245,158,11,.35)':
-           (n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.35)':
-           n.event==='op_finished'?'rgba(59,130,246,.35)':'rgba(255,255,255,.1)';
-    var bg=n.event==='op_paused'?'rgba(245,158,11,.06)':
-           (n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.06)':'rgba(255,255,255,.02)';
-    h+='<div class="coord-notif" id="cnotif-'+n.id+'" style="cursor:'+(n.of_sap?'pointer':'default')+';background:'+bg+';border-color:'+bc+';margin-bottom:5px;" onclick="handleCoordNotifClick(\''+n.id+'\')">';
+    var bc=n.event==='op_paused'?'rgba(245,158,11,.35)':(n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.35)':n.event==='op_finished'?'rgba(59,130,246,.35)':'rgba(255,255,255,.1)';
+    var bg=n.event==='op_paused'?'rgba(245,158,11,.06)':(n.event==='op_started'||n.event==='op_resumed')?'rgba(46,160,67,.06)':'rgba(255,255,255,.02)';
+    h+='<div class="coord-notif" id="cnotif-'+n.id+'" style="cursor:'+(n.of_sap?'pointer':'default')+';background:'+bg+';border-color:'+bc+';margin-bottom:5px;" onclick="handleCoordNotifClick(\''+n.id+'\')'+'">';
     h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">';
     h+='<span style="font-size:.9rem;margin-top:1px;">'+n.icon+'</span>';
     h+='<div style="flex:1;min-width:0;">';
@@ -7119,7 +7066,7 @@ function renderSeg(){
         // Comentarios de la operación
         var comments=[];
         if(op.pauseReason) comments.push({ico:'⏸',col:'var(--yellow)',txt:op.pauseReason});
-        if(op.valcalNote && op.valcalNote.charAt(0)!=='{') comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
+        if(op.valcalNote&&op.valcalNote.charAt(0)!=='{') comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
         if(op.qty_ok>0||op.qty_def>0){
@@ -7483,7 +7430,7 @@ function renderHist(){
       // Desglose de operaciones
       if(isExp && techOps[t] && techOps[t].length){
         var opTotal=techOps[t].reduce(function(s,r){return s+(r.mins||0);},0);
-        techH+='<tr><td colspan="12" style="padding:0;">';
+        techH+='<tr><td colspan="14" style="padding:0;">';
         techH+='<table style="width:100%;font-size:.72rem;background:rgba(0,82,139,.06);">';
         techH+='<thead><tr>';
         techH+='<th style="color:var(--dim);">Rol</th><th style="color:var(--dim);">Tipo</th><th style="color:var(--dim);">OF</th><th style="color:var(--dim);">Pedido</th>';
