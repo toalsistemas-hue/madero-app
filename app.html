@@ -6196,6 +6196,17 @@ window.fireSync = function(source, event, data) {
   if (['op_moved','op_started','op_finished','ops_assigned'].includes(event) && data && data.of_sap) {
     appSaveQueueToSP(data.of_sap);
   }
+  // When coordinator reorders the queue (op_moved from coord), reload SP immediately
+  // so cola badges refresh without waiting for the 15s poll cycle
+  if(event === 'op_moved' && source === 'coord'){
+    (async function(){
+      try {
+        await appReloadOpsFromSP();
+        renderApp();
+        _refreshStationViews();
+      } catch(e){ /* silencioso */ }
+    })();
+  }
   // Station status
   if (event === 'station_status' && data && data.station) {
     appSaveStationStatusToSP(data.station);
@@ -10880,14 +10891,30 @@ async function spPollCheck() {
       _spLastOpsHash = latestOpMod;
       // Reload only ops, keep DB.ofs intact to avoid losing activeOFs
       await appReloadOpsFromSP();
+      await appReloadOpsFromSP();
       renderApp();
-      return;
+      _refreshStationViews(); // refresh station queue display after cola reorder from SP
     }
     // Set baseline on first successful poll
     if (!_spLastOpsHash && latestOpMod) {
       _spLastOpsHash = latestOpMod;
     }
   } catch(e) { if(!e.message||!e.message.includes('fetch')) console.warn('Poll ops error:', e.message); }
+  // Also check FT_Cola_Estacion for queue reorder changes from coordinator
+  try {
+    var colaRes = await appGraphGet(
+      'sites/'+siteId+'/lists/FT_Cola_Estacion/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
+    );
+    var latestColaMod = (colaRes.value&&colaRes.value.length) ? colaRes.value[0].lastModifiedDateTime||'' : '';
+    if(!window._spLastColaMod && latestColaMod){ window._spLastColaMod = latestColaMod; }
+    else if(window._spLastColaMod && latestColaMod && latestColaMod !== window._spLastColaMod){
+      window._spLastColaMod = latestColaMod;
+      console.log('Poll: cola reordenada en SP →', latestColaMod);
+      await appReloadOpsFromSP();
+      renderApp();
+      _refreshStationViews();
+    }
+  } catch(e){ /* silencioso */ }
 
   try {
     // Check FT_OrdenesFabricacion for programacion changes
