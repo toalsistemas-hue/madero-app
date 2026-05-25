@@ -3377,9 +3377,25 @@ async function ftLoadDataFromSP() {
           });
           if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
           renderApp(); // actualizar badges de cola en estaciones
-          // Notificar al coordinador que la app móvil reordenó la cola
-          if(typeof addCoordNotif==='function'){
-            addCoordNotif('queue_reordered', {estacion: '(app móvil)', moved_by: 'app móvil'});
+          // Notificar al coordinador los cambios detectados desde app móvil
+          // Separar: si hubo cambios en Secuencia → notif de lista; siempre notif de cola
+          var _seqChanges = [];
+          DB.activeOFs.forEach(function(aof){
+            aof.ops.forEach(function(op, idx){
+              if(op.status !== 'done') _seqChanges.push({of_sap: aof.of_sap, op_name: op.nombre, seq: idx+1});
+            });
+          });
+          if(typeof addCoordNotif==='function' && _seqChanges.length){
+            // Agrupar por OF para el detalle
+            var _seqByOF = {};
+            _seqChanges.forEach(function(s){
+              if(!_seqByOF[s.of_sap]) _seqByOF[s.of_sap] = [];
+              _seqByOF[s.of_sap].push(s.seq+'. '+s.op_name.slice(0,25));
+            });
+            var _seqDetail = Object.keys(_seqByOF).map(function(k){
+              return 'OF '+k+': '+_seqByOF[k].slice(0,3).join(', ')+((_seqByOF[k].length>3)?'…':'');
+            }).join('\n');
+            addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by: 'app móvil', _detail_override: _seqDetail});
           }
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
@@ -6092,8 +6108,9 @@ function addCoordNotif(event, data) {
     detail=(_opName?_opName+'\n':'')+(_note?'Nota: '+_note:'');
   } else if(event==='op_moved'){
     var _movedBy=data&&data.moved_by?data.moved_by:'';
-    text='↕ Secuencia reordenada'+(_ofSap?' — '+_ofSap:'');
-    detail=_movedBy?'Reordenado por: '+_movedBy:'';
+    var _movedByLabel=_movedBy==='app móvil'?'App móvil':(_movedBy?_movedBy:'');
+    text='↕ Lista de operaciones reordenada'+(_ofSap?' — '+_ofSap:'');
+    detail=data&&data._detail_override ? data._detail_override : (_movedByLabel?'Reordenado por: '+_movedByLabel:'');
   } else if(event==='queue_reordered'){
     var _estacion=data&&data.estacion?data.estacion:'';
     var _movedByQ=data&&data.moved_by?data.moved_by:'';

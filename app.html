@@ -6252,6 +6252,35 @@ window.fireSync = function(source, event, data) {
   // When coordinator reorders the queue (op_moved from coord), reload SP immediately
   // so cola badges refresh without waiting for the 15s poll cycle
   if(event === 'op_moved' && source === 'coord'){
+    var _ofMovedSap = data && data.of_sap ? data.of_sap : '';
+    // Notificación en app
+    DB.notifications.push({
+      id:'coord_seq_'+Date.now(), type:'coord',
+      icon:'↕', of_sap: _ofMovedSap,
+      msg:'Lista de operaciones reordenada'+(_ofMovedSap?' — OF '+_ofMovedSap:''),
+      detail:'El Coordinador modificó el orden de las operaciones.',
+      time:nowT(), read:false
+    });
+    if(typeof renderNotif==='function') renderNotif();
+    (async function(){
+      try {
+        await appReloadOpsFromSP();
+        renderApp();
+        _refreshStationViews();
+      } catch(e){ /* silencioso */ }
+    })();
+  }
+  if(event === 'queue_reordered' && source === 'coord'){
+    var _estReordered = data && data.estacion ? data.estacion : '';
+    // Notificación en app
+    DB.notifications.push({
+      id:'coord_cola_'+Date.now(), type:'coord',
+      icon:'≡',
+      msg:'Cola de estación reordenada'+(_estReordered?' — '+_estReordered:''),
+      detail:'El Coordinador modificó el orden de la cola.',
+      time:nowT(), read:false
+    });
+    if(typeof renderNotif==='function') renderNotif();
     (async function(){
       try {
         await appReloadOpsFromSP();
