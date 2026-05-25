@@ -6078,28 +6078,33 @@ async function appSaveQueueToSP(of_sap) {
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
-      var queue = window.DB_STATION_QUEUE && window.DB_STATION_QUEUE[op.estacion];
-      // Find position in queue (pending position, not running)
-      var pos = queue ? queue.findIndex(function(q){ return q.of_sap===of_sap && q.op_id===op.id; }) : -1;
       var isDone = op.status === 'done';
-      // FT_Cola_Estacion col map: Title=Estacion, OF_SAP, Op_ID, Posicion, Tipo_Cola, Activo
       var colaPos = isDone ? 0 : (op.cola||0);
-      var fields = {
-        Title:     op.estacion,   // Title IS Estacion in this list
-        OF_SAP:    of_sap,
-        Op_ID:     op.id,
-        Posicion:  colaPos,
-        Tipo_Cola: 'normal',
-        Activo:    !isDone,
-      };
       try {
         if (op._queueSpId) {
-          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
+          // PATCH: NO incluir Title — SP no permite actualizarlo vía /fields
+          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', {
+            OF_SAP:    of_sap,
+            Op_ID:     op.id,
+            Posicion:  colaPos,
+            Tipo_Cola: 'normal',
+            Activo:    !isDone,
+          });
+          console.log('✅ FT_Cola PATCH: '+op.id+' → pos '+colaPos);
         } else {
-          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items', {fields});
+          // POST: incluir Title (Estacion) solo al crear
+          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items', {fields: {
+            Title:     op.estacion,
+            OF_SAP:    of_sap,
+            Op_ID:     op.id,
+            Posicion:  colaPos,
+            Tipo_Cola: 'normal',
+            Activo:    !isDone,
+          }});
           op._queueSpId = res.id;
+          console.log('✅ FT_Cola POST: '+op.id+' → id '+res.id);
         }
-      } catch(e) { console.warn('appSaveQueueToSP op:', e.message); }
+      } catch(e) { console.warn('appSaveQueueToSP op '+op.id+':', e.message); }
     }
   } catch(e) { console.warn('appSaveQueueToSP:', e.message); }
 }
