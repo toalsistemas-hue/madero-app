@@ -304,8 +304,9 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
 .card-header-row { display:flex; align-items:center; padding:11px 14px; gap:12px; cursor:pointer; }
 .card-header-row:hover { background:var(--bg-hover); }
-.card-num     { font-size:.88rem; font-weight:700; color:var(--accent); white-space:nowrap; }
-.card-cliente { font-size:.88rem; font-weight:600; color:var(--text); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-num     { font-size:.88rem; font-weight:700; color:var(--accent); white-space:nowrap; min-width:80px; }
+.card-cliente { font-size:.88rem; font-weight:600; color:var(--text); white-space:nowrap; }
+.card-concepto{ font-size:.78rem; color:var(--text-dim); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic; }
 .card-proyecto{ font-size:.78rem; color:var(--text-dim); white-space:nowrap; }
 .card-badges  { display:flex; gap:5px; align-items:center; }
 .card-chevron { color:var(--text-dim); font-size:12px; transition:transform .2s; flex-shrink:0; }
@@ -2031,12 +2032,12 @@ function navigateToPantalla(pantallaID) {
 // ═══════════════════════════════════════════════════════
 function getDemoPedidos() {
   return [
-    { ID:1, NumeroPedido:'60005009', Cliente:'GANADERA MEXICALI',       Proyecto:'P100165', Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'Pendiente', Numeracion:'No aplica', ResumenAnalisis:'Validación de pago pendiente. Sin confirmación de Gerardo Mena.',              AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-07T08:00:00Z',FechaAccion:null },
-    { ID:2, NumeroPedido:'60005008', Cliente:'GRUPO AGROAG',            Proyecto:'P100164', Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'OK',        Numeracion:'No aplica', ResumenAnalisis:'Pedido de venta adjunto. Condición de pago pendiente.',                       AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T14:00:00Z',FechaAccion:null },
-    { ID:3, NumeroPedido:'60005007', Cliente:'CRIANZA SUPREMA BAJIO',   Proyecto:'P100163', Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'Pendiente', Numeracion:'No aplica', ResumenAnalisis:'Sin condición de pago definida. Requiere validación.',                        AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T10:30:00Z',FechaAccion:null },
-    { ID:4, NumeroPedido:'60004951', Cliente:'RANCHO EL CLAVEL',        Proyecto:'P100135', Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'Pendiente', PedidoVenta:'OK',        Numeracion:'No aplica', ResumenAnalisis:'Requiere junta técnica con Alberto Machain.',                               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-05T09:00:00Z',FechaAccion:null },
-    { ID:5, NumeroPedido:'60004981', Cliente:'VICTOR MANUEL PASQUALLI', Proyecto:'P100152', Estatus:'Autorizado', CondicionPago:'OK',        JuntaTecnica:'OK',        PedidoVenta:'OK',        Numeracion:'Confirmada',ResumenAnalisis:'Todos los pasos completados. Numeración confirmada.',                       AccionadoPor:'Edson Rios',    FechaDeteccion:'2026-05-05T10:15:00Z',FechaAccion:'2026-05-06T14:30:00Z' },
-    { ID:6, NumeroPedido:'60004997', Cliente:'LACTEOS EL FENIX',        Proyecto:'P100159', Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'OK',        Numeracion:'Pendiente', ResumenAnalisis:'Numeración AFITAG II pendiente confirmar con Ramon Tabares.',               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T08:32:00Z',FechaAccion:null },
+    { ID:1, NumeroPedido:'60005009', Cliente:'GANADERA MEXICALI',       Proyecto:'P100165', Concepto:'Sala rotativa 24 lugares',             Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'Pendiente', Numeracion:'No aplica', ResumenAnalisis:'Validación de pago pendiente. Sin confirmación de Gerardo Mena.',              AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-07T08:00:00Z',FechaAccion:null },
+    { ID:2, NumeroPedido:'60005008', Cliente:'GRUPO AGROAG',            Proyecto:'P100164', Concepto:'Condensadora de leche 5,000 lts',        Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'OK',        Numeracion:'No aplica', ResumenAnalisis:'Pedido de venta adjunto. Condición de pago pendiente.',                       AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T14:00:00Z',FechaAccion:null },
+    { ID:3, NumeroPedido:'60005007', Cliente:'CRIANZA SUPREMA BAJIO',   Proyecto:'P100163', Concepto:'Tapetes para vaca 4x6 con clavos',       Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'Pendiente', Numeracion:'No aplica', ResumenAnalisis:'Sin condición de pago definida. Requiere validación.',                        AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T10:30:00Z',FechaAccion:null },
+    { ID:4, NumeroPedido:'60004951', Cliente:'RANCHO EL CLAVEL',        Proyecto:'P100135', Concepto:'Podómetros AFITAG II x 50 pzas',         Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'Pendiente', PedidoVenta:'OK',        Numeracion:'No aplica', ResumenAnalisis:'Requiere junta técnica con Alberto Machain.',                               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-05T09:00:00Z',FechaAccion:null },
+    { ID:5, NumeroPedido:'60004981', Cliente:'VICTOR MANUEL PASQUALLI', Proyecto:'P100152', Concepto:'Collares de identificación electrónica',  Estatus:'Autorizado', CondicionPago:'OK',        JuntaTecnica:'OK',        PedidoVenta:'OK',        Numeracion:'Confirmada',ResumenAnalisis:'Todos los pasos completados. Numeración confirmada.',                       AccionadoPor:'Edson Rios',    FechaDeteccion:'2026-05-05T10:15:00Z',FechaAccion:'2026-05-06T14:30:00Z' },
+    { ID:6, NumeroPedido:'60004997', Cliente:'LACTEOS EL FENIX',        Proyecto:'P100159', Concepto:'Podómetros AFITAG II x 120 pzas',        Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica', PedidoVenta:'OK',        Numeracion:'Pendiente', ResumenAnalisis:'Numeración AFITAG II pendiente confirmar con Ramon Tabares.',               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T08:32:00Z',FechaAccion:null },
   ];
 }
 
@@ -2130,6 +2131,7 @@ function buildCard(p) {
     <div class="card-header-row" onclick="toggleCard(this)">
       <span class="card-num">${p.NumeroPedido||'—'}</span>
       <span class="card-cliente">${p.Cliente||'—'}</span>
+      <span class="card-concepto">${p.Concepto||'Sin descripción'}</span>
       <span class="card-proyecto">${p.Proyecto||'—'}</span>
       <div class="card-badges">${eBadge}${pBadge}${jBadge}</div>
       <span class="card-chevron">▼</span>
