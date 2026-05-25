@@ -3340,12 +3340,37 @@ async function ftLoadDataFromSP() {
                 status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
                 mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
-                qty_rej:parseInt(o.Qty_Rej||0),cola:ex?ex.cola:0,
+                qty_rej:parseInt(o.Qty_Rej||0),cola:0, // reasignado desde FT_Cola_Estacion abajo
                 isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
-                _spId:o.ID||null};
+                _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
             });
           });
+          // Recargar FT_Cola_Estacion para reflejar reordenamientos desde app móvil
+          try {
+            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500');
+            window.DB_STATION_QUEUE = {};
+            window.STATIONS.forEach(function(s){ window.DB_STATION_QUEUE[s]=[]; });
+            var colaItemsPoll = (colaResPoll.value||[]).sort(function(a,b){return (a.fields.Posicion||0)-(b.fields.Posicion||0);});
+            colaItemsPoll.forEach(function(c){
+              var st=c.fields.Estacion||c.fields.Title||'';
+              if(!window.DB_STATION_QUEUE[st]) window.DB_STATION_QUEUE[st]=[];
+              var alreadyIn=window.DB_STATION_QUEUE[st].find(function(x){return x.of_sap===c.fields.OF_SAP&&x.op_id===c.fields.Op_ID;});
+              if(!alreadyIn){
+                window.DB_STATION_QUEUE[st].push({of_sap:c.fields.OF_SAP||'',op_id:c.fields.Op_ID||'',tipo:c.fields.Tipo_Cola||'normal'});
+                DB.activeOFs.forEach(function(aof){
+                  if(aof.of_sap===c.fields.OF_SAP){
+                    var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
+                    if(op){
+                      op._queueSpId=c.id;
+                      if(op.status!=='running'&&op.status!=='paused'&&op.status!=='validating')
+                        op.cola=parseInt(c.fields.Posicion||0)||0;
+                    }
+                  }
+                });
+              }
+            });
+          } catch(ce){ console.warn('Poll FT_Cola_Estacion error:', ce.message); }
           // Refresh queue order based on Cola values loaded from SP
           DB.activeOFs.forEach(function(aof){
             if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
