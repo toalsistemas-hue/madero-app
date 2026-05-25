@@ -1805,6 +1805,13 @@ async function graphGet(endpoint, retry) {
     return graphGet(endpoint, true); // reintentar
   }
 
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
+    return graphGet(endpoint, true);
+  }
+
   if (!res.ok) throw new Error(`Graph ${res.status}: ${endpoint}`);
   return res.json();
 }
@@ -1823,6 +1830,13 @@ async function graphPatch(endpoint, body, retry) {
     console.warn('Token expirado en PATCH (401), renovando...');
     state.token = null;
     await getToken(true);
+    return graphPatch(endpoint, body, true);
+  }
+
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return graphPatch(endpoint, body, true);
   }
 
@@ -3272,19 +3286,20 @@ async function ftLoadDataFromSP() {
           var q = window.DB_STATION_QUEUE[op.estacion];
           if (q) {
             var qIdx = q.findIndex(function(e){ return e.of_sap===aof.of_sap && e.op_id===op.id; });
-            if (qIdx >= 0) op.cola = qIdx;
+            if (qIdx >= 0) op.cola = qIdx + 1;
           }
         }
       });
     });
-    // Sync cola numbers
-    sqSyncColaNumbers();
-
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
     DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
+    // Renumerar cola DESPUÉS de sqAddOF para que la queue esté completamente poblada
+    if(typeof sqPurge==='function') sqPurge();
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+    // Re-render con números de cola ya corregidos
+    renderApp();
   // Start real-time polling so portal auto-updates when app mobile makes changes
   if (!window._coordPollTimer && !state.isDemoMode) {
     window._coordLastOpsMod = '';
@@ -4512,7 +4527,7 @@ function renderHist(){
     if(pending.length){
       h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
       pending.forEach(function(x,qi){
-        var colaN = qi+1;
+        var colaN = x.op.cola || (qi+1);
         h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
         h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
@@ -6785,6 +6800,8 @@ function saveTplModal(){
                   );
                   patchCount++;
                 } catch(pe){ console.warn('PATCH Secuencia:', pe.message); }
+                // Delay entre PATCHes para evitar throttling (503/429) en OFs con muchas ops
+                if(oi < aof.ops.length - 1) await new Promise(function(r){ setTimeout(r, 150); });
               }
             }
             console.log('✅ Secuencia actualizada: '+patchCount+'/'+aof.ops.length+' ops');
@@ -7109,27 +7126,6 @@ fireSync = function(source, event, data) {
   // Queue changes
   if (['op_moved','ops_assigned','op_started','op_finished'].indexOf(event) >= 0) {
     if (data && data.of_sap) ftSaveQueueToSP(data.of_sap);
-  }
-  // When supervisor reorders queue from mobile app, reload FT_Cola_Estacion and refresh
-  if(event === 'op_moved' && source === 'app'){
-    (async function(){
-      try {
-        var freshCola = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500');
-        (freshCola.value||[]).forEach(function(item){
-          if(!item.fields) return;
-          var opId = item.fields.Op_ID;
-          var pos  = parseInt(item.fields.Posicion||0);
-          DB.activeOFs.forEach(function(aof){
-            var op = aof.ops.find(function(o){ return o.id===opId; });
-            if(op && op.status!=='running'&&op.status!=='paused') op.cola = pos;
-          });
-        });
-        sqSyncColaNumbers();
-        if(C.currentPage==='seguimiento') renderSeg();
-        renderApp();
-        console.log('✅ Portal: cola actualizada por supervisor app');
-      } catch(e){ console.warn('Portal op_moved app reload:', e.message); }
-    })();
   }
   // Station status changes
   if (event === 'station_status_changed' && data && data.estacion) {

@@ -5166,80 +5166,35 @@ function appQueueSave(){
   sqSyncColaNumbers();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
-  // Persist to SP asynchronously
-  appSaveColaQueueToSP();
-}
-
-// Dedicated async: save queue order to FT_Cola_Estacion AND FT_Operaciones.Cola
-// Same mechanism as portalSaveColaToSP but from mobile app
-async function appSaveColaQueueToSP(){
-  try {
-    if(!appSiteId) await appGetSiteId();
-    if(!appSiteId) return;
-    console.log('💾 App guardando cola en SP...');
-
-    // Step 1: Load ALL FT_Cola_Estacion items to build _queueSpIdCache (no cache stale)
-    var appQueueCache = {};
-    try {
-      var cacheRes = await appGraphGet(
-        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
-      );
-      (cacheRes.value||[]).forEach(function(item){
-        if(item.fields && item.fields.Op_ID) appQueueCache[item.fields.Op_ID] = item.id;
+  // Persist new Secuencia values to SP for all ops of all active OFs
+  // This ensures the portal reflects the new order after reload
+  if(typeof appSiteId !== 'undefined' && appSiteId){
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op, idx){
+        if(!op._spId) return;
+        var newSeq = idx + 1;
+        var newCola = op.cola || 0;
+        appGraphPatch(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+          {Secuencia: newSeq, Cola: newCola}
+        ).then(function(){
+          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
+        }).catch(function(e){
+          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
+        });
       });
-      console.log('📋 Cola cache cargado: '+Object.keys(appQueueCache).length+' items');
-    } catch(e){ console.warn('⚠ Cola cache load:', e.message); }
-
-    // Step 2: PATCH FT_Operaciones.Cola + FT_Cola_Estacion.Posicion for all ops
-    var patchedOps = 0, patchedQueue = 0;
-    for(var ai=0; ai<DB.activeOFs.length; ai++){
-      var aof = DB.activeOFs[ai];
-      for(var oi=0; oi<aof.ops.length; oi++){
-        var op = aof.ops[oi];
-        var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating')
-                      ? 0 : (op.cola||0);
-
-        // PATCH FT_Operaciones.Cola
-        if(op._spId){
-          try {
-            await appGraphPatch(
-              'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-              {Cola: colaVal}
-            );
-            patchedOps++;
-          } catch(e){ console.warn('Cola FT_Op PATCH:', e.message); }
-        }
-
-        // PATCH FT_Cola_Estacion.Posicion (using cache to avoid duplicates)
-        var qSpId = op._queueSpId || appQueueCache[op.id];
-        if(qSpId){
-          op._queueSpId = qSpId; // restore for future use
-          try {
-            await appGraphPatch(
-              'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items/'+qSpId+'/fields',
-              {Posicion: colaVal, Activo: op.status!=='done'}
-            );
-            patchedQueue++;
-          } catch(e){ console.warn('Cola FT_Cola PATCH:', e.message); }
-        } else if(op.estacion && op.status!=='done'){
-          // Not in FT_Cola_Estacion yet — create it
-          try {
-            var postRes = await appGraphPost(
-              'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',
-              {fields:{Title:op.estacion, OF_SAP:aof.of_sap, Op_ID:op.id,
-                Posicion:colaVal, Tipo_Cola:'normal', Activo:true}}
-            );
-            op._queueSpId = postRes.id;
-            appQueueCache[op.id] = postRes.id;
-            patchedQueue++;
-          } catch(e){ console.warn('Cola FT_Cola POST:', e.message); }
-        }
+    });
+    // Also save queue to FT_Cola_Estacion
+    var savedOFs = {};
+    DB.activeOFs.forEach(function(aof){
+      if(!savedOFs[aof.of_sap]){
+        savedOFs[aof.of_sap] = true;
+        appSaveQueueToSP(aof.of_sap).catch(function(e){
+          console.warn('appSaveQueueToSP:', e.message);
+        });
       }
-    }
-    console.log('✅ Cola SP guardada — FT_Op:'+patchedOps+' FT_Cola:'+patchedQueue);
-    // Notify portal via fireSync so it updates in real time
-    fireSync('app','op_moved',{moved_by:'supervisor_queue'});
-  } catch(e){ console.warn('❌ appSaveColaQueueToSP:', e.message||e); }
+    });
+  }
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
@@ -5690,6 +5645,12 @@ async function appGraphGet(endpoint, retry) {
     }
     return appGraphGet(endpoint, true);
   }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
+    return appGraphGet(endpoint, true);
+  }
   if (!res.ok) throw new Error('Graph ' + res.status + ': ' + (await res.text().catch(function(){return '';})).slice(0,200));
   return res.json();
 }
@@ -5716,6 +5677,12 @@ async function appGraphPatch(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('PATCH 401 no-refresh'); }
+    return appGraphPatch(endpoint, body, true);
+  }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPatch(endpoint, body, true);
   }
   if (!res.ok && res.status !== 204) {
@@ -5758,6 +5725,12 @@ async function appGraphPost(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('POST 401 no-refresh'); }
+    return appGraphPost(endpoint, body, true);
+  }
+  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
+  if ((res.status === 503 || res.status === 429) && !retry) {
+    console.warn('POST throttling ('+res.status+'), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPost(endpoint, body, true);
   }
   if (!res.ok) {
@@ -10545,80 +10518,35 @@ function appQueueSave(){
   sqSyncColaNumbers();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
-  // Persist to SP asynchronously
-  appSaveColaQueueToSP();
-}
-
-// Dedicated async: save queue order to FT_Cola_Estacion AND FT_Operaciones.Cola
-// Same mechanism as portalSaveColaToSP but from mobile app
-async function appSaveColaQueueToSP(){
-  try {
-    if(!appSiteId) await appGetSiteId();
-    if(!appSiteId) return;
-    console.log('💾 App guardando cola en SP...');
-
-    // Step 1: Load ALL FT_Cola_Estacion items to build _queueSpIdCache (no cache stale)
-    var appQueueCache = {};
-    try {
-      var cacheRes = await appGraphGet(
-        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
-      );
-      (cacheRes.value||[]).forEach(function(item){
-        if(item.fields && item.fields.Op_ID) appQueueCache[item.fields.Op_ID] = item.id;
+  // Persist new Secuencia values to SP for all ops of all active OFs
+  // This ensures the portal reflects the new order after reload
+  if(typeof appSiteId !== 'undefined' && appSiteId){
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op, idx){
+        if(!op._spId) return;
+        var newSeq = idx + 1;
+        var newCola = op.cola || 0;
+        appGraphPatch(
+          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
+          {Secuencia: newSeq, Cola: newCola}
+        ).then(function(){
+          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
+        }).catch(function(e){
+          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
+        });
       });
-      console.log('📋 Cola cache cargado: '+Object.keys(appQueueCache).length+' items');
-    } catch(e){ console.warn('⚠ Cola cache load:', e.message); }
-
-    // Step 2: PATCH FT_Operaciones.Cola + FT_Cola_Estacion.Posicion for all ops
-    var patchedOps = 0, patchedQueue = 0;
-    for(var ai=0; ai<DB.activeOFs.length; ai++){
-      var aof = DB.activeOFs[ai];
-      for(var oi=0; oi<aof.ops.length; oi++){
-        var op = aof.ops[oi];
-        var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating')
-                      ? 0 : (op.cola||0);
-
-        // PATCH FT_Operaciones.Cola
-        if(op._spId){
-          try {
-            await appGraphPatch(
-              'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-              {Cola: colaVal}
-            );
-            patchedOps++;
-          } catch(e){ console.warn('Cola FT_Op PATCH:', e.message); }
-        }
-
-        // PATCH FT_Cola_Estacion.Posicion (using cache to avoid duplicates)
-        var qSpId = op._queueSpId || appQueueCache[op.id];
-        if(qSpId){
-          op._queueSpId = qSpId; // restore for future use
-          try {
-            await appGraphPatch(
-              'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items/'+qSpId+'/fields',
-              {Posicion: colaVal, Activo: op.status!=='done'}
-            );
-            patchedQueue++;
-          } catch(e){ console.warn('Cola FT_Cola PATCH:', e.message); }
-        } else if(op.estacion && op.status!=='done'){
-          // Not in FT_Cola_Estacion yet — create it
-          try {
-            var postRes = await appGraphPost(
-              'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',
-              {fields:{Title:op.estacion, OF_SAP:aof.of_sap, Op_ID:op.id,
-                Posicion:colaVal, Tipo_Cola:'normal', Activo:true}}
-            );
-            op._queueSpId = postRes.id;
-            appQueueCache[op.id] = postRes.id;
-            patchedQueue++;
-          } catch(e){ console.warn('Cola FT_Cola POST:', e.message); }
-        }
+    });
+    // Also save queue to FT_Cola_Estacion
+    var savedOFs = {};
+    DB.activeOFs.forEach(function(aof){
+      if(!savedOFs[aof.of_sap]){
+        savedOFs[aof.of_sap] = true;
+        appSaveQueueToSP(aof.of_sap).catch(function(e){
+          console.warn('appSaveQueueToSP:', e.message);
+        });
       }
-    }
-    console.log('✅ Cola SP guardada — FT_Op:'+patchedOps+' FT_Cola:'+patchedQueue);
-    // Notify portal via fireSync so it updates in real time
-    fireSync('app','op_moved',{moved_by:'supervisor_queue'});
-  } catch(e){ console.warn('❌ appSaveColaQueueToSP:', e.message||e); }
+    });
+  }
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
