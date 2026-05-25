@@ -3586,6 +3586,20 @@ appMoveOp = function(sap, idx, dir) {
   renderApp();
   if (C.currentPage==='seguimiento') renderSeg();
   if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-table')) renderHist();
+  // Notificación de reorden de secuencia
+  var exists = DB.notifications.some(function(n){
+    return n.type==='coord' && n.of_sap===sap && n.id.indexOf('seq_reorder_')===0 && !n.read;
+  });
+  if(!exists){
+    DB.notifications.push({
+      id:'seq_reorder_'+Date.now(), type:'coord',
+      icon:'↕', of_sap:sap,
+      msg:'Secuencia de operaciones reordenada — OF '+sap,
+      detail:'El orden de las operaciones fue modificado.',
+      time:nowT(), read:false
+    });
+    if(typeof renderNotif==='function') renderNotif();
+  }
   fireSync('app','op_moved',{of_sap:sap});
 };
 
@@ -5187,6 +5201,15 @@ async function appQueueSave(){
     }
   } catch(e){ console.warn('appQueueSave error:', e.message); }
   if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='💾 Guardar orden'; }
+  // Notificación al guardar reorden de cola
+  DB.notifications.push({
+    id:'cola_reorder_'+Date.now(), type:'coord',
+    icon:'≡',
+    msg:'Cola de estación reordenada',
+    detail:'El orden de operaciones en cola fue actualizado y sincronizado con SP.',
+    time:nowT(), read:false
+  });
+  renderNotif();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
   renderApp();
@@ -7671,6 +7694,20 @@ function appMoveOp(sap,idx,dir){
   var tmp=of.ops[idx];of.ops[idx]=of.ops[ni];of.ops[ni]=tmp;
   sqSyncColaNumbers();
   renderApp();
+  // Notificación de reorden de secuencia
+  var existsN = DB.notifications.some(function(n){
+    return n.type==='coord' && n.of_sap===sap && n.id.indexOf('seq_reorder_')===0 && !n.read;
+  });
+  if(!existsN){
+    DB.notifications.push({
+      id:'seq_reorder_'+Date.now(), type:'coord',
+      icon:'↕', of_sap:sap,
+      msg:'Secuencia de operaciones reordenada — OF '+sap,
+      detail:'El orden de las operaciones fue modificado.',
+      time:nowT(), read:false
+    });
+    if(typeof renderNotif==='function') renderNotif();
+  }
   // Persist Secuencia to SP with dedicated async function
   appSaveMoveToSP(sap, of);
   fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
@@ -10535,6 +10572,15 @@ async function appQueueSave(){
     }
   } catch(e){ console.warn('appQueueSave error:', e.message); }
   if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='💾 Guardar orden'; }
+  // Notificación al guardar reorden de cola
+  DB.notifications.push({
+    id:'cola_reorder_'+Date.now(), type:'coord',
+    icon:'≡',
+    msg:'Cola de estación reordenada',
+    detail:'El orden de operaciones en cola fue actualizado y sincronizado con SP.',
+    time:nowT(), read:false
+  });
+  renderNotif();
   closeAppModal('app-modal-queue');
   _refreshStationViews();
   renderApp();

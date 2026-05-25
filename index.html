@@ -3377,6 +3377,10 @@ async function ftLoadDataFromSP() {
           });
           if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
           renderApp(); // actualizar badges de cola en estaciones
+          // Notificar al coordinador que la app móvil reordenó la cola
+          if(typeof addCoordNotif==='function'){
+            addCoordNotif('queue_reordered', {estacion: '(app móvil)', moved_by: 'app móvil'});
+          }
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
           });
@@ -6068,7 +6072,7 @@ function addCoordNotif(event, data) {
   var _reason=data&&data.reason?data.reason:'';
   var _obs=data&&data.obs?data.obs:'';
   var _note=data&&data.note?data.note:'';
-  var iconMap={op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷',turno_traspaso:'🤝'};
+  var iconMap={op_started:'▶',op_finished:'✅',op_paused:'⏸',op_resumed:'▶▶',op_valcal:'🔍',op_added:'➕',op_moved:'↕',ops_assigned:'👷',turno_traspaso:'🤝',queue_reordered:'≡'};
   var icon=iconMap[event]||'📡';
   var text='',detail='';
   if(event==='op_started'){
@@ -6088,8 +6092,13 @@ function addCoordNotif(event, data) {
     detail=(_opName?_opName+'\n':'')+(_note?'Nota: '+_note:'');
   } else if(event==='op_moved'){
     var _movedBy=data&&data.moved_by?data.moved_by:'';
-    text='↕ Ops reordenadas'+(_ofSap?' — '+_ofSap:'');
+    text='↕ Secuencia reordenada'+(_ofSap?' — '+_ofSap:'');
     detail=_movedBy?'Reordenado por: '+_movedBy:'';
+  } else if(event==='queue_reordered'){
+    var _estacion=data&&data.estacion?data.estacion:'';
+    var _movedByQ=data&&data.moved_by?data.moved_by:'';
+    text='≡ Cola reordenada'+(_estacion?' — '+_estacion:'');
+    detail=_movedByQ?'Reordenado por: '+_movedByQ:'';
   } else if(event==='op_added'){
     text='➕ Op agregada'+(_ofSap?' — '+_ofSap:'');
     detail=_opName||'';
@@ -8063,7 +8072,8 @@ async function portalSaveColaToSP(estacion){
     }
   }
   console.log('✅ Cola SP — FT_Op: '+savedOps+', FT_Cola: '+savedQueue+'/'+q.length+' ops');
-  fireSync('coord','op_moved',{estacion: estacion, moved_by:'coordinador'});
+  addCoordNotif('queue_reordered', {estacion: estacion, moved_by: 'coordinador'});
+  fireSync('coord','queue_reordered',{estacion: estacion, moved_by:'coordinador'});
 }
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
