@@ -3117,7 +3117,7 @@ async function ftLoadDataFromSP() {
               qty_ok: parseInt(o.Qty_OK||0),
               qty_def: parseInt(o.Qty_Def||0),
               qty_rej: parseInt(o.Qty_Rej||0),
-              cola: parseInt(o.Cola||0)||0, // also populated from FT_Cola_Estacion on load
+              cola: 0, // se asigna desde FT_Cola_Estacion después, no desde el campo Cola de SP
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
               needsCal: o.NeedsCal === true,
@@ -3269,14 +3269,16 @@ async function ftLoadDataFromSP() {
     });
     console.log('Templates loaded from SP:', Object.keys(DB.templates).length);
 
-    // Restore queue from SP
-    window.DB_STATION_QUEUE = window.DB_STATION_QUEUE || {};
-    window.STATIONS.forEach(s => { if (!window.DB_STATION_QUEUE[s]) window.DB_STATION_QUEUE[s]=[]; });
+    // Restore queue from SP — reset primero para evitar duplicados
+    window.DB_STATION_QUEUE = {};
+    window.STATIONS.forEach(s => { window.DB_STATION_QUEUE[s]=[]; });
     const colaItems = (colaRes.value||[]).map(i=>i.fields).filter(f=>f.Activo!==false&&f.Activo!==0).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
     colaItems.forEach(c => {
       const st = c.Estacion || c.Title || '';
       if (!window.DB_STATION_QUEUE[st]) window.DB_STATION_QUEUE[st] = [];
-      window.DB_STATION_QUEUE[st].push({ of_sap: c.OF_SAP||'', op_id: c.Op_ID||'', tipo: c.Tipo_Cola||'normal' });
+      // Guard: no insertar si ya existe esa combinación of_sap+op_id
+      const alreadyIn = window.DB_STATION_QUEUE[st].find(function(x){ return x.of_sap===c.OF_SAP && x.op_id===c.Op_ID; });
+      if (!alreadyIn) window.DB_STATION_QUEUE[st].push({ of_sap: c.OF_SAP||'', op_id: c.Op_ID||'', tipo: c.Tipo_Cola||'normal' });
     });
 
     // Populate op.cola from FT_Cola_Estacion queue positions (authoritative source)
@@ -3349,6 +3351,7 @@ async function ftLoadDataFromSP() {
             if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
           });
           if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+          renderApp(); // actualizar badges de cola en estaciones
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
           });

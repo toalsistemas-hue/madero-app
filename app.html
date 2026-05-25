@@ -2119,7 +2119,7 @@ function renderAppOpsPanel(of){
     if(op.isRetrabajo && op.nombre.indexOf('Retrabajo')===-1) h+=" <span style='font-size:.68rem;color:var(--ared);font-weight:700;'>— Retrabajo</span>";
     if(op.isTurnoB) h+=" <span style='font-size:.62rem;color:#c084fc;font-weight:700;background:rgba(139,92,246,.15);border-radius:4px;padding:1px 5px;'>Turno B</span>";
     if(op.tipo==="retorno")h+=" <span style='font-size:.58rem;color:var(--ayellow)'>↩</span>";
-    if(op.tipo==="simultanea")h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
+    if(op.tipo==="simultanea"&&!(op.cola&&op.cola>0))h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
     h+="</div>";
     // Segmentos de turno previos
     if(op.turnos && op.turnos.length){
@@ -5162,39 +5162,34 @@ function appQueueMove(idx, dir){
   sqSyncColaNumbers();
   renderAppQueueList();
 }
-function appQueueSave(){
+async function appQueueSave(){
   sqSyncColaNumbers();
+  var saveBtn = document.querySelector('#app-modal-queue .app-mb-p');
+  if(saveBtn){ saveBtn.disabled=true; saveBtn.textContent='💾 Guardando...'; }
+  try {
+    if(typeof appSiteId !== 'undefined' && appSiteId){
+      var savedOFs = {};
+      for(var ai=0; ai<DB.activeOFs.length; ai++){
+        var aof = DB.activeOFs[ai];
+        if(!savedOFs[aof.of_sap]){ savedOFs[aof.of_sap]=true; await appSaveQueueToSP(aof.of_sap); }
+      }
+      for(var ai2=0; ai2<DB.activeOFs.length; ai2++){
+        var aof2 = DB.activeOFs[ai2];
+        for(var oi=0; oi<aof2.ops.length; oi++){
+          var op = aof2.ops[oi];
+          if(!op._spId) continue;
+          try { await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',{Cola:op.cola||0});
+                console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
+          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
+        }
+      }
+    }
+  } catch(e){ console.warn('appQueueSave error:', e.message); }
+  if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='💾 Guardar orden'; }
   closeAppModal('app-modal-queue');
   _refreshStationViews();
-  // Persist new Secuencia values to SP for all ops of all active OFs
-  // This ensures the portal reflects the new order after reload
-  if(typeof appSiteId !== 'undefined' && appSiteId){
-    DB.activeOFs.forEach(function(aof){
-      aof.ops.forEach(function(op, idx){
-        if(!op._spId) return;
-        var newSeq = idx + 1;
-        var newCola = op.cola || 0;
-        appGraphPatch(
-          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-          {Secuencia: newSeq, Cola: newCola}
-        ).then(function(){
-          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
-        }).catch(function(e){
-          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
-        });
-      });
-    });
-    // Also save queue to FT_Cola_Estacion
-    var savedOFs = {};
-    DB.activeOFs.forEach(function(aof){
-      if(!savedOFs[aof.of_sap]){
-        savedOFs[aof.of_sap] = true;
-        appSaveQueueToSP(aof.of_sap).catch(function(e){
-          console.warn('appSaveQueueToSP:', e.message);
-        });
-      }
-    });
-  }
+  renderApp();
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
@@ -5645,12 +5640,6 @@ async function appGraphGet(endpoint, retry) {
     }
     return appGraphGet(endpoint, true);
   }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('GET throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
-    return appGraphGet(endpoint, true);
-  }
   if (!res.ok) throw new Error('Graph ' + res.status + ': ' + (await res.text().catch(function(){return '';})).slice(0,200));
   return res.json();
 }
@@ -5677,12 +5666,6 @@ async function appGraphPatch(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('PATCH 401 no-refresh'); }
-    return appGraphPatch(endpoint, body, true);
-  }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('PATCH throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPatch(endpoint, body, true);
   }
   if (!res.ok && res.status !== 204) {
@@ -5725,12 +5708,6 @@ async function appGraphPost(endpoint, body, retry) {
   if (res.status === 401 && !retry) {
     appToken = null;
     try { await appGetToken(true); } catch(e) { throw new Error('POST 401 no-refresh'); }
-    return appGraphPost(endpoint, body, true);
-  }
-  // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
-  if ((res.status === 503 || res.status === 429) && !retry) {
-    console.warn('POST throttling ('+res.status+'), reintentando en 2s...');
-    await new Promise(function(r){ setTimeout(r, 2000); });
     return appGraphPost(endpoint, body, true);
   }
   if (!res.ok) {
@@ -5879,10 +5856,24 @@ async function appLoadDataFromSP() {
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
     });
-    window.DB_STATION_QUEUE=window.DB_STATION_QUEUE||{};
-    window.STATIONS.forEach(s=>{if(!window.DB_STATION_QUEUE[s])window.DB_STATION_QUEUE[s]=[];});
-    const colaItems=(colaRes.value||[]).map(i=>i.fields).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
-    colaItems.forEach(c=>{const st=c.Estacion||c.Title||'';if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];window.DB_STATION_QUEUE[st].push({of_sap:c.OF_SAP||'',op_id:c.Op_ID||'',tipo:c.Tipo_Cola||'normal'});});
+    window.DB_STATION_QUEUE={};
+    window.STATIONS.forEach(s=>{window.DB_STATION_QUEUE[s]=[];});
+    const colaItems=(colaRes.value||[]).map(i=>({fields:i.fields,id:i.id})).sort((a,b)=>(a.fields.Posicion||0)-(b.fields.Posicion||0));
+    colaItems.forEach(c=>{
+      const st=c.fields.Estacion||c.fields.Title||'';
+      if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];
+      const alreadyIn=window.DB_STATION_QUEUE[st].find(function(x){return x.of_sap===c.fields.OF_SAP&&x.op_id===c.fields.Op_ID;});
+      if(!alreadyIn){
+        window.DB_STATION_QUEUE[st].push({of_sap:c.fields.OF_SAP||'',op_id:c.fields.Op_ID||'',tipo:c.fields.Tipo_Cola||'normal'});
+        // Mapear _queueSpId en la op correspondiente para poder hacer PATCH en lugar de POST
+        DB.activeOFs.forEach(function(aof){
+          if(aof.of_sap===c.fields.OF_SAP){
+            var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
+            if(op) op._queueSpId=c.id;
+          }
+        });
+      }
+    });
     sqSyncColaNumbers();
     // Garantizar que ops con status=running tengan timer activo en memoria
     DB.activeOFs.forEach(function(aof){
@@ -7439,7 +7430,7 @@ function renderAppOpsPanel(of){
     if(op.isRetrabajo && op.nombre.indexOf('Retrabajo')===-1) h+=" <span style='font-size:.68rem;color:var(--ared);font-weight:700;'>— Retrabajo</span>";
     if(op.isTurnoB) h+=" <span style='font-size:.62rem;color:#c084fc;font-weight:700;background:rgba(139,92,246,.15);border-radius:4px;padding:1px 5px;'>Turno B</span>";
     if(op.tipo==="retorno")h+=" <span style='font-size:.58rem;color:var(--ayellow)'>↩</span>";
-    if(op.tipo==="simultanea")h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
+    if(op.tipo==="simultanea"&&!(op.cola&&op.cola>0))h+=" <span style='font-size:.58rem;color:var(--aorange)'>≈</span>";
     h+="</div>";
     // Segmentos de turno previos
     if(op.turnos && op.turnos.length){
@@ -10514,39 +10505,34 @@ function appQueueMove(idx, dir){
   sqSyncColaNumbers();
   renderAppQueueList();
 }
-function appQueueSave(){
+async function appQueueSave(){
   sqSyncColaNumbers();
+  var saveBtn = document.querySelector('#app-modal-queue .app-mb-p');
+  if(saveBtn){ saveBtn.disabled=true; saveBtn.textContent='💾 Guardando...'; }
+  try {
+    if(typeof appSiteId !== 'undefined' && appSiteId){
+      var savedOFs = {};
+      for(var ai=0; ai<DB.activeOFs.length; ai++){
+        var aof = DB.activeOFs[ai];
+        if(!savedOFs[aof.of_sap]){ savedOFs[aof.of_sap]=true; await appSaveQueueToSP(aof.of_sap); }
+      }
+      for(var ai2=0; ai2<DB.activeOFs.length; ai2++){
+        var aof2 = DB.activeOFs[ai2];
+        for(var oi=0; oi<aof2.ops.length; oi++){
+          var op = aof2.ops[oi];
+          if(!op._spId) continue;
+          try { await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',{Cola:op.cola||0});
+                console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
+          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
+        }
+      }
+    }
+  } catch(e){ console.warn('appQueueSave error:', e.message); }
+  if(saveBtn){ saveBtn.disabled=false; saveBtn.textContent='💾 Guardar orden'; }
   closeAppModal('app-modal-queue');
   _refreshStationViews();
-  // Persist new Secuencia values to SP for all ops of all active OFs
-  // This ensures the portal reflects the new order after reload
-  if(typeof appSiteId !== 'undefined' && appSiteId){
-    DB.activeOFs.forEach(function(aof){
-      aof.ops.forEach(function(op, idx){
-        if(!op._spId) return;
-        var newSeq = idx + 1;
-        var newCola = op.cola || 0;
-        appGraphPatch(
-          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-          {Secuencia: newSeq, Cola: newCola}
-        ).then(function(){
-          console.log('✅ Secuencia SP: '+op.id+' → '+newSeq);
-        }).catch(function(e){
-          console.warn('⚠ Secuencia SP error '+op.id+':', e.message);
-        });
-      });
-    });
-    // Also save queue to FT_Cola_Estacion
-    var savedOFs = {};
-    DB.activeOFs.forEach(function(aof){
-      if(!savedOFs[aof.of_sap]){
-        savedOFs[aof.of_sap] = true;
-        appSaveQueueToSP(aof.of_sap).catch(function(e){
-          console.warn('appSaveQueueToSP:', e.message);
-        });
-      }
-    });
-  }
+  renderApp();
 }
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
@@ -11041,7 +11027,7 @@ async function appReloadOpsFromSP() {
           qty_ok:      parseInt(o.Qty_OK||0),
           qty_def:     parseInt(o.Qty_Def||0),
           qty_rej:     parseInt(o.Qty_Rej||0),
-          cola:        parseInt(o.Cola||0)||0,  // from SP — will be overridden by FT_Cola_Estacion fetch
+          cola:        0,  // siempre se asigna desde FT_Cola_Estacion, no desde campo Cola de SP
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
@@ -11062,22 +11048,25 @@ async function appReloadOpsFromSP() {
       var colaEstRes = await appGraphGet(
         'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
       );
-      // Build posicion map: Op_ID → Posicion
+      // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
       (colaEstRes.value||[]).forEach(function(item){
         if(item.fields && item.fields.Op_ID !== undefined){
-          _posMap[item.fields.Op_ID] = parseInt(item.fields.Posicion||999);
+          _posMap[item.fields.Op_ID] = {pos: parseInt(item.fields.Posicion||999), spId: item.id};
         }
       });
-      // Update op.cola from FT_Cola_Estacion.Posicion
+      // Update op.cola y _queueSpId desde FT_Cola_Estacion
       DB.activeOFs.forEach(function(aof){
         aof.ops.forEach(function(op){
+          var entry = _posMap[op.id];
+          // Mapear _queueSpId siempre que exista
+          if(entry && entry.spId) op._queueSpId = entry.spId;
           // Running/paused ops ALWAYS get cola=null regardless of SP value
           if(op.status==='running'||op.status==='paused'||op.status==='validating'){
             op.cola = null;
             return;
           }
-          var pos = _posMap[op.id];
+          var pos = entry ? entry.pos : undefined;
           if(pos === undefined) return; // not in FT_Cola_Estacion — keep existing
           if(pos <= 0 || pos >= 999) return; // bad/unset value — keep existing
           op.cola = pos; // 1,2,3... queue position
