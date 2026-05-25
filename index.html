@@ -2073,7 +2073,7 @@ async function loadPedidos(nivelOverride) {
 
 function updateKPIs() {
   const p = state.pedidos;
-  document.getElementById('fabp-kpi-total').textContent    = p.length;
+  document.getElementById('ped-kpi-total').textContent     = p.length;
   document.getElementById('kpi-aut').textContent      = p.filter(x=>x.Estatus==='Autorizado').length;
   document.getElementById('kpi-pend').textContent     = p.filter(x=>x.Estatus==='Pendiente').length;
   document.getElementById('kpi-rech').textContent     = p.filter(x=>x.Estatus==='Rechazado').length;
