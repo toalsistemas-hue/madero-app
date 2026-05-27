@@ -540,7 +540,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
     <div id="nav-config-item" style="display:none;">
       <div class="sidebar-section-label">Sistema</div>
-      <div class="nav-item" id="nav-config" onclick="showPage('config')">
+      <div class="nav-item" id="nav-config" onclick="showPage('config'); setTimeout(()=>{ if(typeof cfgShowTab==='function') cfgShowTab(typeof CFG!=='undefined'?CFG.currentTab:'usuarios'); },120);">
         <span class="nav-icon">⚙️</span> Configuración
       </div>
     </div>
@@ -2427,6 +2427,562 @@ function waitForMsal(tries) {
   }
 }
 waitForMsal();
+
+// ═══════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN — CSS dinámico
+// ═══════════════════════════════════════════════════════════════════
+(function injectCfgCSS() {
+  const s = document.createElement('style');
+  s.textContent = `
+    .cfg-tab-btn {
+      padding: 9px 18px; border:1px solid var(--border-color); background:none;
+      color:var(--text-mid); border-radius:8px 8px 0 0; cursor:pointer;
+      font-size:.82rem; font-weight:600; margin-bottom:-2px; transition:.15s;
+    }
+    .cfg-tab-btn:hover { background:var(--bg-hover); color:var(--text); }
+    .cfg-tab-active { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
+    .cfg-subtab-btn {
+      padding:7px 14px; border:1px solid var(--border-color); background:none;
+      color:var(--text-mid); border-radius:6px; cursor:pointer; font-size:.8rem; transition:.15s;
+    }
+    .cfg-subtab-btn:hover { background:var(--bg-hover); color:var(--text); }
+    .cfg-subtab-active { background:rgba(30,120,200,.15); color:var(--accent); border-color:var(--accent); }
+    .cfg-table-row:hover td { background:var(--bg-hover); }
+    .cfg-badge-admin    { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
+    .cfg-badge-active   { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
+    .cfg-badge-inactive { display:inline-block;padding:2px 8px;border-radius:10px;background:#fdecea;color:#8b1a1a;font-size:.72rem;font-weight:700; }
+    .cfg-btn-edit { padding:4px 10px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.75rem;margin-right:4px; }
+    .cfg-btn-del  { padding:4px 10px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:6px;cursor:pointer;font-size:.75rem; }
+    .cfg-btn-edit:hover { background:var(--accent);color:#fff; }
+    .cfg-btn-del:hover  { background:#cc3333;color:#fff; }
+    .cfg-form-row { margin-bottom:14px; }
+    .cfg-form-row label { display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mid);margin-bottom:5px; }
+    .cfg-form-row input, .cfg-form-row select, .cfg-form-row textarea {
+      width:100%;background:var(--bg-hover);border:1px solid var(--border-color);
+      border-radius:8px;padding:9px 12px;color:var(--text);font-size:.85rem;outline:none;
+      box-sizing:border-box; transition:border-color .2s;
+    }
+    .cfg-form-row input:focus, .cfg-form-row select:focus, .cfg-form-row textarea:focus { border-color:var(--accent); }
+    .cfg-pantallas-list { max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px; }
+    .cfg-pantalla-item { display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:.82rem; }
+    .cfg-pantalla-item label { flex:1;cursor:pointer;color:var(--text); }
+    .cfg-excepcion-row { display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-color); }
+    .cfg-excepcion-row:last-child { border-bottom:none; }
+    .cfg-loading { padding:24px;text-align:center;color:var(--text-mid);font-size:.85rem; }
+    .cfg-msg-ok  { padding:10px 14px;background:#e6f5ec;border:1px solid #28a05a;color:#1a6e3c;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
+    .cfg-msg-err { padding:10px 14px;background:#fdecea;border:1px solid #cc3333;color:#8b1a1a;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
+  `;
+  document.head.appendChild(s);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN — Estado local
+// ═══════════════════════════════════════════════════════════════════
+var CFG = {
+  usuarios:   [],
+  puestos:    [],
+  modulos:    [],
+  submodulos: [],
+  pantallas:  [],
+  currentTab: 'usuarios',
+  currentSubTab: 'modulos',
+  currentModal: null,
+  editingId: null,
+  siteId: null,
+};
+
+// ── TAB NAVIGATION ────────────────────────────────────────────────
+function cfgShowTab(tab) {
+  CFG.currentTab = tab;
+  ['usuarios','menu'].forEach(function(t) {
+    var el = document.getElementById('cfg-view-'+t);
+    var btn = document.getElementById('cfg-tab-'+t);
+    if (el)  el.style.display  = (t === tab) ? '' : 'none';
+    if (btn) btn.classList.toggle('cfg-tab-active', t === tab);
+  });
+  if (tab === 'usuarios') cfgLoadUsuarios();
+  if (tab === 'menu')     cfgLoadMenuData();
+}
+
+function cfgShowSubTab(sub) {
+  CFG.currentSubTab = sub;
+  ['modulos','submodulos','pantallas','puestos'].forEach(function(s) {
+    var el  = document.getElementById('cfg-view-'+s);
+    var btn = document.getElementById('cfg-stab-'+s);
+    if (el)  el.style.display  = (s === sub) ? '' : 'none';
+    if (btn) btn.classList.toggle('cfg-subtab-active', s === sub);
+  });
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+async function cfgEnsureSiteId() {
+  if (!CFG.siteId) CFG.siteId = await getSiteId();
+  return CFG.siteId;
+}
+
+// ── CARGAR USUARIOS ───────────────────────────────────────────────
+async function cfgLoadUsuarios() {
+  var tbody = document.getElementById('cfg-usr-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">Cargando usuarios…</td></tr>';
+  try {
+    var sid = await cfgEnsureSiteId();
+    var res = await graphGet('sites/'+sid+'/lists/Usuarios/items?$expand=fields&$top=500');
+    CFG.usuarios = (res.value||[]).map(function(i){ return Object.assign({id:i.id}, i.fields); });
+
+    var puestosRes = await graphGet('sites/'+sid+'/lists/Puestos/items?$expand=fields&$top=200');
+    CFG.puestos = (puestosRes.value||[]).map(function(i){ return Object.assign({id:i.id}, i.fields); });
+
+    var selPuesto = document.getElementById('cfg-usr-filter-puesto');
+    if (selPuesto) {
+      var cv = selPuesto.value;
+      selPuesto.innerHTML = '<option value="">Todos los puestos</option>';
+      CFG.puestos.forEach(function(p) {
+        var o = document.createElement('option');
+        o.value = p.Title || p.PuestoID || '';
+        o.textContent = p.Nombre || p.Title || '';
+        selPuesto.appendChild(o);
+      });
+      selPuesto.value = cv;
+    }
+    cfgRenderUsuarios(CFG.usuarios);
+  } catch(e) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>';
+  }
+}
+
+function cfgFilterUsuarios() {
+  var q      = (document.getElementById('cfg-usr-search')||{value:''}).value.toLowerCase();
+  var puesto = (document.getElementById('cfg-usr-filter-puesto')||{value:''}).value;
+  var activo = (document.getElementById('cfg-usr-filter-activo')||{value:''}).value;
+  var list = CFG.usuarios;
+  if (q)      list = list.filter(function(u){ return ((u.NombreCompleto||u.Title||'').toLowerCase().includes(q) || (u.Title||'').toLowerCase().includes(q)); });
+  if (puesto) list = list.filter(function(u){ return (u.PuestoID||u.Puesto||'') === puesto; });
+  if (activo === '1') list = list.filter(function(u){ return u.Activo !== false && u.Activo !== 0; });
+  if (activo === '0') list = list.filter(function(u){ return u.Activo === false || u.Activo === 0; });
+  cfgRenderUsuarios(list);
+}
+
+function cfgRenderUsuarios(list) {
+  var tbody = document.getElementById('cfg-usr-tbody');
+  var count = document.getElementById('cfg-usr-count');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">No se encontraron usuarios.</td></tr>';
+    if (count) count.textContent = '0 usuarios';
+    return;
+  }
+  if (count) count.textContent = list.length + ' usuario' + (list.length !== 1 ? 's' : '');
+  tbody.innerHTML = list.map(function(u,i) {
+    var email   = u.Title || u.Email || '';
+    var nombre  = u.NombreCompleto || email;
+    var puesto  = u.PuestoID || u.Puesto || '—';
+    var pObj    = CFG.puestos.find(function(p){ return (p.Title||p.PuestoID) === puesto; }) || {};
+    var pNombre = pObj.Nombre || puesto;
+    var activo  = u.Activo !== false && u.Activo !== 0;
+    var rowBg   = i % 2 === 1 ? 'background:var(--bg-hover);' : '';
+    return '<tr class="cfg-table-row" style="'+rowBg+'">'+
+      '<td style="padding:9px 14px;font-weight:600;">'+nombre+'</td>'+
+      '<td style="padding:9px 14px;color:var(--text-mid);">'+email+'</td>'+
+      '<td style="padding:9px 14px;">'+pNombre+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;"><span class="'+(activo?'cfg-badge-active':'cfg-badge-inactive')+'">'+(activo?'Activo':'Inactivo')+'</span></td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+
+        '<button class="cfg-btn-edit" onclick="cfgOpenUsuarioModal(\''+u.id+'\')">✏️ Editar</button>'+
+        '<button class="cfg-btn-del"  onclick="cfgDeleteItem(\'usuario\',\''+u.id+'\',\''+nombre.replace(/'/g,"\\'")+'\')" >🗑️</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+// ── CARGAR MENÚ DATA ──────────────────────────────────────────────
+async function cfgLoadMenuData() {
+  try {
+    var sid = await cfgEnsureSiteId();
+    var empty = function(){ return {value:[]}; };
+    var results = await Promise.all([
+      graphGet('sites/'+sid+'/lists/Modulos/items?$expand=fields&$top=200').catch(empty),
+      graphGet('sites/'+sid+'/lists/SubModulos/items?$expand=fields&$top=200').catch(empty),
+      graphGet('sites/'+sid+'/lists/Pantallas/items?$expand=fields&$top=200').catch(empty),
+      graphGet('sites/'+sid+'/lists/Puestos/items?$expand=fields&$top=200').catch(empty),
+    ]);
+    CFG.modulos    = (results[0].value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    CFG.submodulos = (results[1].value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    CFG.pantallas  = (results[2].value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    CFG.puestos    = (results[3].value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    cfgRenderModulos(); cfgRenderSubModulos(); cfgRenderPantallas(); cfgRenderPuestos();
+  } catch(e) {
+    ['mod','submod','pan','pst'].forEach(function(t) {
+      var tb = document.getElementById('cfg-'+t+'-tbody');
+      if (tb) tb.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>';
+    });
+  }
+}
+
+function cfgRenderModulos() {
+  var tb = document.getElementById('cfg-mod-tbody');
+  if (!tb) return;
+  if (!CFG.modulos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin módulos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.modulos.slice().sort(function(a,b){ return (a.Orden||0)-(b.Orden||0); }).map(function(m,i){
+    return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
+      '<td style="padding:9px 14px;font-weight:600;">'+(m.Nombre||m.Title)+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;font-size:1.2rem;">'+(m.Icono||'📦')+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+(m.Orden||'—')+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+
+        '<button class="cfg-btn-edit" onclick="cfgOpenModuloModal(\''+m.id+'\')">✏️ Editar</button>'+
+        '<button class="cfg-btn-del"  onclick="cfgDeleteItem(\'modulo\',\''+m.id+'\',\''+(m.Nombre||m.Title||'').replace(/'/g,"\\'")+'\')">🗑️</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+function cfgRenderSubModulos() {
+  var tb = document.getElementById('cfg-submod-tbody');
+  if (!tb) return;
+  if (!CFG.submodulos.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin submódulos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.submodulos.slice().sort(function(a,b){ return (a.Orden||0)-(b.Orden||0); }).map(function(s,i){
+    var modNombre = (CFG.modulos.find(function(m){ return m.Nombre===s.ModuloID||m.Title===s.ModuloID; })||{}).Nombre || s.ModuloID || '—';
+    return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
+      '<td style="padding:9px 14px;font-weight:600;">'+(s.Nombre||s.Title)+'</td>'+
+      '<td style="padding:9px 14px;color:var(--text-mid);">'+modNombre+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;font-size:1.2rem;">'+(s.Icono||'📁')+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+(s.Orden||'—')+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+
+        '<button class="cfg-btn-edit" onclick="cfgOpenSubmoduloModal(\''+s.id+'\')">✏️ Editar</button>'+
+        '<button class="cfg-btn-del"  onclick="cfgDeleteItem(\'submodulo\',\''+s.id+'\',\''+(s.Nombre||s.Title||'').replace(/'/g,"\\'")+'\')">🗑️</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+function cfgRenderPantallas() {
+  var tb = document.getElementById('cfg-pan-tbody');
+  if (!tb) return;
+  if (!CFG.pantallas.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin pantallas registradas.</td></tr>'; return; }
+  tb.innerHTML = CFG.pantallas.map(function(p,i){
+    return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
+      '<td style="padding:9px 14px;font-weight:600;">'+(p.Nombre||p.Title)+'</td>'+
+      '<td style="padding:9px 14px;color:var(--text-mid);">'+(p.ModuloID||'—')+'</td>'+
+      '<td style="padding:9px 14px;color:var(--text-mid);">'+(p.SubModuloID||'—')+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;"><code style="font-size:.75rem;background:var(--bg-hover);padding:2px 6px;border-radius:4px;">'+(p.PantallaID||p.Title)+'</code></td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+
+        '<button class="cfg-btn-edit" onclick="cfgOpenPantallaModal(\''+p.id+'\')">✏️ Editar</button>'+
+        '<button class="cfg-btn-del"  onclick="cfgDeleteItem(\'pantalla\',\''+p.id+'\',\''+(p.Nombre||p.Title||'').replace(/'/g,"\\'")+'\')">🗑️</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+function cfgRenderPuestos() {
+  var tb = document.getElementById('cfg-pst-tbody');
+  if (!tb) return;
+  if (!CFG.puestos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin puestos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.puestos.map(function(p,i){
+    var pans = []; try { pans = JSON.parse(p.Pantallas||'[]'); } catch(e){}
+    var pc = Array.isArray(pans) ? pans.length : 0;
+    return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
+      '<td style="padding:9px 14px;font-weight:600;">'+(p.Nombre||p.Title)+'</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+(p.EsAdmin||p.esAdmin ? '<span class="cfg-badge-admin">Admin</span>' : '—')+'</td>'+
+      '<td style="padding:9px 14px;color:var(--text-mid);">'+pc+' pantalla'+(pc!==1?'s':'')+' asignadas</td>'+
+      '<td style="padding:9px 14px;text-align:center;">'+
+        '<button class="cfg-btn-edit" onclick="cfgOpenPuestoModal(\''+p.id+'\')">✏️ Editar</button>'+
+        '<button class="cfg-btn-del"  onclick="cfgDeleteItem(\'puesto\',\''+p.id+'\',\''+(p.Nombre||p.Title||'').replace(/'/g,"\\'")+'\')">🗑️</button>'+
+      '</td></tr>';
+  }).join('');
+}
+
+// ── MODAL: abrir/cerrar ────────────────────────────────────────────
+function cfgOpenModal(title, bodyHTML, modalType, editId) {
+  CFG.currentModal = modalType;
+  CFG.editingId    = editId || null;
+  document.getElementById('cfg-modal-title').textContent = title;
+  document.getElementById('cfg-modal-body').innerHTML    = bodyHTML;
+  var btn = document.getElementById('cfg-modal-save-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+  var ov = document.getElementById('cfg-modal-overlay');
+  ov.style.display = 'flex';
+}
+function cfgCloseModal() {
+  document.getElementById('cfg-modal-overlay').style.display = 'none';
+  CFG.currentModal = null; CFG.editingId = null;
+}
+
+// ── MODAL: USUARIO ────────────────────────────────────────────────
+function cfgOpenUsuarioModal(itemId) {
+  var u = itemId ? CFG.usuarios.find(function(x){ return x.id === itemId; }) : null;
+  if (itemId && !u) {
+    // usuario no en cache — recargar y reintentar
+    cfgLoadUsuarios().then(function(){
+      u = CFG.usuarios.find(function(x){ return x.id === itemId; });
+      cfgOpenUsuarioModal(itemId);
+    });
+    return;
+  }
+  var email  = u ? (u.Title||u.Email||'') : '';
+  var nombre = u ? (u.NombreCompleto||'') : '';
+  var puesto = u ? (u.PuestoID||'') : '';
+  var activo = u ? (u.Activo !== false && u.Activo !== 0) : true;
+  var exceps = []; try { exceps = JSON.parse(u ? (u.Excepciones||'[]') : '[]'); } catch(e){}
+  window._cfgExceps = JSON.parse(JSON.stringify(exceps));
+
+  var puestosOpts = CFG.puestos.map(function(p){
+    return '<option value="'+(p.Title||p.PuestoID||'')+'" '+(( p.Title||p.PuestoID)===puesto?'selected':'')+'>'+( p.Nombre||p.Title)+'</option>';
+  }).join('');
+
+  function buildExcRow(ex, idx) {
+    var panOpts = CFG.pantallas.map(function(p){
+      var pid = p.PantallaID||p.Title||'';
+      return '<option value="'+pid+'" '+(ex.pantallaID===pid?'selected':'')+'>'+(p.Nombre||p.Title)+'</option>';
+    }).join('');
+    return '<div class="cfg-excepcion-row" id="excRow'+idx+'">'+
+      '<select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'pan\',this.value)">'+panOpts+'</select>'+
+      '<select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'nivel\',this.value)">'+
+        '<option value="completo" '+(ex.nivel==='completo'?'selected':'')+'>Completo</option>'+
+        '<option value="lectura" '+(ex.nivel==='lectura'?'selected':'')+'>Lectura</option></select>'+
+      '<select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'accion\',this.value)">'+
+        '<option value="agregar" '+(ex.accion==='agregar'?'selected':'')+'>Agregar</option>'+
+        '<option value="quitar" '+(ex.accion==='quitar'?'selected':'')+'>Quitar</option></select>'+
+      '<button onclick="cfgRemoveExcepcion('+idx+')" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button></div>';
+  }
+
+  var excepsHTML = exceps.map(buildExcRow).join('');
+
+  var html =
+    '<div class="cfg-form-row"><label>Email (usuario Microsoft)</label>'+
+    '<input id="cfgU-email" type="email" value="'+email+'" placeholder="nombre@maderoequipos.com"'+(itemId?' readonly style="opacity:.6;"':'')+'>'+
+    '</div>'+
+    '<div class="cfg-form-row"><label>Nombre Completo</label>'+
+    '<input id="cfgU-nombre" type="text" value="'+nombre+'" placeholder="Nombre Apellido"></div>'+
+    '<div class="cfg-form-row"><label>Puesto</label>'+
+    '<select id="cfgU-puesto"><option value="">— Selecciona puesto —</option>'+puestosOpts+'</select></div>'+
+    '<div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">'+
+    '<input id="cfgU-activo" type="checkbox" '+(activo?'checked':'')+' style="width:auto;margin:0;">'+
+    '<label style="margin:0;text-transform:none;font-size:.85rem;">Usuario Activo</label></div>'+
+    '<div class="cfg-form-row"><label>Excepciones de Acceso <span style="font-weight:400;text-transform:none;">(agregar/quitar pantallas respecto al puesto)</span></label>'+
+    '<div id="cfg-excep-list">'+excepsHTML+'</div>'+
+    '<button onclick="cfgAddExcepcion()" style="margin-top:8px;padding:5px 12px;border:1px dashed var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.78rem;">+ Agregar excepción</button></div>'+
+    '<div id="cfg-modal-msg"></div>';
+
+  cfgOpenModal(itemId ? 'Editar Usuario — '+(nombre||email) : 'Nuevo Usuario', html, 'usuario', itemId);
+}
+
+function cfgExcepChange(idx, campo, val) {
+  if (!window._cfgExceps || !window._cfgExceps[idx]) return;
+  window._cfgExceps[idx][campo === 'pan' ? 'pantallaID' : campo] = val;
+}
+function cfgAddExcepcion() {
+  if (!window._cfgExceps) window._cfgExceps = [];
+  var idx = window._cfgExceps.length;
+  var newEx = { pantallaID: CFG.pantallas[0] ? (CFG.pantallas[0].PantallaID||CFG.pantallas[0].Title||'') : '', nivel:'completo', accion:'agregar' };
+  window._cfgExceps.push(newEx);
+  var panOpts = CFG.pantallas.map(function(p){ return '<option value="'+(p.PantallaID||p.Title||'')+'">'+(p.Nombre||p.Title)+'</option>'; }).join('');
+  var newRow = document.createElement('div');
+  newRow.className = 'cfg-excepcion-row'; newRow.id = 'excRow'+idx;
+  newRow.innerHTML =
+    '<select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'pan\',this.value)">'+panOpts+'</select>'+
+    '<select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'nivel\',this.value)"><option value="completo">Completo</option><option value="lectura">Lectura</option></select>'+
+    '<select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);" onchange="cfgExcepChange('+idx+',\'accion\',this.value)"><option value="agregar">Agregar</option><option value="quitar">Quitar</option></select>'+
+    '<button onclick="cfgRemoveExcepcion('+idx+')" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button>';
+  document.getElementById('cfg-excep-list').appendChild(newRow);
+}
+function cfgRemoveExcepcion(idx) {
+  if (!window._cfgExceps) return;
+  window._cfgExceps.splice(idx, 1);
+  var row = document.getElementById('excRow'+idx);
+  if (row) row.remove();
+}
+
+// ── MODAL: MÓDULO ─────────────────────────────────────────────────
+function cfgOpenModuloModal(itemId) {
+  var m = itemId ? CFG.modulos.find(function(x){ return x.id===itemId; }) : null;
+  var html =
+    '<div class="cfg-form-row"><label>Nombre del Módulo</label><input id="cfgM-nombre" value="'+(m?m.Nombre||m.Title||'':'')+'" placeholder="Ej: Logística"></div>'+
+    '<div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgM-icono" value="'+(m?m.Icono||'':'')+'" placeholder="🚚" maxlength="5"></div>'+
+    '<div class="cfg-form-row"><label>Orden</label><input id="cfgM-orden" type="number" value="'+(m?m.Orden||'':'')+'" placeholder="1"></div>'+
+    '<div id="cfg-modal-msg"></div>';
+  cfgOpenModal(m ? 'Editar Módulo' : 'Nuevo Módulo', html, 'modulo', itemId);
+}
+
+// ── MODAL: SUBMÓDULO ──────────────────────────────────────────────
+function cfgOpenSubmoduloModal(itemId) {
+  var s = itemId ? CFG.submodulos.find(function(x){ return x.id===itemId; }) : null;
+  var curMod = s ? (s.ModuloID||'') : '';
+  var modOpts = CFG.modulos.map(function(m){
+    return '<option value="'+(m.Nombre||m.Title)+'" '+((m.Nombre||m.Title)===curMod?'selected':'')+'>'+(m.Nombre||m.Title)+'</option>';
+  }).join('');
+  var html =
+    '<div class="cfg-form-row"><label>Nombre del SubMódulo</label><input id="cfgSM-nombre" value="'+(s?s.Nombre||s.Title||'':'')+'" placeholder="Ej: Compras Internacionales"></div>'+
+    '<div class="cfg-form-row"><label>Módulo Padre</label><select id="cfgSM-modulo"><option value="">— Selecciona —</option>'+modOpts+'</select></div>'+
+    '<div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgSM-icono" value="'+(s?s.Icono||'':'')+'" placeholder="🌐" maxlength="5"></div>'+
+    '<div class="cfg-form-row"><label>Orden</label><input id="cfgSM-orden" type="number" value="'+(s?s.Orden||'':'')+'" placeholder="1"></div>'+
+    '<div id="cfg-modal-msg"></div>';
+  cfgOpenModal(s ? 'Editar SubMódulo' : 'Nuevo SubMódulo', html, 'submodulo', itemId);
+}
+
+// ── MODAL: PANTALLA ───────────────────────────────────────────────
+function cfgOpenPantallaModal(itemId) {
+  var p = itemId ? CFG.pantallas.find(function(x){ return x.id===itemId; }) : null;
+  var curMod = p ? (p.ModuloID||'') : '';
+  var curSub = p ? (p.SubModuloID||'') : '';
+  var modOpts = CFG.modulos.map(function(m){
+    return '<option value="'+(m.Nombre||m.Title)+'" '+((m.Nombre||m.Title)===curMod?'selected':'')+'>'+(m.Nombre||m.Title)+'</option>';
+  }).join('');
+  var subOpts = CFG.submodulos.map(function(s){
+    return '<option value="'+(s.Nombre||s.Title)+'" '+((s.Nombre||s.Title)===curSub?'selected':'')+'>'+(s.Nombre||s.Title)+'</option>';
+  }).join('');
+  var html =
+    '<div class="cfg-form-row"><label>Nombre de la Pantalla</label><input id="cfgP-nombre" value="'+(p?p.Nombre||p.Title||'':'')+'" placeholder="Ej: Pedidos Especiales"></div>'+
+    '<div class="cfg-form-row"><label>PantallaID (clave interna, sin espacios)</label><input id="cfgP-pantallaID" value="'+(p?p.PantallaID||p.Title||'':'')+'" placeholder="PedidosEspeciales"></div>'+
+    '<div class="cfg-form-row"><label>Módulo</label><select id="cfgP-modulo"><option value="">— Selecciona —</option>'+modOpts+'</select></div>'+
+    '<div class="cfg-form-row"><label>SubMódulo <span style="font-weight:400;">(opcional)</span></label><select id="cfgP-submodulo"><option value="">— Sin submódulo —</option>'+subOpts+'</select></div>'+
+    '<div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgP-icono" value="'+(p?p.Icono||'':'')+'" placeholder="📄" maxlength="5"></div>'+
+    '<div id="cfg-modal-msg"></div>';
+  cfgOpenModal(p ? 'Editar Pantalla' : 'Nueva Pantalla', html, 'pantalla', itemId);
+}
+
+// ── MODAL: PUESTO ─────────────────────────────────────────────────
+function cfgOpenPuestoModal(itemId) {
+  var p = itemId ? CFG.puestos.find(function(x){ return x.id===itemId; }) : null;
+  var asignadas = []; try { asignadas = JSON.parse(p ? (p.Pantallas||'[]') : '[]'); } catch(e){}
+  window._cfgPantallasAsig = JSON.parse(JSON.stringify(asignadas));
+
+  var panListHTML = CFG.pantallas.map(function(pan){
+    var panId = pan.PantallaID||pan.Title||'';
+    var exist = asignadas.find(function(a){ return a.pantallaID===panId; });
+    var nivel  = exist ? exist.nivel : 'completo';
+    return '<div class="cfg-pantalla-item">'+
+      '<input type="checkbox" id="pck_'+panId+'" value="'+panId+'" '+(exist?'checked':'')+' onchange="cfgTogglePantAlAsig(\''+panId+'\',this.checked)">'+
+      '<label for="pck_'+panId+'">'+(pan.Nombre||pan.Title)+'</label>'+
+      '<select onchange="cfgSetNivelAsig(\''+panId+'\',this.value)" style="width:110px;padding:3px 6px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);">'+
+        '<option value="completo" '+(nivel==='completo'?'selected':'')+'>Completo</option>'+
+        '<option value="lectura"  '+(nivel==='lectura'?'selected':'')+'>Lectura</option>'+
+      '</select></div>';
+  }).join('');
+
+  var html =
+    '<div class="cfg-form-row"><label>Nombre del Puesto</label><input id="cfgPT-nombre" value="'+(p?p.Nombre||p.Title||'':'')+'" placeholder="Ej: Analista Compras Int."></div>'+
+    '<div class="cfg-form-row"><label>PuestoID (clave interna)</label><input id="cfgPT-puestoID" value="'+(p?p.PuestoID||p.Title||'':'')+'" placeholder="AnalistaComprasInt"></div>'+
+    '<div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">'+
+    '<input id="cfgPT-admin" type="checkbox" '+((p&&(p.EsAdmin||p.esAdmin))?'checked':'')+' style="width:auto;margin:0;">'+
+    '<label style="margin:0;text-transform:none;font-size:.85rem;">¿Es Administrador General?</label></div>'+
+    '<div class="cfg-form-row"><label>Pantallas con acceso</label>'+
+    '<div class="cfg-pantallas-list">'+(panListHTML||'<span style="color:var(--text-mid);font-size:.8rem;">No hay pantallas registradas aún.</span>')+'</div></div>'+
+    '<div id="cfg-modal-msg"></div>';
+  cfgOpenModal(p ? 'Editar Puesto' : 'Nuevo Puesto', html, 'puesto', itemId);
+}
+
+function cfgTogglePantAlAsig(panId, checked) {
+  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
+  if (checked) {
+    if (!window._cfgPantallasAsig.find(function(a){ return a.pantallaID===panId; }))
+      window._cfgPantallasAsig.push({ pantallaID: panId, nivel:'completo' });
+  } else {
+    window._cfgPantallasAsig = window._cfgPantallasAsig.filter(function(a){ return a.pantallaID!==panId; });
+  }
+}
+function cfgSetNivelAsig(panId, nivel) {
+  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
+  var f = window._cfgPantallasAsig.find(function(a){ return a.pantallaID===panId; });
+  if (f) f.nivel = nivel;
+}
+
+// ── GUARDAR ───────────────────────────────────────────────────────
+async function cfgModalSave() {
+  var btn = document.getElementById('cfg-modal-save-btn');
+  var msg = document.getElementById('cfg-modal-msg');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  if (msg) msg.innerHTML = '';
+  try {
+    var sid = await cfgEnsureSiteId();
+    await cfgDoSave(sid);
+    if (btn) btn.textContent = '✔ Guardado';
+    if (msg) msg.innerHTML = '<div class="cfg-msg-ok">✔ Guardado correctamente en SharePoint</div>';
+    setTimeout(function(){ cfgCloseModal(); cfgRefreshCurrentTab(); }, 900);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    if (msg) msg.innerHTML = '<div class="cfg-msg-err">Error al guardar: '+e.message+'</div>';
+  }
+}
+
+async function cfgDoSave(sid) {
+  var t  = CFG.currentModal;
+  var id = CFG.editingId;
+  var fields, lista;
+
+  if (t === 'usuario') {
+    var email  = ((document.getElementById('cfgU-email')||{}).value||'').trim();
+    var nombre = ((document.getElementById('cfgU-nombre')||{}).value||'').trim();
+    var puesto = ((document.getElementById('cfgU-puesto')||{}).value||'').trim();
+    var activo = !!(document.getElementById('cfgU-activo')||{}).checked;
+    var exceps = JSON.stringify(window._cfgExceps||[]);
+    if (!email)  throw new Error('El email es requerido');
+    if (!nombre) throw new Error('El nombre es requerido');
+    fields = { Title: email, NombreCompleto: nombre, PuestoID: puesto, Activo: activo, Excepciones: exceps };
+    lista  = 'Usuarios';
+  } else if (t === 'modulo') {
+    var nombre = ((document.getElementById('cfgM-nombre')||{}).value||'').trim();
+    var icono  = ((document.getElementById('cfgM-icono')||{}).value||'').trim();
+    var orden  = parseInt((document.getElementById('cfgM-orden')||{}).value||'0')||0;
+    if (!nombre) throw new Error('El nombre es requerido');
+    fields = { Title: nombre, Nombre: nombre, Icono: icono, Orden: orden };
+    lista  = 'Modulos';
+  } else if (t === 'submodulo') {
+    var nombre = ((document.getElementById('cfgSM-nombre')||{}).value||'').trim();
+    var modulo = ((document.getElementById('cfgSM-modulo')||{}).value||'').trim();
+    var icono  = ((document.getElementById('cfgSM-icono')||{}).value||'').trim();
+    var orden  = parseInt((document.getElementById('cfgSM-orden')||{}).value||'0')||0;
+    if (!nombre) throw new Error('El nombre es requerido');
+    if (!modulo) throw new Error('Debes seleccionar un módulo');
+    fields = { Title: nombre, Nombre: nombre, ModuloID: modulo, Icono: icono, Orden: orden };
+    lista  = 'SubModulos';
+  } else if (t === 'pantalla') {
+    var nombre     = ((document.getElementById('cfgP-nombre')||{}).value||'').trim();
+    var pantallaID = ((document.getElementById('cfgP-pantallaID')||{}).value||'').trim();
+    var modulo     = ((document.getElementById('cfgP-modulo')||{}).value||'').trim();
+    var submodulo  = ((document.getElementById('cfgP-submodulo')||{}).value||'').trim();
+    var icono      = ((document.getElementById('cfgP-icono')||{}).value||'').trim();
+    if (!nombre)     throw new Error('El nombre es requerido');
+    if (!pantallaID) throw new Error('El PantallaID es requerido');
+    fields = { Title: pantallaID, Nombre: nombre, PantallaID: pantallaID, ModuloID: modulo, SubModuloID: submodulo||'', Icono: icono };
+    lista  = 'Pantallas';
+  } else if (t === 'puesto') {
+    var nombre   = ((document.getElementById('cfgPT-nombre')||{}).value||'').trim();
+    var puestoID = ((document.getElementById('cfgPT-puestoID')||{}).value||'').trim();
+    var esAdmin  = !!(document.getElementById('cfgPT-admin')||{}).checked;
+    var pantallas = JSON.stringify(window._cfgPantallasAsig||[]);
+    if (!nombre)   throw new Error('El nombre es requerido');
+    if (!puestoID) throw new Error('El PuestoID es requerido');
+    fields = { Title: puestoID, Nombre: nombre, PuestoID: puestoID, EsAdmin: esAdmin, Pantallas: pantallas };
+    lista  = 'Puestos';
+  } else {
+    throw new Error('Tipo de modal desconocido');
+  }
+
+  if (id) await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields', fields);
+  else    await graphPost('sites/'+sid+'/lists/'+lista+'/items', { fields: fields });
+}
+
+// ── ELIMINAR ─────────────────────────────────────────────────────
+function cfgDeleteItem(tipo, itemId, nombre) {
+  var listas = { usuario:'Usuarios', modulo:'Modulos', submodulo:'SubModulos', pantalla:'Pantallas', puesto:'Puestos' };
+  var lista = listas[tipo];
+  if (!lista) return;
+  pendingAction = async function() {
+    try {
+      var sid = await cfgEnsureSiteId();
+      var token = await getToken();
+      var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+lista+'/items/'+itemId;
+      var res = await fetch(url, { method:'DELETE', headers:{ Authorization:'Bearer '+token } });
+      if (!res.ok && res.status !== 204) throw new Error('Graph DELETE '+res.status);
+      cfgRefreshCurrentTab();
+    } catch(e) { alert('Error al eliminar: '+e.message); }
+  };
+  document.getElementById('modal-title').textContent = '¿Eliminar registro?';
+  document.getElementById('modal-body').textContent  = 'Se eliminará "'+nombre+'" de la lista '+lista+'. Esta acción no se puede deshacer.';
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+// ── REFRESH ───────────────────────────────────────────────────────
+function cfgRefreshCurrentTab() {
+  if (CFG.currentTab === 'usuarios') cfgLoadUsuarios();
+  else cfgLoadMenuData();
+}
+
 </script>
 
 
@@ -8661,630 +9217,8 @@ setInterval(function(){
 })();
 
 
-// ═══════════════════════════════════════════════════════════════════
-// CONFIGURACIÓN — CSS dinámico
-// ═══════════════════════════════════════════════════════════════════
-(function injectCfgCSS() {
-  const s = document.createElement('style');
-  s.textContent = `
-    .cfg-tab-btn {
-      padding: 9px 18px; border:1px solid var(--border-color); background:none;
-      color:var(--text-mid); border-radius:8px 8px 0 0; cursor:pointer;
-      font-size:.82rem; font-weight:600; margin-bottom:-2px; transition:.15s;
-    }
-    .cfg-tab-btn:hover { background:var(--bg-hover); color:var(--text); }
-    .cfg-tab-active { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
-    .cfg-subtab-btn {
-      padding:7px 14px; border:1px solid var(--border-color); background:none;
-      color:var(--text-mid); border-radius:6px; cursor:pointer; font-size:.8rem; transition:.15s;
-    }
-    .cfg-subtab-btn:hover { background:var(--bg-hover); color:var(--text); }
-    .cfg-subtab-active { background:var(--accent-soft,rgba(30,120,200,.15)); color:var(--accent); border-color:var(--accent); }
-    .cfg-table-row:hover td { background:var(--bg-hover); }
-    .cfg-badge-admin { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
-    .cfg-badge-active { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
-    .cfg-badge-inactive { display:inline-block;padding:2px 8px;border-radius:10px;background:#fdecea;color:#8b1a1a;font-size:.72rem;font-weight:700; }
-    .cfg-btn-edit { padding:4px 10px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.75rem;margin-right:4px; }
-    .cfg-btn-del  { padding:4px 10px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:6px;cursor:pointer;font-size:.75rem; }
-    .cfg-btn-edit:hover { background:var(--accent);color:#fff; }
-    .cfg-btn-del:hover  { background:#cc3333;color:#fff; }
-    .cfg-form-row { margin-bottom:14px; }
-    .cfg-form-row label { display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mid);margin-bottom:5px; }
-    .cfg-form-row input, .cfg-form-row select, .cfg-form-row textarea {
-      width:100%;background:var(--bg-hover);border:1px solid var(--border-color);
-      border-radius:8px;padding:9px 12px;color:var(--text);font-size:.85rem;outline:none;
-      box-sizing:border-box; transition:border-color .2s;
-    }
-    .cfg-form-row input:focus, .cfg-form-row select:focus, .cfg-form-row textarea:focus { border-color:var(--accent); }
-    .cfg-pantallas-list { max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px; }
-    .cfg-pantalla-item { display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:.82rem; }
-    .cfg-pantalla-item label { flex:1;cursor:pointer;color:var(--text); }
-    .cfg-pantalla-item select { width:120px;padding:3px 6px;font-size:.78rem; }
-    .cfg-excepcion-row { display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-color); }
-    .cfg-excepcion-row:last-child { border-bottom:none; }
-    .cfg-loading { padding:24px;text-align:center;color:var(--text-mid);font-size:.85rem; }
-    .cfg-msg-ok  { padding:10px 14px;background:#e6f5ec;border:1px solid #28a05a;color:#1a6e3c;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
-    .cfg-msg-err { padding:10px 14px;background:#fdecea;border:1px solid #cc3333;color:#8b1a1a;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
-  `;
-  document.head.appendChild(s);
-})();
 
-// ═══════════════════════════════════════════════════════════════════
-// CONFIGURACIÓN — Estado local
-// ═══════════════════════════════════════════════════════════════════
-const CFG = {
-  usuarios:   [],   // raw items desde SharePoint  {id, Title(email), NombreCompleto, PuestoID, Activo, Excepciones}
-  puestos:    [],   // raw items  {id, Title(puestoID), Nombre, EsAdmin, Pantallas(json)}
-  modulos:    [],   // raw items  {id, Title, Nombre, Icono, Orden}
-  submodulos: [],   // raw items  {id, Title, Nombre, Icono, Orden, ModuloID}
-  pantallas:  [],   // raw items  {id, Title(pantallaID), Nombre, Icono, ModuloID, SubModuloID}
-  currentTab: 'usuarios',
-  currentSubTab: 'modulos',
-  currentModal: null,  // 'usuario'|'modulo'|'submodulo'|'pantalla'|'puesto'
-  editingId: null,     // SharePoint item id (null = nuevo)
-  siteId: null,
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// TAB NAVIGATION
-// ═══════════════════════════════════════════════════════════════════
-function cfgShowTab(tab) {
-  CFG.currentTab = tab;
-  ['usuarios','menu'].forEach(t => {
-    document.getElementById('cfg-view-'+t).style.display = t === tab ? '' : 'none';
-    document.getElementById('cfg-tab-'+t)?.classList.toggle('cfg-tab-active', t === tab);
-  });
-  if (tab === 'usuarios') cfgLoadUsuarios();
-  if (tab === 'menu') cfgLoadMenuData();
-}
-
-function cfgShowSubTab(sub) {
-  CFG.currentSubTab = sub;
-  ['modulos','submodulos','pantallas','puestos'].forEach(s => {
-    document.getElementById('cfg-view-'+s).style.display = s === sub ? '' : 'none';
-    document.getElementById('cfg-stab-'+s)?.classList.toggle('cfg-subtab-active', s === sub);
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// CARGAR DATOS DE CONFIGURACIÓN
-// ═══════════════════════════════════════════════════════════════════
-async function cfgEnsureSiteId() {
-  if (!CFG.siteId) CFG.siteId = await getSiteId();
-  return CFG.siteId;
-}
-
-async function cfgLoadUsuarios() {
-  const tbody = document.getElementById('cfg-usr-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">Cargando usuarios…</td></tr>';
-  try {
-    const sid = await cfgEnsureSiteId();
-    const res = await graphGet(`sites/${sid}/lists/Usuarios/items?$expand=fields&$top=500`);
-    CFG.usuarios = (res.value||[]).map(i => ({ id: i.id, ...i.fields }));
-
-    // Poblar filtro de puestos
-    const puestosRes = await graphGet(`sites/${sid}/lists/Puestos/items?$expand=fields&$top=200`);
-    CFG.puestos = (puestosRes.value||[]).map(i => ({ id: i.id, ...i.fields }));
-    const selPuesto = document.getElementById('cfg-usr-filter-puesto');
-    const currentVal = selPuesto.value;
-    selPuesto.innerHTML = '<option value="">Todos los puestos</option>';
-    CFG.puestos.forEach(p => {
-      const o = document.createElement('option');
-      o.value = p.Title || p.PuestoID || '';
-      o.textContent = p.Nombre || p.Title || '';
-      selPuesto.appendChild(o);
-    });
-    selPuesto.value = currentVal;
-
-    cfgRenderUsuarios(CFG.usuarios);
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error cargando usuarios: ${e.message}</td></tr>`;
-  }
-}
-
-function cfgFilterUsuarios() {
-  const q      = (document.getElementById('cfg-usr-search')?.value||'').toLowerCase();
-  const puesto = document.getElementById('cfg-usr-filter-puesto')?.value || '';
-  const activo = document.getElementById('cfg-usr-filter-activo')?.value || '';
-  let list = CFG.usuarios;
-  if (q) list = list.filter(u => (u.NombreCompleto||u.Title||'').toLowerCase().includes(q) || (u.Title||'').toLowerCase().includes(q));
-  if (puesto) list = list.filter(u => (u.PuestoID||u.Puesto||'') === puesto);
-  if (activo === '1') list = list.filter(u => u.Activo !== false && u.Activo !== 0);
-  if (activo === '0') list = list.filter(u => u.Activo === false || u.Activo === 0);
-  cfgRenderUsuarios(list);
-}
-
-function cfgRenderUsuarios(list) {
-  const tbody = document.getElementById('cfg-usr-tbody');
-  const count = document.getElementById('cfg-usr-count');
-  if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">No se encontraron usuarios.</td></tr>';
-    count.textContent = '0 usuarios';
-    return;
-  }
-  count.textContent = `${list.length} usuario${list.length !== 1 ? 's' : ''}`;
-  tbody.innerHTML = list.map((u,i) => {
-    const email  = u.Title || u.Email || '';
-    const nombre = u.NombreCompleto || email;
-    const puesto = u.PuestoID || u.Puesto || '—';
-    const pNombre = (CFG.puestos.find(p => (p.Title||p.PuestoID) === puesto) || {}).Nombre || puesto;
-    const activo = u.Activo !== false && u.Activo !== 0;
-    const rowBg  = i % 2 === 1 ? 'background:var(--bg-hover);' : '';
-    return `<tr class="cfg-table-row" style="${rowBg}">
-      <td style="padding:9px 14px;font-weight:600;">${nombre}</td>
-      <td style="padding:9px 14px;color:var(--text-mid);">${email}</td>
-      <td style="padding:9px 14px;">${pNombre}</td>
-      <td style="padding:9px 14px;text-align:center;">
-        <span class="${activo ? 'cfg-badge-active' : 'cfg-badge-inactive'}">${activo ? 'Activo' : 'Inactivo'}</span>
-      </td>
-      <td style="padding:9px 14px;text-align:center;">
-        <button class="cfg-btn-edit" onclick="cfgOpenUsuarioModal('${u.id}')">✏️ Editar</button>
-        <button class="cfg-btn-del"  onclick="cfgDeleteItem('usuario','${u.id}','${nombre.replace(/'/g,"\\'")}')">🗑️</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// CARGAR DATOS MENÚ
-// ═══════════════════════════════════════════════════════════════════
-async function cfgLoadMenuData() {
-  try {
-    const sid = await cfgEnsureSiteId();
-    const [modR, subR, panR, pstR] = await Promise.all([
-      graphGet(`sites/${sid}/lists/Modulos/items?$expand=fields&$top=200`),
-      graphGet(`sites/${sid}/lists/SubModulos/items?$expand=fields&$top=200`),
-      graphGet(`sites/${sid}/lists/Pantallas/items?$expand=fields&$top=200`),
-      graphGet(`sites/${sid}/lists/Puestos/items?$expand=fields&$top=200`),
-    ]);
-    CFG.modulos    = (modR.value||[]).map(i=>({id:i.id,...i.fields}));
-    CFG.submodulos = (subR.value||[]).map(i=>({id:i.id,...i.fields}));
-    CFG.pantallas  = (panR.value||[]).map(i=>({id:i.id,...i.fields}));
-    CFG.puestos    = (pstR.value||[]).map(i=>({id:i.id,...i.fields}));
-    cfgRenderModulos(); cfgRenderSubModulos(); cfgRenderPantallas(); cfgRenderPuestos();
-  } catch(e) {
-    ['mod','submod','pan','pst'].forEach(t => {
-      const tb = document.getElementById('cfg-'+t+'-tbody');
-      if (tb) tb.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: ${e.message}</td></tr>`;
-    });
-  }
-}
-
-function cfgRenderModulos() {
-  const tb = document.getElementById('cfg-mod-tbody');
-  if (!CFG.modulos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin módulos registrados.</td></tr>'; return; }
-  tb.innerHTML = CFG.modulos.sort((a,b)=>(a.Orden||0)-(b.Orden||0)).map((m,i)=>`
-    <tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
-      <td style="padding:9px 14px;font-weight:600;">${m.Nombre||m.Title}</td>
-      <td style="padding:9px 14px;text-align:center;font-size:1.2rem;">${m.Icono||'📦'}</td>
-      <td style="padding:9px 14px;text-align:center;">${m.Orden||'—'}</td>
-      <td style="padding:9px 14px;text-align:center;">
-        <button class="cfg-btn-edit" onclick="cfgOpenModuloModal('${m.id}')">✏️ Editar</button>
-        <button class="cfg-btn-del"  onclick="cfgDeleteItem('modulo','${m.id}','${(m.Nombre||m.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
-      </td></tr>`).join('');
-}
-
-function cfgRenderSubModulos() {
-  const tb = document.getElementById('cfg-submod-tbody');
-  if (!CFG.submodulos.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin submódulos registrados.</td></tr>'; return; }
-  tb.innerHTML = CFG.submodulos.sort((a,b)=>(a.Orden||0)-(b.Orden||0)).map((s,i)=>{
-    const modNombre = (CFG.modulos.find(m=>m.Nombre===s.ModuloID||m.Title===s.ModuloID)||{}).Nombre || s.ModuloID || '—';
-    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
-      <td style="padding:9px 14px;font-weight:600;">${s.Nombre||s.Title}</td>
-      <td style="padding:9px 14px;color:var(--text-mid);">${modNombre}</td>
-      <td style="padding:9px 14px;text-align:center;font-size:1.2rem;">${s.Icono||'📁'}</td>
-      <td style="padding:9px 14px;text-align:center;">${s.Orden||'—'}</td>
-      <td style="padding:9px 14px;text-align:center;">
-        <button class="cfg-btn-edit" onclick="cfgOpenSubmoduloModal('${s.id}')">✏️ Editar</button>
-        <button class="cfg-btn-del"  onclick="cfgDeleteItem('submodulo','${s.id}','${(s.Nombre||s.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
-      </td></tr>`;
-  }).join('');
-}
-
-function cfgRenderPantallas() {
-  const tb = document.getElementById('cfg-pan-tbody');
-  if (!CFG.pantallas.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin pantallas registradas.</td></tr>'; return; }
-  tb.innerHTML = CFG.pantallas.map((p,i)=>{
-    const modNombre = p.ModuloID || '—';
-    const subNombre = p.SubModuloID || '—';
-    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
-      <td style="padding:9px 14px;font-weight:600;">${p.Nombre||p.Title}</td>
-      <td style="padding:9px 14px;color:var(--text-mid);">${modNombre}</td>
-      <td style="padding:9px 14px;color:var(--text-mid);">${subNombre}</td>
-      <td style="padding:9px 14px;text-align:center;"><code style="font-size:.75rem;background:var(--bg-hover);padding:2px 6px;border-radius:4px;">${p.PantallaID||p.Title}</code></td>
-      <td style="padding:9px 14px;text-align:center;">
-        <button class="cfg-btn-edit" onclick="cfgOpenPantallaModal('${p.id}')">✏️ Editar</button>
-        <button class="cfg-btn-del"  onclick="cfgDeleteItem('pantalla','${p.id}','${(p.Nombre||p.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
-      </td></tr>`;
-  }).join('');
-}
-
-function cfgRenderPuestos() {
-  const tb = document.getElementById('cfg-pst-tbody');
-  if (!CFG.puestos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin puestos registrados.</td></tr>'; return; }
-  tb.innerHTML = CFG.puestos.map((p,i)=>{
-    let pantellas = [];
-    try { pantellas = JSON.parse(p.Pantallas||'[]'); } catch(e){}
-    const pCount = Array.isArray(pantellas) ? pantellas.length : 0;
-    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
-      <td style="padding:9px 14px;font-weight:600;">${p.Nombre||p.Title}</td>
-      <td style="padding:9px 14px;text-align:center;">${p.EsAdmin||p.esAdmin ? '<span class="cfg-badge-admin">Admin</span>' : '—'}</td>
-      <td style="padding:9px 14px;color:var(--text-mid);">${pCount} pantalla${pCount!==1?'s':''} asignadas</td>
-      <td style="padding:9px 14px;text-align:center;">
-        <button class="cfg-btn-edit" onclick="cfgOpenPuestoModal('${p.id}')">✏️ Editar</button>
-        <button class="cfg-btn-del"  onclick="cfgDeleteItem('puesto','${p.id}','${(p.Nombre||p.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
-      </td></tr>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// MODALES — ABRIR
-// ═══════════════════════════════════════════════════════════════════
-function cfgOpenModal(title, bodyHTML, modalType, editId) {
-  CFG.currentModal = modalType;
-  CFG.editingId    = editId || null;
-  document.getElementById('cfg-modal-title').textContent = title;
-  document.getElementById('cfg-modal-body').innerHTML    = bodyHTML;
-  const ov = document.getElementById('cfg-modal-overlay');
-  ov.style.display = 'flex';
-  setTimeout(()=>{ ov.scrollTop = 0; }, 10);
-}
-function cfgCloseModal() {
-  document.getElementById('cfg-modal-overlay').style.display = 'none';
-  CFG.currentModal = null; CFG.editingId = null;
-}
-
-// ── USUARIO ──────────────────────────────────────────────────────
-function cfgOpenUsuarioModal(itemId) {
-  const u = itemId ? CFG.usuarios.find(x => x.id === itemId) : null;
-  const isNew = !u;
-  const email  = u ? (u.Title||u.Email||'') : '';
-  const nombre = u ? (u.NombreCompleto||'') : '';
-  const puesto = u ? (u.PuestoID||'') : '';
-  const activo = u ? (u.Activo !== false && u.Activo !== 0) : true;
-
-  // Excepciones: array de {pantallaID, nivel, accion: 'agregar'|'quitar'}
-  let exceps = [];
-  try { exceps = JSON.parse(u?.Excepciones||'[]'); } catch(e){}
-
-  const puestosOpts = CFG.puestos.map(p=>
-    `<option value="${p.Title||p.PuestoID||''}" ${(p.Title||p.PuestoID)===puesto?'selected':''}>${p.Nombre||p.Title}</option>`
-  ).join('');
-
-  const panOpts = CFG.pantallas.map(p =>
-    `<option value="${p.PantallaID||p.Title}">${p.Nombre||p.Title}</option>`
-  ).join('');
-
-  const excepsHTML = exceps.map((ex,idx) => `
-    <div class="cfg-excepcion-row" id="excRow${idx}">
-      <select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-        onchange="cfgExcepChange(${idx},'pan',this.value)">
-        ${CFG.pantallas.map(p=>`<option value="${p.PantallaID||p.Title}" ${ex.pantallaID===p.PantallaID||ex.pantallaID===p.Title?'selected':''}>${p.Nombre||p.Title}</option>`).join('')}
-      </select>
-      <select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-        onchange="cfgExcepChange(${idx},'nivel',this.value)">
-        <option value="completo" ${ex.nivel==='completo'?'selected':''}>Completo</option>
-        <option value="lectura" ${ex.nivel==='lectura'?'selected':''}>Lectura</option>
-      </select>
-      <select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-        onchange="cfgExcepChange(${idx},'accion',this.value)">
-        <option value="agregar" ${ex.accion==='agregar'?'selected':''}>Agregar</option>
-        <option value="quitar"  ${ex.accion==='quitar'?'selected':''}>Quitar</option>
-      </select>
-      <button onclick="cfgRemoveExcepcion(${idx})" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button>
-    </div>`).join('');
-
-  const html = `
-    <div class="cfg-form-row">
-      <label>Email (usuario Microsoft)</label>
-      <input id="cfgU-email" type="email" value="${email}" placeholder="nombre@maderoequipos.com" ${!isNew?'readonly style="opacity:.6;"':''}>
-    </div>
-    <div class="cfg-form-row">
-      <label>Nombre Completo</label>
-      <input id="cfgU-nombre" type="text" value="${nombre}" placeholder="Nombre Apellido">
-    </div>
-    <div class="cfg-form-row">
-      <label>Puesto</label>
-      <select id="cfgU-puesto"><option value="">— Selecciona puesto —</option>${puestosOpts}</select>
-    </div>
-    <div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">
-      <input id="cfgU-activo" type="checkbox" ${activo?'checked':''} style="width:auto;margin:0;">
-      <label style="margin:0;text-transform:none;font-size:.85rem;">Usuario Activo</label>
-    </div>
-    <div class="cfg-form-row">
-      <label>Excepciones de Acceso <span style="font-weight:400;text-transform:none;">(agregar o quitar pantallas respecto al puesto)</span></label>
-      <div id="cfg-excep-list">${excepsHTML}</div>
-      <button onclick="cfgAddExcepcion()" style="margin-top:8px;padding:5px 12px;border:1px dashed var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.78rem;">+ Agregar excepción</button>
-    </div>
-    <div id="cfg-modal-msg"></div>`;
-
-  // Guardar las excepciones editables en variable temporal
-  window._cfgExceps = JSON.parse(JSON.stringify(exceps));
-
-  cfgOpenModal(isNew ? 'Nuevo Usuario' : `Editar Usuario — ${nombre||email}`, html, 'usuario', itemId);
-}
-
-function cfgExcepChange(idx, campo, val) {
-  if (!window._cfgExceps) return;
-  if (!window._cfgExceps[idx]) window._cfgExceps[idx] = {};
-  window._cfgExceps[idx][campo === 'pan' ? 'pantallaID' : campo] = val;
-}
-function cfgAddExcepcion() {
-  if (!window._cfgExceps) window._cfgExceps = [];
-  const newEx = { pantallaID: CFG.pantallas[0]?.PantallaID || CFG.pantallas[0]?.Title || '', nivel:'completo', accion:'agregar' };
-  window._cfgExceps.push(newEx);
-  // Re-render only the exceptions list
-  const u = { Excepciones: JSON.stringify(window._cfgExceps) };
-  const idx = window._cfgExceps.length - 1;
-  const ex = newEx;
-  const newRow = document.createElement('div');
-  newRow.className = 'cfg-excepcion-row';
-  newRow.id = 'excRow'+idx;
-  newRow.innerHTML = `
-    <select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-      onchange="cfgExcepChange(${idx},'pan',this.value)">
-      ${CFG.pantallas.map(p=>`<option value="${p.PantallaID||p.Title}">${p.Nombre||p.Title}</option>`).join('')}
-    </select>
-    <select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-      onchange="cfgExcepChange(${idx},'nivel',this.value)">
-      <option value="completo">Completo</option><option value="lectura">Lectura</option>
-    </select>
-    <select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
-      onchange="cfgExcepChange(${idx},'accion',this.value)">
-      <option value="agregar">Agregar</option><option value="quitar">Quitar</option>
-    </select>
-    <button onclick="cfgRemoveExcepcion(${idx})" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button>`;
-  document.getElementById('cfg-excep-list').appendChild(newRow);
-}
-function cfgRemoveExcepcion(idx) {
-  if (!window._cfgExceps) return;
-  window._cfgExceps.splice(idx, 1);
-  const row = document.getElementById('excRow'+idx);
-  if (row) row.remove();
-  // Re-numerar IDs
-  document.querySelectorAll('.cfg-excepcion-row').forEach((r,i) => r.id = 'excRow'+i);
-}
-
-// ── MÓDULO ────────────────────────────────────────────────────────
-function cfgOpenModuloModal(itemId) {
-  const m = itemId ? CFG.modulos.find(x => x.id === itemId) : null;
-  const html = `
-    <div class="cfg-form-row"><label>Nombre del Módulo</label><input id="cfgM-nombre" value="${m?.Nombre||m?.Title||''}" placeholder="Ej: Logística"></div>
-    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgM-icono" value="${m?.Icono||''}" placeholder="🚚" maxlength="5"></div>
-    <div class="cfg-form-row"><label>Orden</label><input id="cfgM-orden" type="number" value="${m?.Orden||''}" placeholder="1"></div>
-    <div id="cfg-modal-msg"></div>`;
-  cfgOpenModal(m ? 'Editar Módulo' : 'Nuevo Módulo', html, 'modulo', itemId);
-}
-
-// ── SUBMÓDULO ─────────────────────────────────────────────────────
-function cfgOpenSubmoduloModal(itemId) {
-  const s = itemId ? CFG.submodulos.find(x => x.id === itemId) : null;
-  const modOpts = CFG.modulos.map(m =>
-    `<option value="${m.Nombre||m.Title}" ${(m.Nombre||m.Title)===(s?.ModuloID||'')?'selected':''}>${m.Nombre||m.Title}</option>`
-  ).join('');
-  const html = `
-    <div class="cfg-form-row"><label>Nombre del SubMódulo</label><input id="cfgSM-nombre" value="${s?.Nombre||s?.Title||''}" placeholder="Ej: Compras Internacionales"></div>
-    <div class="cfg-form-row"><label>Módulo Padre</label><select id="cfgSM-modulo"><option value="">— Selecciona —</option>${modOpts}</select></div>
-    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgSM-icono" value="${s?.Icono||''}" placeholder="🌐" maxlength="5"></div>
-    <div class="cfg-form-row"><label>Orden</label><input id="cfgSM-orden" type="number" value="${s?.Orden||''}" placeholder="1"></div>
-    <div id="cfg-modal-msg"></div>`;
-  cfgOpenModal(s ? 'Editar SubMódulo' : 'Nuevo SubMódulo', html, 'submodulo', itemId);
-}
-
-// ── PANTALLA ──────────────────────────────────────────────────────
-function cfgOpenPantallaModal(itemId) {
-  const p = itemId ? CFG.pantallas.find(x => x.id === itemId) : null;
-  const modOpts = CFG.modulos.map(m =>
-    `<option value="${m.Nombre||m.Title}" ${(m.Nombre||m.Title)===(p?.ModuloID||'')?'selected':''}>${m.Nombre||m.Title}</option>`
-  ).join('');
-  const subOpts = CFG.submodulos.map(s =>
-    `<option value="${s.Nombre||s.Title}" ${(s.Nombre||s.Title)===(p?.SubModuloID||'')?'selected':''}>${s.Nombre||s.Title}</option>`
-  ).join('');
-  const html = `
-    <div class="cfg-form-row"><label>Nombre de la Pantalla</label><input id="cfgP-nombre" value="${p?.Nombre||p?.Title||''}" placeholder="Ej: Pedidos Especiales"></div>
-    <div class="cfg-form-row"><label>PantallaID (clave interna, sin espacios)</label><input id="cfgP-pantallaID" value="${p?.PantallaID||p?.Title||''}" placeholder="PedidosEspeciales"></div>
-    <div class="cfg-form-row"><label>Módulo</label><select id="cfgP-modulo"><option value="">— Selecciona —</option>${modOpts}</select></div>
-    <div class="cfg-form-row"><label>SubMódulo <span style="font-weight:400;">(opcional)</span></label><select id="cfgP-submodulo"><option value="">— Sin submódulo —</option>${subOpts}</select></div>
-    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgP-icono" value="${p?.Icono||''}" placeholder="📄" maxlength="5"></div>
-    <div id="cfg-modal-msg"></div>`;
-  cfgOpenModal(p ? 'Editar Pantalla' : 'Nueva Pantalla', html, 'pantalla', itemId);
-}
-
-// ── PUESTO ────────────────────────────────────────────────────────
-function cfgOpenPuestoModal(itemId) {
-  const p = itemId ? CFG.puestos.find(x => x.id === itemId) : null;
-  let asignadas = [];
-  try { asignadas = JSON.parse(p?.Pantallas||'[]'); } catch(e){}
-  window._cfgPantallasAsig = JSON.parse(JSON.stringify(asignadas));
-
-  const panListHTML = CFG.pantallas.map(pan => {
-    const panId  = pan.PantallaID || pan.Title || '';
-    const exist  = asignadas.find(a => a.pantallaID === panId);
-    const nivel  = exist?.nivel || 'completo';
-    const checked = exist ? 'checked' : '';
-    return `<div class="cfg-pantalla-item">
-      <input type="checkbox" id="pck_${panId}" value="${panId}" ${checked}
-        onchange="cfgTogglePantAlAsig('${panId}',this.checked)">
-      <label for="pck_${panId}">${pan.Nombre||pan.Title}</label>
-      <select onchange="cfgSetNivelAsig('${panId}',this.value)" style="width:110px;padding:3px 6px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);">
-        <option value="completo" ${nivel==='completo'?'selected':''}>Completo</option>
-        <option value="lectura"  ${nivel==='lectura'?'selected':''}>Lectura</option>
-      </select>
-    </div>`;
-  }).join('');
-
-  const html = `
-    <div class="cfg-form-row"><label>Nombre del Puesto</label><input id="cfgPT-nombre" value="${p?.Nombre||p?.Title||''}" placeholder="Ej: Analista Compras Int."></div>
-    <div class="cfg-form-row"><label>PuestoID (clave interna)</label><input id="cfgPT-puestoID" value="${p?.PuestoID||p?.Title||''}" placeholder="AnalistaComprasInt"></div>
-    <div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">
-      <input id="cfgPT-admin" type="checkbox" ${(p?.EsAdmin||p?.esAdmin)?'checked':''} style="width:auto;margin:0;">
-      <label style="margin:0;text-transform:none;font-size:.85rem;">¿Es Administrador General?</label>
-    </div>
-    <div class="cfg-form-row">
-      <label>Pantallas con acceso</label>
-      <div class="cfg-pantallas-list">${panListHTML||'<span style="color:var(--text-mid);font-size:.8rem;">No hay pantallas registradas aún.</span>'}</div>
-    </div>
-    <div id="cfg-modal-msg"></div>`;
-  cfgOpenModal(p ? 'Editar Puesto' : 'Nuevo Puesto', html, 'puesto', itemId);
-}
-
-function cfgTogglePantAlAsig(panId, checked) {
-  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
-  if (checked) {
-    if (!window._cfgPantallasAsig.find(a=>a.pantallaID===panId))
-      window._cfgPantallasAsig.push({ pantallaID: panId, nivel:'completo' });
-  } else {
-    window._cfgPantallasAsig = window._cfgPantallasAsig.filter(a=>a.pantallaID!==panId);
-  }
-}
-function cfgSetNivelAsig(panId, nivel) {
-  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
-  const found = window._cfgPantallasAsig.find(a=>a.pantallaID===panId);
-  if (found) found.nivel = nivel;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// GUARDAR (POST / PATCH)
-// ═══════════════════════════════════════════════════════════════════
-async function cfgModalSave() {
-  const btn  = document.getElementById('cfg-modal-save-btn');
-  const msg  = document.getElementById('cfg-modal-msg');
-  btn.disabled = true; btn.textContent = 'Guardando…';
-  if (msg) msg.innerHTML = '';
-  try {
-    const sid = await cfgEnsureSiteId();
-    await cfgDoSave(sid);
-    btn.textContent = '✔ Guardado';
-    if (msg) msg.innerHTML = '<div class="cfg-msg-ok">✔ Guardado correctamente en SharePoint</div>';
-    setTimeout(() => { cfgCloseModal(); cfgRefreshCurrentTab(); }, 900);
-  } catch(e) {
-    btn.disabled = false; btn.textContent = 'Guardar';
-    if (msg) msg.innerHTML = `<div class="cfg-msg-err">Error al guardar: ${e.message}</div>`;
-  }
-}
-
-async function cfgDoSave(sid) {
-  const t = CFG.currentModal;
-  const id = CFG.editingId;
-
-  if (t === 'usuario') {
-    const email  = (document.getElementById('cfgU-email')?.value||'').trim();
-    const nombre = (document.getElementById('cfgU-nombre')?.value||'').trim();
-    const puesto = (document.getElementById('cfgU-puesto')?.value||'').trim();
-    const activo = document.getElementById('cfgU-activo')?.checked;
-    const exceps = JSON.stringify(window._cfgExceps||[]);
-    if (!email) throw new Error('El email es requerido');
-    if (!nombre) throw new Error('El nombre es requerido');
-    const fields = { Title: email, NombreCompleto: nombre, PuestoID: puesto, Activo: activo, Excepciones: exceps };
-    if (id) await graphPatch(`sites/${sid}/lists/Usuarios/items/${id}/fields`, fields);
-    else { await graphPost(`sites/${sid}/lists/Usuarios/items`, { fields }); }
-  }
-  else if (t === 'modulo') {
-    const nombre = (document.getElementById('cfgM-nombre')?.value||'').trim();
-    const icono  = (document.getElementById('cfgM-icono')?.value||'').trim();
-    const orden  = parseInt(document.getElementById('cfgM-orden')?.value||'0');
-    if (!nombre) throw new Error('El nombre es requerido');
-    const fields = { Title: nombre, Nombre: nombre, Icono: icono, Orden: orden };
-    if (id) await graphPatch(`sites/${sid}/lists/Modulos/items/${id}/fields`, fields);
-    else await graphPost(`sites/${sid}/lists/Modulos/items`, { fields });
-  }
-  else if (t === 'submodulo') {
-    const nombre = (document.getElementById('cfgSM-nombre')?.value||'').trim();
-    const modulo = (document.getElementById('cfgSM-modulo')?.value||'').trim();
-    const icono  = (document.getElementById('cfgSM-icono')?.value||'').trim();
-    const orden  = parseInt(document.getElementById('cfgSM-orden')?.value||'0');
-    if (!nombre) throw new Error('El nombre es requerido');
-    if (!modulo) throw new Error('Debes seleccionar un módulo');
-    const fields = { Title: nombre, Nombre: nombre, ModuloID: modulo, Icono: icono, Orden: orden };
-    if (id) await graphPatch(`sites/${sid}/lists/SubModulos/items/${id}/fields`, fields);
-    else await graphPost(`sites/${sid}/lists/SubModulos/items`, { fields });
-  }
-  else if (t === 'pantalla') {
-    const nombre     = (document.getElementById('cfgP-nombre')?.value||'').trim();
-    const pantallaID = (document.getElementById('cfgP-pantallaID')?.value||'').trim();
-    const modulo     = (document.getElementById('cfgP-modulo')?.value||'').trim();
-    const submodulo  = (document.getElementById('cfgP-submodulo')?.value||'').trim();
-    const icono      = (document.getElementById('cfgP-icono')?.value||'').trim();
-    if (!nombre) throw new Error('El nombre es requerido');
-    if (!pantallaID) throw new Error('El PantallaID es requerido');
-    const fields = { Title: pantallaID, Nombre: nombre, PantallaID: pantallaID, ModuloID: modulo, SubModuloID: submodulo||'', Icono: icono };
-    if (id) await graphPatch(`sites/${sid}/lists/Pantallas/items/${id}/fields`, fields);
-    else await graphPost(`sites/${sid}/lists/Pantallas/items`, { fields });
-  }
-  else if (t === 'puesto') {
-    const nombre   = (document.getElementById('cfgPT-nombre')?.value||'').trim();
-    const puestoID = (document.getElementById('cfgPT-puestoID')?.value||'').trim();
-    const esAdmin  = document.getElementById('cfgPT-admin')?.checked;
-    const pantallas = JSON.stringify(window._cfgPantallasAsig||[]);
-    if (!nombre) throw new Error('El nombre es requerido');
-    if (!puestoID) throw new Error('El PuestoID es requerido');
-    const fields = { Title: puestoID, Nombre: nombre, PuestoID: puestoID, EsAdmin: esAdmin, Pantallas: pantallas };
-    if (id) await graphPatch(`sites/${sid}/lists/Puestos/items/${id}/fields`, fields);
-    else await graphPost(`sites/${sid}/lists/Puestos/items`, { fields });
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ELIMINAR
-// ═══════════════════════════════════════════════════════════════════
-function cfgDeleteItem(tipo, itemId, nombre) {
-  const listas = {
-    usuario:   'Usuarios',
-    modulo:    'Modulos',
-    submodulo: 'SubModulos',
-    pantalla:  'Pantallas',
-    puesto:    'Puestos',
-  };
-  const lista = listas[tipo];
-  if (!lista) return;
-
-  // Usar el modal de confirmación ya existente en la plataforma
-  pendingAction = async () => {
-    try {
-      const sid = await cfgEnsureSiteId();
-      const token = await getToken();
-      const url = `https://graph.microsoft.com/v1.0/sites/${sid}/lists/${lista}/items/${itemId}`;
-      const res = await fetch(url, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok && res.status !== 204) throw new Error(`Graph DELETE ${res.status}`);
-      cfgRefreshCurrentTab();
-    } catch(e) {
-      alert('Error al eliminar: ' + e.message);
-    }
-  };
-  document.getElementById('modal-title').textContent = '¿Eliminar registro?';
-  document.getElementById('modal-body').textContent  = `Se eliminará "${nombre}" de la lista ${lista}. Esta acción no se puede deshacer.`;
-  document.getElementById('modal-overlay').style.display = 'flex';
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// REFRESH SEGÚN TAB ACTIVO
-// ═══════════════════════════════════════════════════════════════════
-function cfgRefreshCurrentTab() {
-  if (CFG.currentTab === 'usuarios') cfgLoadUsuarios();
-  else cfgLoadMenuData();
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// HOOK: cuando se navega a la página config, cargar datos
-// ═══════════════════════════════════════════════════════════════════
-(function hookConfigPage() {
-  const origShowPage = typeof window.showPage === 'function' ? window.showPage : null;
-  if (!origShowPage) return;
-  window.showPage = function(name) {
-    origShowPage(name);
-    if (name === 'config') {
-      // pequeño delay para que el DOM esté visible
-      setTimeout(() => {
-        // Asegurar que el tab activo se cargue
-        if (CFG.currentTab === 'usuarios') cfgLoadUsuarios();
-        else cfgLoadMenuData();
-      }, 100);
-    }
-  };
-})();
+</script>
 
 
 </body>
