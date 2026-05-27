@@ -308,6 +308,9 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .card-cliente { font-size:.88rem; font-weight:600; color:var(--text); white-space:nowrap; }
 .card-concepto{ font-size:.78rem; color:var(--text-dim); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic; }
 .card-proyecto{ font-size:.78rem; color:var(--text-dim); white-space:nowrap; }
+.pe-tab-btn { padding:7px 18px; background:var(--bg-card); border:1px solid var(--border-color); border-bottom:none; color:var(--text-mid); border-radius:6px 6px 0 0; cursor:pointer; font-size:.82rem; transition:background .15s,color .15s; }
+.pe-tab-btn:hover { background:var(--bg-hover); color:var(--text); }
+.pe-tab-active { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
 .card-badges  { display:flex; gap:5px; align-items:center; }
 .card-chevron { color:var(--text-dim); font-size:12px; transition:transform .2s; flex-shrink:0; }
 .pedido-card.expanded .card-chevron { transform:rotate(180deg); }
@@ -587,17 +590,16 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
         <div class="kpi-card"><div class="kpi-value red"    id="kpi-rech">—</div><div class="kpi-label">Rechazados</div></div>
         <div class="kpi-card"><div class="kpi-value orange" id="kpi-pagopend">—</div><div class="kpi-label">Pago Pendiente</div></div>
       </div>
+      <div style="display:flex;gap:4px;margin-bottom:0;padding:0 0 0 0;">
+        <button id="pe-tab-proceso"    class="pe-tab-btn pe-tab-active" onclick="setPeTab('proceso')">⏳ En proceso</button>
+        <button id="pe-tab-autorizado" class="pe-tab-btn"               onclick="setPeTab('autorizado')">✅ Autorizados</button>
+        <button id="pe-tab-rechazado"  class="pe-tab-btn"               onclick="setPeTab('rechazado')">❌ Rechazados</button>
+      </div>
       <div class="filters">
         <div class="search-wrap">
           <span class="search-icon">🔍</span>
           <input type="text" id="pe-search" placeholder="Buscar por pedido, cliente…" oninput="filterPedidos()">
         </div>
-        <select class="filter-select" id="pe-filter-estatus" onchange="filterPedidos()">
-          <option value="">Todos los estatus</option>
-          <option value="Pendiente">Pendiente</option>
-          <option value="Autorizado">Autorizado</option>
-          <option value="Rechazado">Rechazado</option>
-        </select>
         <select class="filter-select" id="pe-filter-pago" onchange="filterPedidos()">
           <option value="">Cualquier pago</option>
           <option value="Pendiente">Pago pendiente</option>
@@ -606,6 +608,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
         <button class="refresh-btn" onclick="loadPedidos()">
           <span id="pe-refresh-icon">↻</span> Actualizar
         </button>
+        <span id="pe-auto-countdown" style="font-size:.72rem;color:var(--text-dim);align-self:center;margin-left:2px;">⏱ 15s</span>
       </div>
       <div id="pedidos-container">
         <div class="loading-state"><div class="loading-spinner"></div><div>Cargando pedidos…</div></div>
@@ -2082,17 +2085,43 @@ function updateKPIs() {
 }
 
 function filterPedidos() {
-  const q       = (document.getElementById('pe-search').value||'').toLowerCase();
-  const estatus  = document.getElementById('pe-filter-estatus').value;
-  const pago     = document.getElementById('pe-filter-pago').value;
+  const q      = (document.getElementById('pe-search').value||'').toLowerCase();
+  const pago   = document.getElementById('pe-filter-pago').value;
+  const tab    = state.peTab || 'proceso';
   state.filtered = state.pedidos.filter(p => {
     const mQ = !q || (p.NumeroPedido||'').toLowerCase().includes(q)||(p.Cliente||'').toLowerCase().includes(q)||(p.Proyecto||'').toLowerCase().includes(q);
-    const mE = !estatus || p.Estatus===estatus;
     const mP = !pago || (pago==='Pendiente'&&p.CondicionPago==='Pendiente')||(pago==='OK'&&p.CondicionPago==='OK');
-    return mQ&&mE&&mP;
+    const mT = tab==='proceso'    ? p.Estatus==='Pendiente'
+             : tab==='autorizado' ? p.Estatus==='Autorizado'
+             :                      p.Estatus==='Rechazado';
+    return mQ&&mP&&mT;
   });
   renderPedidos();
 }
+
+function setPeTab(tab) {
+  state.peTab = tab;
+  ['proceso','autorizado','rechazado'].forEach(t => {
+    const btn = document.getElementById('pe-tab-'+t);
+    if (btn) btn.classList.toggle('pe-tab-active', t===tab);
+  });
+  filterPedidos();
+}
+
+// Auto-refresh cada 15 segundos solo cuando la pantalla de PedidosEspeciales está activa
+(function initPeAutoRefresh() {
+  var countdown = 15;
+  var timer = null;
+  function tick() {
+    var el = document.getElementById('pe-auto-countdown');
+    var page = document.getElementById('page-PedidosEspeciales');
+    if (!page || !page.classList.contains('active')) { countdown=15; if(el) el.textContent='⏱ 15s'; return; }
+    countdown--;
+    if (el) el.textContent = '⏱ '+countdown+'s';
+    if (countdown<=0) { countdown=15; loadPedidos(); }
+  }
+  setInterval(tick, 1000);
+})();
 
 function renderPedidos() {
   const container = document.getElementById('pedidos-container');
