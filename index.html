@@ -1438,10 +1438,165 @@ tr:last-child td{border-bottom:none;}
     <div class="page" id="page-config">
       <div class="page-header">
         <div class="page-title">⚙️ Configuración</div>
-        <div class="page-sub">Administración de módulos, puestos y usuarios</div>
+        <div class="page-sub">Administración del sistema — solo Administrador General</div>
       </div>
-      <div style="padding:40px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);color:var(--text-mid);text-align:center;">
-        Panel de administración — próximamente disponible
+
+      <!-- Tabs de Configuración -->
+      <div id="cfg-tabs" style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid var(--border-color);padding-bottom:0;">
+        <button class="cfg-tab-btn cfg-tab-active" id="cfg-tab-usuarios" onclick="cfgShowTab('usuarios')">👤 Usuarios</button>
+        <button class="cfg-tab-btn" id="cfg-tab-menu" onclick="cfgShowTab('menu')">🗂️ Módulos y Accesos</button>
+      </div>
+
+      <!-- ════════════════════════════════════════════════ -->
+      <!-- TAB: USUARIOS                                    -->
+      <!-- ════════════════════════════════════════════════ -->
+      <div id="cfg-view-usuarios">
+
+        <!-- Toolbar -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input id="cfg-usr-search" type="text" placeholder="Buscar usuario…" class="field-input" style="width:220px;margin-bottom:0;"
+              oninput="cfgFilterUsuarios()">
+            <select id="cfg-usr-filter-puesto" class="field-input" style="width:200px;margin-bottom:0;" onchange="cfgFilterUsuarios()">
+              <option value="">Todos los puestos</option>
+            </select>
+            <select id="cfg-usr-filter-activo" class="field-input" style="width:140px;margin-bottom:0;" onchange="cfgFilterUsuarios()">
+              <option value="">Activo / Inactivo</option>
+              <option value="1">Solo Activos</option>
+              <option value="0">Solo Inactivos</option>
+            </select>
+          </div>
+          <button class="btn-primary" onclick="cfgOpenUsuarioModal(null)">+ Nuevo Usuario</button>
+        </div>
+
+        <!-- Tabla usuarios -->
+        <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+            <thead>
+              <tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre</th>
+                <th style="padding:10px 14px;text-align:left;">Email</th>
+                <th style="padding:10px 14px;text-align:left;">Puesto</th>
+                <th style="padding:10px 14px;text-align:center;">Estado</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="cfg-usr-tbody">
+              <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando usuarios…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="cfg-usr-count" style="margin-top:8px;font-size:.75rem;color:var(--text-mid);"></div>
+
+      </div><!-- /cfg-view-usuarios -->
+
+      <!-- ════════════════════════════════════════════════ -->
+      <!-- TAB: MÓDULOS Y ACCESOS (Menú)                    -->
+      <!-- ════════════════════════════════════════════════ -->
+      <div id="cfg-view-menu" style="display:none;">
+
+        <!-- Sub-tabs dentro de Menú -->
+        <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+          <button class="cfg-subtab-btn cfg-subtab-active" id="cfg-stab-modulos"    onclick="cfgShowSubTab('modulos')">📦 Módulos</button>
+          <button class="cfg-subtab-btn"                   id="cfg-stab-submodulos" onclick="cfgShowSubTab('submodulos')">📁 SubMódulos</button>
+          <button class="cfg-subtab-btn"                   id="cfg-stab-pantallas"  onclick="cfgShowSubTab('pantallas')">🖥️ Pantallas</button>
+          <button class="cfg-subtab-btn"                   id="cfg-stab-puestos"    onclick="cfgShowSubTab('puestos')">🏷️ Puestos</button>
+        </div>
+
+        <!-- ── Sub-tab: Módulos ── -->
+        <div id="cfg-view-modulos">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">Lista de módulos principales del sistema</span>
+            <button class="btn-primary" onclick="cfgOpenModuloModal(null)">+ Nuevo Módulo</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre</th>
+                <th style="padding:10px 14px;text-align:center;">Icono</th>
+                <th style="padding:10px 14px;text-align:center;">Orden</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-mod-tbody"><tr><td colspan="4" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Sub-tab: SubMódulos ── -->
+        <div id="cfg-view-submodulos" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">SubMódulos agrupados dentro de cada Módulo</span>
+            <button class="btn-primary" onclick="cfgOpenSubmoduloModal(null)">+ Nuevo SubMódulo</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre</th>
+                <th style="padding:10px 14px;text-align:left;">Módulo Padre</th>
+                <th style="padding:10px 14px;text-align:center;">Icono</th>
+                <th style="padding:10px 14px;text-align:center;">Orden</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-submod-tbody"><tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Sub-tab: Pantallas ── -->
+        <div id="cfg-view-pantallas" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">Pantallas funcionales dentro de cada SubMódulo o Módulo</span>
+            <button class="btn-primary" onclick="cfgOpenPantallaModal(null)">+ Nueva Pantalla</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre</th>
+                <th style="padding:10px 14px;text-align:left;">Módulo</th>
+                <th style="padding:10px 14px;text-align:left;">SubMódulo</th>
+                <th style="padding:10px 14px;text-align:center;">PantallaID</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-pan-tbody"><tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Sub-tab: Puestos ── -->
+        <div id="cfg-view-puestos" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">Puestos de trabajo con sus pantallas y niveles de acceso</span>
+            <button class="btn-primary" onclick="cfgOpenPuestoModal(null)">+ Nuevo Puesto</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre del Puesto</th>
+                <th style="padding:10px 14px;text-align:center;">¿Admin?</th>
+                <th style="padding:10px 14px;text-align:left;">Pantallas asignadas</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-pst-tbody"><tr><td colspan="4" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /cfg-view-menu -->
+
+    </div><!-- /page-config -->
+
+    <!-- ════════════════════════════════════════════════════════════════
+         MODAL UNIVERSAL DE CONFIGURACIÓN
+         ═══════════════════════════════════════════════════════════════ -->
+    <div id="cfg-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;justify-content:center;align-items:flex-start;padding-top:60px;overflow-y:auto;">
+      <div id="cfg-modal-box" style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:100%;max-width:560px;padding:28px 32px;position:relative;box-shadow:0 8px 40px rgba(0,0,0,.4);">
+        <button onclick="cfgCloseModal()" style="position:absolute;top:14px;right:16px;background:none;border:none;color:var(--text-mid);font-size:1.2rem;cursor:pointer;">✕</button>
+        <h3 id="cfg-modal-title" style="margin:0 0 20px;font-size:1rem;font-weight:700;color:var(--text);">Modal</h3>
+        <div id="cfg-modal-body"></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:24px;">
+          <button onclick="cfgCloseModal()" style="padding:9px 20px;border:1px solid var(--border-color);background:none;color:var(--text);border-radius:8px;cursor:pointer;font-size:.85rem;">Cancelar</button>
+          <button id="cfg-modal-save-btn" onclick="cfgModalSave()" style="padding:9px 22px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;">Guardar</button>
+        </div>
       </div>
     </div>
 
@@ -8506,7 +8661,630 @@ setInterval(function(){
 })();
 
 
-</script>
+// ═══════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN — CSS dinámico
+// ═══════════════════════════════════════════════════════════════════
+(function injectCfgCSS() {
+  const s = document.createElement('style');
+  s.textContent = `
+    .cfg-tab-btn {
+      padding: 9px 18px; border:1px solid var(--border-color); background:none;
+      color:var(--text-mid); border-radius:8px 8px 0 0; cursor:pointer;
+      font-size:.82rem; font-weight:600; margin-bottom:-2px; transition:.15s;
+    }
+    .cfg-tab-btn:hover { background:var(--bg-hover); color:var(--text); }
+    .cfg-tab-active { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
+    .cfg-subtab-btn {
+      padding:7px 14px; border:1px solid var(--border-color); background:none;
+      color:var(--text-mid); border-radius:6px; cursor:pointer; font-size:.8rem; transition:.15s;
+    }
+    .cfg-subtab-btn:hover { background:var(--bg-hover); color:var(--text); }
+    .cfg-subtab-active { background:var(--accent-soft,rgba(30,120,200,.15)); color:var(--accent); border-color:var(--accent); }
+    .cfg-table-row:hover td { background:var(--bg-hover); }
+    .cfg-badge-admin { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
+    .cfg-badge-active { display:inline-block;padding:2px 8px;border-radius:10px;background:#e6f5ec;color:#1a6e3c;font-size:.72rem;font-weight:700; }
+    .cfg-badge-inactive { display:inline-block;padding:2px 8px;border-radius:10px;background:#fdecea;color:#8b1a1a;font-size:.72rem;font-weight:700; }
+    .cfg-btn-edit { padding:4px 10px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.75rem;margin-right:4px; }
+    .cfg-btn-del  { padding:4px 10px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:6px;cursor:pointer;font-size:.75rem; }
+    .cfg-btn-edit:hover { background:var(--accent);color:#fff; }
+    .cfg-btn-del:hover  { background:#cc3333;color:#fff; }
+    .cfg-form-row { margin-bottom:14px; }
+    .cfg-form-row label { display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-mid);margin-bottom:5px; }
+    .cfg-form-row input, .cfg-form-row select, .cfg-form-row textarea {
+      width:100%;background:var(--bg-hover);border:1px solid var(--border-color);
+      border-radius:8px;padding:9px 12px;color:var(--text);font-size:.85rem;outline:none;
+      box-sizing:border-box; transition:border-color .2s;
+    }
+    .cfg-form-row input:focus, .cfg-form-row select:focus, .cfg-form-row textarea:focus { border-color:var(--accent); }
+    .cfg-pantallas-list { max-height:220px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;padding:8px; }
+    .cfg-pantalla-item { display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:.82rem; }
+    .cfg-pantalla-item label { flex:1;cursor:pointer;color:var(--text); }
+    .cfg-pantalla-item select { width:120px;padding:3px 6px;font-size:.78rem; }
+    .cfg-excepcion-row { display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-color); }
+    .cfg-excepcion-row:last-child { border-bottom:none; }
+    .cfg-loading { padding:24px;text-align:center;color:var(--text-mid);font-size:.85rem; }
+    .cfg-msg-ok  { padding:10px 14px;background:#e6f5ec;border:1px solid #28a05a;color:#1a6e3c;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
+    .cfg-msg-err { padding:10px 14px;background:#fdecea;border:1px solid #cc3333;color:#8b1a1a;border-radius:8px;font-size:.82rem;margin-bottom:12px; }
+  `;
+  document.head.appendChild(s);
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+// CONFIGURACIÓN — Estado local
+// ═══════════════════════════════════════════════════════════════════
+const CFG = {
+  usuarios:   [],   // raw items desde SharePoint  {id, Title(email), NombreCompleto, PuestoID, Activo, Excepciones}
+  puestos:    [],   // raw items  {id, Title(puestoID), Nombre, EsAdmin, Pantallas(json)}
+  modulos:    [],   // raw items  {id, Title, Nombre, Icono, Orden}
+  submodulos: [],   // raw items  {id, Title, Nombre, Icono, Orden, ModuloID}
+  pantallas:  [],   // raw items  {id, Title(pantallaID), Nombre, Icono, ModuloID, SubModuloID}
+  currentTab: 'usuarios',
+  currentSubTab: 'modulos',
+  currentModal: null,  // 'usuario'|'modulo'|'submodulo'|'pantalla'|'puesto'
+  editingId: null,     // SharePoint item id (null = nuevo)
+  siteId: null,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════════════
+function cfgShowTab(tab) {
+  CFG.currentTab = tab;
+  ['usuarios','menu'].forEach(t => {
+    document.getElementById('cfg-view-'+t).style.display = t === tab ? '' : 'none';
+    document.getElementById('cfg-tab-'+t)?.classList.toggle('cfg-tab-active', t === tab);
+  });
+  if (tab === 'usuarios') cfgLoadUsuarios();
+  if (tab === 'menu') cfgLoadMenuData();
+}
+
+function cfgShowSubTab(sub) {
+  CFG.currentSubTab = sub;
+  ['modulos','submodulos','pantallas','puestos'].forEach(s => {
+    document.getElementById('cfg-view-'+s).style.display = s === sub ? '' : 'none';
+    document.getElementById('cfg-stab-'+s)?.classList.toggle('cfg-subtab-active', s === sub);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CARGAR DATOS DE CONFIGURACIÓN
+// ═══════════════════════════════════════════════════════════════════
+async function cfgEnsureSiteId() {
+  if (!CFG.siteId) CFG.siteId = await getSiteId();
+  return CFG.siteId;
+}
+
+async function cfgLoadUsuarios() {
+  const tbody = document.getElementById('cfg-usr-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">Cargando usuarios…</td></tr>';
+  try {
+    const sid = await cfgEnsureSiteId();
+    const res = await graphGet(`sites/${sid}/lists/Usuarios/items?$expand=fields&$top=500`);
+    CFG.usuarios = (res.value||[]).map(i => ({ id: i.id, ...i.fields }));
+
+    // Poblar filtro de puestos
+    const puestosRes = await graphGet(`sites/${sid}/lists/Puestos/items?$expand=fields&$top=200`);
+    CFG.puestos = (puestosRes.value||[]).map(i => ({ id: i.id, ...i.fields }));
+    const selPuesto = document.getElementById('cfg-usr-filter-puesto');
+    const currentVal = selPuesto.value;
+    selPuesto.innerHTML = '<option value="">Todos los puestos</option>';
+    CFG.puestos.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.Title || p.PuestoID || '';
+      o.textContent = p.Nombre || p.Title || '';
+      selPuesto.appendChild(o);
+    });
+    selPuesto.value = currentVal;
+
+    cfgRenderUsuarios(CFG.usuarios);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error cargando usuarios: ${e.message}</td></tr>`;
+  }
+}
+
+function cfgFilterUsuarios() {
+  const q      = (document.getElementById('cfg-usr-search')?.value||'').toLowerCase();
+  const puesto = document.getElementById('cfg-usr-filter-puesto')?.value || '';
+  const activo = document.getElementById('cfg-usr-filter-activo')?.value || '';
+  let list = CFG.usuarios;
+  if (q) list = list.filter(u => (u.NombreCompleto||u.Title||'').toLowerCase().includes(q) || (u.Title||'').toLowerCase().includes(q));
+  if (puesto) list = list.filter(u => (u.PuestoID||u.Puesto||'') === puesto);
+  if (activo === '1') list = list.filter(u => u.Activo !== false && u.Activo !== 0);
+  if (activo === '0') list = list.filter(u => u.Activo === false || u.Activo === 0);
+  cfgRenderUsuarios(list);
+}
+
+function cfgRenderUsuarios(list) {
+  const tbody = document.getElementById('cfg-usr-tbody');
+  const count = document.getElementById('cfg-usr-count');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="cfg-loading">No se encontraron usuarios.</td></tr>';
+    count.textContent = '0 usuarios';
+    return;
+  }
+  count.textContent = `${list.length} usuario${list.length !== 1 ? 's' : ''}`;
+  tbody.innerHTML = list.map((u,i) => {
+    const email  = u.Title || u.Email || '';
+    const nombre = u.NombreCompleto || email;
+    const puesto = u.PuestoID || u.Puesto || '—';
+    const pNombre = (CFG.puestos.find(p => (p.Title||p.PuestoID) === puesto) || {}).Nombre || puesto;
+    const activo = u.Activo !== false && u.Activo !== 0;
+    const rowBg  = i % 2 === 1 ? 'background:var(--bg-hover);' : '';
+    return `<tr class="cfg-table-row" style="${rowBg}">
+      <td style="padding:9px 14px;font-weight:600;">${nombre}</td>
+      <td style="padding:9px 14px;color:var(--text-mid);">${email}</td>
+      <td style="padding:9px 14px;">${pNombre}</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <span class="${activo ? 'cfg-badge-active' : 'cfg-badge-inactive'}">${activo ? 'Activo' : 'Inactivo'}</span>
+      </td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button class="cfg-btn-edit" onclick="cfgOpenUsuarioModal('${u.id}')">✏️ Editar</button>
+        <button class="cfg-btn-del"  onclick="cfgDeleteItem('usuario','${u.id}','${nombre.replace(/'/g,"\\'")}')">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CARGAR DATOS MENÚ
+// ═══════════════════════════════════════════════════════════════════
+async function cfgLoadMenuData() {
+  try {
+    const sid = await cfgEnsureSiteId();
+    const [modR, subR, panR, pstR] = await Promise.all([
+      graphGet(`sites/${sid}/lists/Modulos/items?$expand=fields&$top=200`),
+      graphGet(`sites/${sid}/lists/SubModulos/items?$expand=fields&$top=200`),
+      graphGet(`sites/${sid}/lists/Pantallas/items?$expand=fields&$top=200`),
+      graphGet(`sites/${sid}/lists/Puestos/items?$expand=fields&$top=200`),
+    ]);
+    CFG.modulos    = (modR.value||[]).map(i=>({id:i.id,...i.fields}));
+    CFG.submodulos = (subR.value||[]).map(i=>({id:i.id,...i.fields}));
+    CFG.pantallas  = (panR.value||[]).map(i=>({id:i.id,...i.fields}));
+    CFG.puestos    = (pstR.value||[]).map(i=>({id:i.id,...i.fields}));
+    cfgRenderModulos(); cfgRenderSubModulos(); cfgRenderPantallas(); cfgRenderPuestos();
+  } catch(e) {
+    ['mod','submod','pan','pst'].forEach(t => {
+      const tb = document.getElementById('cfg-'+t+'-tbody');
+      if (tb) tb.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: ${e.message}</td></tr>`;
+    });
+  }
+}
+
+function cfgRenderModulos() {
+  const tb = document.getElementById('cfg-mod-tbody');
+  if (!CFG.modulos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin módulos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.modulos.sort((a,b)=>(a.Orden||0)-(b.Orden||0)).map((m,i)=>`
+    <tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
+      <td style="padding:9px 14px;font-weight:600;">${m.Nombre||m.Title}</td>
+      <td style="padding:9px 14px;text-align:center;font-size:1.2rem;">${m.Icono||'📦'}</td>
+      <td style="padding:9px 14px;text-align:center;">${m.Orden||'—'}</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button class="cfg-btn-edit" onclick="cfgOpenModuloModal('${m.id}')">✏️ Editar</button>
+        <button class="cfg-btn-del"  onclick="cfgDeleteItem('modulo','${m.id}','${(m.Nombre||m.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
+      </td></tr>`).join('');
+}
+
+function cfgRenderSubModulos() {
+  const tb = document.getElementById('cfg-submod-tbody');
+  if (!CFG.submodulos.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin submódulos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.submodulos.sort((a,b)=>(a.Orden||0)-(b.Orden||0)).map((s,i)=>{
+    const modNombre = (CFG.modulos.find(m=>m.Nombre===s.ModuloID||m.Title===s.ModuloID)||{}).Nombre || s.ModuloID || '—';
+    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
+      <td style="padding:9px 14px;font-weight:600;">${s.Nombre||s.Title}</td>
+      <td style="padding:9px 14px;color:var(--text-mid);">${modNombre}</td>
+      <td style="padding:9px 14px;text-align:center;font-size:1.2rem;">${s.Icono||'📁'}</td>
+      <td style="padding:9px 14px;text-align:center;">${s.Orden||'—'}</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button class="cfg-btn-edit" onclick="cfgOpenSubmoduloModal('${s.id}')">✏️ Editar</button>
+        <button class="cfg-btn-del"  onclick="cfgDeleteItem('submodulo','${s.id}','${(s.Nombre||s.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
+      </td></tr>`;
+  }).join('');
+}
+
+function cfgRenderPantallas() {
+  const tb = document.getElementById('cfg-pan-tbody');
+  if (!CFG.pantallas.length) { tb.innerHTML = '<tr><td colspan="5" class="cfg-loading">Sin pantallas registradas.</td></tr>'; return; }
+  tb.innerHTML = CFG.pantallas.map((p,i)=>{
+    const modNombre = p.ModuloID || '—';
+    const subNombre = p.SubModuloID || '—';
+    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
+      <td style="padding:9px 14px;font-weight:600;">${p.Nombre||p.Title}</td>
+      <td style="padding:9px 14px;color:var(--text-mid);">${modNombre}</td>
+      <td style="padding:9px 14px;color:var(--text-mid);">${subNombre}</td>
+      <td style="padding:9px 14px;text-align:center;"><code style="font-size:.75rem;background:var(--bg-hover);padding:2px 6px;border-radius:4px;">${p.PantallaID||p.Title}</code></td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button class="cfg-btn-edit" onclick="cfgOpenPantallaModal('${p.id}')">✏️ Editar</button>
+        <button class="cfg-btn-del"  onclick="cfgDeleteItem('pantalla','${p.id}','${(p.Nombre||p.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
+      </td></tr>`;
+  }).join('');
+}
+
+function cfgRenderPuestos() {
+  const tb = document.getElementById('cfg-pst-tbody');
+  if (!CFG.puestos.length) { tb.innerHTML = '<tr><td colspan="4" class="cfg-loading">Sin puestos registrados.</td></tr>'; return; }
+  tb.innerHTML = CFG.puestos.map((p,i)=>{
+    let pantellas = [];
+    try { pantellas = JSON.parse(p.Pantallas||'[]'); } catch(e){}
+    const pCount = Array.isArray(pantellas) ? pantellas.length : 0;
+    return `<tr class="cfg-table-row" style="${i%2?'background:var(--bg-hover);':''}">
+      <td style="padding:9px 14px;font-weight:600;">${p.Nombre||p.Title}</td>
+      <td style="padding:9px 14px;text-align:center;">${p.EsAdmin||p.esAdmin ? '<span class="cfg-badge-admin">Admin</span>' : '—'}</td>
+      <td style="padding:9px 14px;color:var(--text-mid);">${pCount} pantalla${pCount!==1?'s':''} asignadas</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <button class="cfg-btn-edit" onclick="cfgOpenPuestoModal('${p.id}')">✏️ Editar</button>
+        <button class="cfg-btn-del"  onclick="cfgDeleteItem('puesto','${p.id}','${(p.Nombre||p.Title||'').replace(/'/g,"\\'")}')">🗑️</button>
+      </td></tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODALES — ABRIR
+// ═══════════════════════════════════════════════════════════════════
+function cfgOpenModal(title, bodyHTML, modalType, editId) {
+  CFG.currentModal = modalType;
+  CFG.editingId    = editId || null;
+  document.getElementById('cfg-modal-title').textContent = title;
+  document.getElementById('cfg-modal-body').innerHTML    = bodyHTML;
+  const ov = document.getElementById('cfg-modal-overlay');
+  ov.style.display = 'flex';
+  setTimeout(()=>{ ov.scrollTop = 0; }, 10);
+}
+function cfgCloseModal() {
+  document.getElementById('cfg-modal-overlay').style.display = 'none';
+  CFG.currentModal = null; CFG.editingId = null;
+}
+
+// ── USUARIO ──────────────────────────────────────────────────────
+function cfgOpenUsuarioModal(itemId) {
+  const u = itemId ? CFG.usuarios.find(x => x.id === itemId) : null;
+  const isNew = !u;
+  const email  = u ? (u.Title||u.Email||'') : '';
+  const nombre = u ? (u.NombreCompleto||'') : '';
+  const puesto = u ? (u.PuestoID||'') : '';
+  const activo = u ? (u.Activo !== false && u.Activo !== 0) : true;
+
+  // Excepciones: array de {pantallaID, nivel, accion: 'agregar'|'quitar'}
+  let exceps = [];
+  try { exceps = JSON.parse(u?.Excepciones||'[]'); } catch(e){}
+
+  const puestosOpts = CFG.puestos.map(p=>
+    `<option value="${p.Title||p.PuestoID||''}" ${(p.Title||p.PuestoID)===puesto?'selected':''}>${p.Nombre||p.Title}</option>`
+  ).join('');
+
+  const panOpts = CFG.pantallas.map(p =>
+    `<option value="${p.PantallaID||p.Title}">${p.Nombre||p.Title}</option>`
+  ).join('');
+
+  const excepsHTML = exceps.map((ex,idx) => `
+    <div class="cfg-excepcion-row" id="excRow${idx}">
+      <select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+        onchange="cfgExcepChange(${idx},'pan',this.value)">
+        ${CFG.pantallas.map(p=>`<option value="${p.PantallaID||p.Title}" ${ex.pantallaID===p.PantallaID||ex.pantallaID===p.Title?'selected':''}>${p.Nombre||p.Title}</option>`).join('')}
+      </select>
+      <select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+        onchange="cfgExcepChange(${idx},'nivel',this.value)">
+        <option value="completo" ${ex.nivel==='completo'?'selected':''}>Completo</option>
+        <option value="lectura" ${ex.nivel==='lectura'?'selected':''}>Lectura</option>
+      </select>
+      <select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+        onchange="cfgExcepChange(${idx},'accion',this.value)">
+        <option value="agregar" ${ex.accion==='agregar'?'selected':''}>Agregar</option>
+        <option value="quitar"  ${ex.accion==='quitar'?'selected':''}>Quitar</option>
+      </select>
+      <button onclick="cfgRemoveExcepcion(${idx})" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button>
+    </div>`).join('');
+
+  const html = `
+    <div class="cfg-form-row">
+      <label>Email (usuario Microsoft)</label>
+      <input id="cfgU-email" type="email" value="${email}" placeholder="nombre@maderoequipos.com" ${!isNew?'readonly style="opacity:.6;"':''}>
+    </div>
+    <div class="cfg-form-row">
+      <label>Nombre Completo</label>
+      <input id="cfgU-nombre" type="text" value="${nombre}" placeholder="Nombre Apellido">
+    </div>
+    <div class="cfg-form-row">
+      <label>Puesto</label>
+      <select id="cfgU-puesto"><option value="">— Selecciona puesto —</option>${puestosOpts}</select>
+    </div>
+    <div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">
+      <input id="cfgU-activo" type="checkbox" ${activo?'checked':''} style="width:auto;margin:0;">
+      <label style="margin:0;text-transform:none;font-size:.85rem;">Usuario Activo</label>
+    </div>
+    <div class="cfg-form-row">
+      <label>Excepciones de Acceso <span style="font-weight:400;text-transform:none;">(agregar o quitar pantallas respecto al puesto)</span></label>
+      <div id="cfg-excep-list">${excepsHTML}</div>
+      <button onclick="cfgAddExcepcion()" style="margin-top:8px;padding:5px 12px;border:1px dashed var(--accent);color:var(--accent);background:none;border-radius:6px;cursor:pointer;font-size:.78rem;">+ Agregar excepción</button>
+    </div>
+    <div id="cfg-modal-msg"></div>`;
+
+  // Guardar las excepciones editables en variable temporal
+  window._cfgExceps = JSON.parse(JSON.stringify(exceps));
+
+  cfgOpenModal(isNew ? 'Nuevo Usuario' : `Editar Usuario — ${nombre||email}`, html, 'usuario', itemId);
+}
+
+function cfgExcepChange(idx, campo, val) {
+  if (!window._cfgExceps) return;
+  if (!window._cfgExceps[idx]) window._cfgExceps[idx] = {};
+  window._cfgExceps[idx][campo === 'pan' ? 'pantallaID' : campo] = val;
+}
+function cfgAddExcepcion() {
+  if (!window._cfgExceps) window._cfgExceps = [];
+  const newEx = { pantallaID: CFG.pantallas[0]?.PantallaID || CFG.pantallas[0]?.Title || '', nivel:'completo', accion:'agregar' };
+  window._cfgExceps.push(newEx);
+  // Re-render only the exceptions list
+  const u = { Excepciones: JSON.stringify(window._cfgExceps) };
+  const idx = window._cfgExceps.length - 1;
+  const ex = newEx;
+  const newRow = document.createElement('div');
+  newRow.className = 'cfg-excepcion-row';
+  newRow.id = 'excRow'+idx;
+  newRow.innerHTML = `
+    <select style="flex:1;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+      onchange="cfgExcepChange(${idx},'pan',this.value)">
+      ${CFG.pantallas.map(p=>`<option value="${p.PantallaID||p.Title}">${p.Nombre||p.Title}</option>`).join('')}
+    </select>
+    <select style="width:110px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+      onchange="cfgExcepChange(${idx},'nivel',this.value)">
+      <option value="completo">Completo</option><option value="lectura">Lectura</option>
+    </select>
+    <select style="width:90px;padding:4px 8px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);"
+      onchange="cfgExcepChange(${idx},'accion',this.value)">
+      <option value="agregar">Agregar</option><option value="quitar">Quitar</option>
+    </select>
+    <button onclick="cfgRemoveExcepcion(${idx})" style="padding:3px 8px;border:1px solid #cc3333;color:#cc3333;background:none;border-radius:5px;cursor:pointer;font-size:.75rem;">✕</button>`;
+  document.getElementById('cfg-excep-list').appendChild(newRow);
+}
+function cfgRemoveExcepcion(idx) {
+  if (!window._cfgExceps) return;
+  window._cfgExceps.splice(idx, 1);
+  const row = document.getElementById('excRow'+idx);
+  if (row) row.remove();
+  // Re-numerar IDs
+  document.querySelectorAll('.cfg-excepcion-row').forEach((r,i) => r.id = 'excRow'+i);
+}
+
+// ── MÓDULO ────────────────────────────────────────────────────────
+function cfgOpenModuloModal(itemId) {
+  const m = itemId ? CFG.modulos.find(x => x.id === itemId) : null;
+  const html = `
+    <div class="cfg-form-row"><label>Nombre del Módulo</label><input id="cfgM-nombre" value="${m?.Nombre||m?.Title||''}" placeholder="Ej: Logística"></div>
+    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgM-icono" value="${m?.Icono||''}" placeholder="🚚" maxlength="5"></div>
+    <div class="cfg-form-row"><label>Orden</label><input id="cfgM-orden" type="number" value="${m?.Orden||''}" placeholder="1"></div>
+    <div id="cfg-modal-msg"></div>`;
+  cfgOpenModal(m ? 'Editar Módulo' : 'Nuevo Módulo', html, 'modulo', itemId);
+}
+
+// ── SUBMÓDULO ─────────────────────────────────────────────────────
+function cfgOpenSubmoduloModal(itemId) {
+  const s = itemId ? CFG.submodulos.find(x => x.id === itemId) : null;
+  const modOpts = CFG.modulos.map(m =>
+    `<option value="${m.Nombre||m.Title}" ${(m.Nombre||m.Title)===(s?.ModuloID||'')?'selected':''}>${m.Nombre||m.Title}</option>`
+  ).join('');
+  const html = `
+    <div class="cfg-form-row"><label>Nombre del SubMódulo</label><input id="cfgSM-nombre" value="${s?.Nombre||s?.Title||''}" placeholder="Ej: Compras Internacionales"></div>
+    <div class="cfg-form-row"><label>Módulo Padre</label><select id="cfgSM-modulo"><option value="">— Selecciona —</option>${modOpts}</select></div>
+    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgSM-icono" value="${s?.Icono||''}" placeholder="🌐" maxlength="5"></div>
+    <div class="cfg-form-row"><label>Orden</label><input id="cfgSM-orden" type="number" value="${s?.Orden||''}" placeholder="1"></div>
+    <div id="cfg-modal-msg"></div>`;
+  cfgOpenModal(s ? 'Editar SubMódulo' : 'Nuevo SubMódulo', html, 'submodulo', itemId);
+}
+
+// ── PANTALLA ──────────────────────────────────────────────────────
+function cfgOpenPantallaModal(itemId) {
+  const p = itemId ? CFG.pantallas.find(x => x.id === itemId) : null;
+  const modOpts = CFG.modulos.map(m =>
+    `<option value="${m.Nombre||m.Title}" ${(m.Nombre||m.Title)===(p?.ModuloID||'')?'selected':''}>${m.Nombre||m.Title}</option>`
+  ).join('');
+  const subOpts = CFG.submodulos.map(s =>
+    `<option value="${s.Nombre||s.Title}" ${(s.Nombre||s.Title)===(p?.SubModuloID||'')?'selected':''}>${s.Nombre||s.Title}</option>`
+  ).join('');
+  const html = `
+    <div class="cfg-form-row"><label>Nombre de la Pantalla</label><input id="cfgP-nombre" value="${p?.Nombre||p?.Title||''}" placeholder="Ej: Pedidos Especiales"></div>
+    <div class="cfg-form-row"><label>PantallaID (clave interna, sin espacios)</label><input id="cfgP-pantallaID" value="${p?.PantallaID||p?.Title||''}" placeholder="PedidosEspeciales"></div>
+    <div class="cfg-form-row"><label>Módulo</label><select id="cfgP-modulo"><option value="">— Selecciona —</option>${modOpts}</select></div>
+    <div class="cfg-form-row"><label>SubMódulo <span style="font-weight:400;">(opcional)</span></label><select id="cfgP-submodulo"><option value="">— Sin submódulo —</option>${subOpts}</select></div>
+    <div class="cfg-form-row"><label>Icono (emoji)</label><input id="cfgP-icono" value="${p?.Icono||''}" placeholder="📄" maxlength="5"></div>
+    <div id="cfg-modal-msg"></div>`;
+  cfgOpenModal(p ? 'Editar Pantalla' : 'Nueva Pantalla', html, 'pantalla', itemId);
+}
+
+// ── PUESTO ────────────────────────────────────────────────────────
+function cfgOpenPuestoModal(itemId) {
+  const p = itemId ? CFG.puestos.find(x => x.id === itemId) : null;
+  let asignadas = [];
+  try { asignadas = JSON.parse(p?.Pantallas||'[]'); } catch(e){}
+  window._cfgPantallasAsig = JSON.parse(JSON.stringify(asignadas));
+
+  const panListHTML = CFG.pantallas.map(pan => {
+    const panId  = pan.PantallaID || pan.Title || '';
+    const exist  = asignadas.find(a => a.pantallaID === panId);
+    const nivel  = exist?.nivel || 'completo';
+    const checked = exist ? 'checked' : '';
+    return `<div class="cfg-pantalla-item">
+      <input type="checkbox" id="pck_${panId}" value="${panId}" ${checked}
+        onchange="cfgTogglePantAlAsig('${panId}',this.checked)">
+      <label for="pck_${panId}">${pan.Nombre||pan.Title}</label>
+      <select onchange="cfgSetNivelAsig('${panId}',this.value)" style="width:110px;padding:3px 6px;font-size:.78rem;background:var(--bg-hover);border:1px solid var(--border-color);border-radius:6px;color:var(--text);">
+        <option value="completo" ${nivel==='completo'?'selected':''}>Completo</option>
+        <option value="lectura"  ${nivel==='lectura'?'selected':''}>Lectura</option>
+      </select>
+    </div>`;
+  }).join('');
+
+  const html = `
+    <div class="cfg-form-row"><label>Nombre del Puesto</label><input id="cfgPT-nombre" value="${p?.Nombre||p?.Title||''}" placeholder="Ej: Analista Compras Int."></div>
+    <div class="cfg-form-row"><label>PuestoID (clave interna)</label><input id="cfgPT-puestoID" value="${p?.PuestoID||p?.Title||''}" placeholder="AnalistaComprasInt"></div>
+    <div class="cfg-form-row" style="display:flex;align-items:center;gap:10px;">
+      <input id="cfgPT-admin" type="checkbox" ${(p?.EsAdmin||p?.esAdmin)?'checked':''} style="width:auto;margin:0;">
+      <label style="margin:0;text-transform:none;font-size:.85rem;">¿Es Administrador General?</label>
+    </div>
+    <div class="cfg-form-row">
+      <label>Pantallas con acceso</label>
+      <div class="cfg-pantallas-list">${panListHTML||'<span style="color:var(--text-mid);font-size:.8rem;">No hay pantallas registradas aún.</span>'}</div>
+    </div>
+    <div id="cfg-modal-msg"></div>`;
+  cfgOpenModal(p ? 'Editar Puesto' : 'Nuevo Puesto', html, 'puesto', itemId);
+}
+
+function cfgTogglePantAlAsig(panId, checked) {
+  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
+  if (checked) {
+    if (!window._cfgPantallasAsig.find(a=>a.pantallaID===panId))
+      window._cfgPantallasAsig.push({ pantallaID: panId, nivel:'completo' });
+  } else {
+    window._cfgPantallasAsig = window._cfgPantallasAsig.filter(a=>a.pantallaID!==panId);
+  }
+}
+function cfgSetNivelAsig(panId, nivel) {
+  if (!window._cfgPantallasAsig) window._cfgPantallasAsig = [];
+  const found = window._cfgPantallasAsig.find(a=>a.pantallaID===panId);
+  if (found) found.nivel = nivel;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GUARDAR (POST / PATCH)
+// ═══════════════════════════════════════════════════════════════════
+async function cfgModalSave() {
+  const btn  = document.getElementById('cfg-modal-save-btn');
+  const msg  = document.getElementById('cfg-modal-msg');
+  btn.disabled = true; btn.textContent = 'Guardando…';
+  if (msg) msg.innerHTML = '';
+  try {
+    const sid = await cfgEnsureSiteId();
+    await cfgDoSave(sid);
+    btn.textContent = '✔ Guardado';
+    if (msg) msg.innerHTML = '<div class="cfg-msg-ok">✔ Guardado correctamente en SharePoint</div>';
+    setTimeout(() => { cfgCloseModal(); cfgRefreshCurrentTab(); }, 900);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Guardar';
+    if (msg) msg.innerHTML = `<div class="cfg-msg-err">Error al guardar: ${e.message}</div>`;
+  }
+}
+
+async function cfgDoSave(sid) {
+  const t = CFG.currentModal;
+  const id = CFG.editingId;
+
+  if (t === 'usuario') {
+    const email  = (document.getElementById('cfgU-email')?.value||'').trim();
+    const nombre = (document.getElementById('cfgU-nombre')?.value||'').trim();
+    const puesto = (document.getElementById('cfgU-puesto')?.value||'').trim();
+    const activo = document.getElementById('cfgU-activo')?.checked;
+    const exceps = JSON.stringify(window._cfgExceps||[]);
+    if (!email) throw new Error('El email es requerido');
+    if (!nombre) throw new Error('El nombre es requerido');
+    const fields = { Title: email, NombreCompleto: nombre, PuestoID: puesto, Activo: activo, Excepciones: exceps };
+    if (id) await graphPatch(`sites/${sid}/lists/Usuarios/items/${id}/fields`, fields);
+    else { await graphPost(`sites/${sid}/lists/Usuarios/items`, { fields }); }
+  }
+  else if (t === 'modulo') {
+    const nombre = (document.getElementById('cfgM-nombre')?.value||'').trim();
+    const icono  = (document.getElementById('cfgM-icono')?.value||'').trim();
+    const orden  = parseInt(document.getElementById('cfgM-orden')?.value||'0');
+    if (!nombre) throw new Error('El nombre es requerido');
+    const fields = { Title: nombre, Nombre: nombre, Icono: icono, Orden: orden };
+    if (id) await graphPatch(`sites/${sid}/lists/Modulos/items/${id}/fields`, fields);
+    else await graphPost(`sites/${sid}/lists/Modulos/items`, { fields });
+  }
+  else if (t === 'submodulo') {
+    const nombre = (document.getElementById('cfgSM-nombre')?.value||'').trim();
+    const modulo = (document.getElementById('cfgSM-modulo')?.value||'').trim();
+    const icono  = (document.getElementById('cfgSM-icono')?.value||'').trim();
+    const orden  = parseInt(document.getElementById('cfgSM-orden')?.value||'0');
+    if (!nombre) throw new Error('El nombre es requerido');
+    if (!modulo) throw new Error('Debes seleccionar un módulo');
+    const fields = { Title: nombre, Nombre: nombre, ModuloID: modulo, Icono: icono, Orden: orden };
+    if (id) await graphPatch(`sites/${sid}/lists/SubModulos/items/${id}/fields`, fields);
+    else await graphPost(`sites/${sid}/lists/SubModulos/items`, { fields });
+  }
+  else if (t === 'pantalla') {
+    const nombre     = (document.getElementById('cfgP-nombre')?.value||'').trim();
+    const pantallaID = (document.getElementById('cfgP-pantallaID')?.value||'').trim();
+    const modulo     = (document.getElementById('cfgP-modulo')?.value||'').trim();
+    const submodulo  = (document.getElementById('cfgP-submodulo')?.value||'').trim();
+    const icono      = (document.getElementById('cfgP-icono')?.value||'').trim();
+    if (!nombre) throw new Error('El nombre es requerido');
+    if (!pantallaID) throw new Error('El PantallaID es requerido');
+    const fields = { Title: pantallaID, Nombre: nombre, PantallaID: pantallaID, ModuloID: modulo, SubModuloID: submodulo||'', Icono: icono };
+    if (id) await graphPatch(`sites/${sid}/lists/Pantallas/items/${id}/fields`, fields);
+    else await graphPost(`sites/${sid}/lists/Pantallas/items`, { fields });
+  }
+  else if (t === 'puesto') {
+    const nombre   = (document.getElementById('cfgPT-nombre')?.value||'').trim();
+    const puestoID = (document.getElementById('cfgPT-puestoID')?.value||'').trim();
+    const esAdmin  = document.getElementById('cfgPT-admin')?.checked;
+    const pantallas = JSON.stringify(window._cfgPantallasAsig||[]);
+    if (!nombre) throw new Error('El nombre es requerido');
+    if (!puestoID) throw new Error('El PuestoID es requerido');
+    const fields = { Title: puestoID, Nombre: nombre, PuestoID: puestoID, EsAdmin: esAdmin, Pantallas: pantallas };
+    if (id) await graphPatch(`sites/${sid}/lists/Puestos/items/${id}/fields`, fields);
+    else await graphPost(`sites/${sid}/lists/Puestos/items`, { fields });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ELIMINAR
+// ═══════════════════════════════════════════════════════════════════
+function cfgDeleteItem(tipo, itemId, nombre) {
+  const listas = {
+    usuario:   'Usuarios',
+    modulo:    'Modulos',
+    submodulo: 'SubModulos',
+    pantalla:  'Pantallas',
+    puesto:    'Puestos',
+  };
+  const lista = listas[tipo];
+  if (!lista) return;
+
+  // Usar el modal de confirmación ya existente en la plataforma
+  pendingAction = async () => {
+    try {
+      const sid = await cfgEnsureSiteId();
+      const token = await getToken();
+      const url = `https://graph.microsoft.com/v1.0/sites/${sid}/lists/${lista}/items/${itemId}`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok && res.status !== 204) throw new Error(`Graph DELETE ${res.status}`);
+      cfgRefreshCurrentTab();
+    } catch(e) {
+      alert('Error al eliminar: ' + e.message);
+    }
+  };
+  document.getElementById('modal-title').textContent = '¿Eliminar registro?';
+  document.getElementById('modal-body').textContent  = `Se eliminará "${nombre}" de la lista ${lista}. Esta acción no se puede deshacer.`;
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// REFRESH SEGÚN TAB ACTIVO
+// ═══════════════════════════════════════════════════════════════════
+function cfgRefreshCurrentTab() {
+  if (CFG.currentTab === 'usuarios') cfgLoadUsuarios();
+  else cfgLoadMenuData();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HOOK: cuando se navega a la página config, cargar datos
+// ═══════════════════════════════════════════════════════════════════
+(function hookConfigPage() {
+  const origShowPage = typeof window.showPage === 'function' ? window.showPage : null;
+  if (!origShowPage) return;
+  window.showPage = function(name) {
+    origShowPage(name);
+    if (name === 'config') {
+      // pequeño delay para que el DOM esté visible
+      setTimeout(() => {
+        // Asegurar que el tab activo se cargue
+        if (CFG.currentTab === 'usuarios') cfgLoadUsuarios();
+        else cfgLoadMenuData();
+      }, 100);
+    }
+  };
+})();
 
 
 </body>
