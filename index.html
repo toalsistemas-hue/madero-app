@@ -304,13 +304,13 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
 .card-header-row { display:flex; align-items:center; padding:11px 14px; gap:12px; cursor:pointer; }
 .card-header-row:hover { background:var(--bg-hover); }
-.card-num     { font-size:.88rem; font-weight:700; color:var(--accent); white-space:nowrap; min-width:80px; }
+.card-num     { font-size:.88rem; font-weight:700; color:var(--accent); white-space:nowrap; min-width:82px; }
 .card-cliente { font-size:.88rem; font-weight:600; color:var(--text); white-space:nowrap; }
 .card-concepto{ font-size:.78rem; color:var(--text-dim); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-style:italic; }
 .card-proyecto{ font-size:.78rem; color:var(--text-dim); white-space:nowrap; }
-.pe-tab-btn { padding:7px 18px; background:var(--bg-card); border:1px solid var(--border-color); border-bottom:none; color:var(--text-mid); border-radius:6px 6px 0 0; cursor:pointer; font-size:.82rem; transition:background .15s,color .15s; }
+.pe-tab-btn   { padding:6px 14px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-mid); border-radius:6px; cursor:pointer; font-size:.8rem; transition:background .15s,color .15s; }
 .pe-tab-btn:hover { background:var(--bg-hover); color:var(--text); }
-.pe-tab-active { background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
+.pe-tab-active{ background:var(--accent) !important; color:#fff !important; border-color:var(--accent) !important; }
 .card-badges  { display:flex; gap:5px; align-items:center; }
 .card-chevron { color:var(--text-dim); font-size:12px; transition:transform .2s; flex-shrink:0; }
 .pedido-card.expanded .card-chevron { transform:rotate(180deg); }
@@ -590,11 +590,6 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
         <div class="kpi-card"><div class="kpi-value red"    id="kpi-rech">—</div><div class="kpi-label">Rechazados</div></div>
         <div class="kpi-card"><div class="kpi-value orange" id="kpi-pagopend">—</div><div class="kpi-label">Pago Pendiente</div></div>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:0;padding:0 0 0 0;">
-        <button id="pe-tab-proceso"    class="pe-tab-btn pe-tab-active" onclick="setPeTab('proceso')">⏳ En proceso</button>
-        <button id="pe-tab-autorizado" class="pe-tab-btn"               onclick="setPeTab('autorizado')">✅ Autorizados</button>
-        <button id="pe-tab-rechazado"  class="pe-tab-btn"               onclick="setPeTab('rechazado')">❌ Rechazados</button>
-      </div>
       <div class="filters">
         <div class="search-wrap">
           <span class="search-icon">🔍</span>
@@ -608,7 +603,10 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
         <button class="refresh-btn" onclick="loadPedidos()">
           <span id="pe-refresh-icon">↻</span> Actualizar
         </button>
-        <span id="pe-auto-countdown" style="font-size:.72rem;color:var(--text-dim);align-self:center;margin-left:2px;">⏱ 15s</span>
+        <div style="width:16px;"></div>
+        <button id="pe-tab-proceso"    class="pe-tab-btn pe-tab-active" onclick="setPeTab('proceso')">⏳ En proceso</button>
+        <button id="pe-tab-autorizado" class="pe-tab-btn"               onclick="setPeTab('autorizado')">✅ Autorizados</button>
+        <button id="pe-tab-rechazado"  class="pe-tab-btn"               onclick="setPeTab('rechazado')">❌ Rechazados</button>
       </div>
       <div id="pedidos-container">
         <div class="loading-state"><div class="loading-spinner"></div><div>Cargando pedidos…</div></div>
@@ -2040,23 +2038,17 @@ function getDemoPedidos() {
     { ID:3, NumeroPedido:'60005007', Cliente:'CRIANZA SUPREMA BAJIO',   Proyecto:'P100163', Concepto:'Tapetes para vaca 4x6 con clavos',       Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'Programada', PedidoVenta:'Pendiente', OrdenVenta:'Pendiente', PedidoVentaCambiosInternos:'Pendiente', Numeracion:'No aplica', ResumenAnalisis:'Junta técnica programada. Pago pendiente.',                                   AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T10:30:00Z',FechaAccion:null },
     { ID:4, NumeroPedido:'60004951', Cliente:'RANCHO EL CLAVEL',        Proyecto:'P100135', Concepto:'Podómetros AFITAG II x 50 pzas',         Estatus:'Pendiente',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica',  PedidoVenta:'OK',        OrdenVenta:'OK',        PedidoVentaCambiosInternos:'No aplica', Numeracion:'Pendiente', ResumenAnalisis:'Numeración AFITAG II pendiente confirmar con Leonel Aranda.',               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-05T09:00:00Z',FechaAccion:null },
     { ID:5, NumeroPedido:'60004981', Cliente:'VICTOR MANUEL PASQUALLI', Proyecto:'P100152', Concepto:'Collares de identificación electrónica',  Estatus:'Autorizado', CondicionPago:'OK',        JuntaTecnica:'OK',         PedidoVenta:'OK',        OrdenVenta:'OK',        PedidoVentaCambiosInternos:'OK',        Numeracion:'No aplica', ResumenAnalisis:'Todos los pasos completados. Listo para iniciar.',                            AccionadoPor:'Edson Rios',    FechaDeteccion:'2026-05-05T10:15:00Z',FechaAccion:'2026-05-06T14:30:00Z' },
-    { ID:6, NumeroPedido:'60004997', Cliente:'LACTEOS EL FENIX',        Proyecto:'P100159', Concepto:'Podómetros AFITAG II x 120 pzas',        Estatus:'Pendiente',  CondicionPago:'OK',        JuntaTecnica:'No aplica',  PedidoVenta:'OK',        OrdenVenta:'OK',        PedidoVentaCambiosInternos:'No aplica', Numeracion:'Pendiente', ResumenAnalisis:'Numeración AFITAG II pendiente confirmar con Ramon Tabares.',               AccionadoPor:'Patricia Reyes',FechaDeteccion:'2026-05-06T08:32:00Z',FechaAccion:null },
+    { ID:6, NumeroPedido:'60004997', Cliente:'LACTEOS EL FENIX',        Proyecto:'P100159', Concepto:'Podómetros AFITAG II x 120 pzas',        Estatus:'Rechazado',  CondicionPago:'Pendiente', JuntaTecnica:'No aplica',  PedidoVenta:'OK',        OrdenVenta:'OK',        PedidoVentaCambiosInternos:'No aplica', Numeracion:'Pendiente', ResumenAnalisis:'Rechazado por falta de pago confirmado.',                                     AccionadoPor:'Edson Rios',    FechaDeteccion:'2026-05-06T08:32:00Z',FechaAccion:'2026-05-07T10:00:00Z' },
   ];
 }
 
-async function loadPedidos(nivelOverride) {
-  const nivel = nivelOverride || state.currentUser.pantallas['PedidosEspeciales'];
-  const icon  = document.getElementById('pe-refresh-icon');
-  icon.classList.add('spin');
-  document.getElementById('pedidos-container').innerHTML =
-    '<div class="loading-state"><div class="loading-spinner"></div><div>Cargando pedidos…</div></div>';
-
+async function loadPedidosData() {
+  // Solo carga datos en state, sin tocar el DOM ni mostrar loading
   try {
     if (state.isDemoMode) throw new Error('demo');
     const siteId = await getSiteId();
-    // Sin $orderby para evitar error 400 — se ordena en cliente
     const res    = await graphGet(`sites/${siteId}/lists/PedidosEspeciales/items?$expand=fields&$top=500`);
-    state.pedidos = res.value.map(i=>({ID:i.id,...i.fields}))
+    state.pedidos = res.value.map(i=>({ID:i.id, NumeroPedido:i.fields.Title||i.fields.NumeroPedido||'—', ...i.fields}))
       .sort((a,b)=> new Date(b.FechaDeteccion||0) - new Date(a.FechaDeteccion||0));
     document.getElementById('pe-demo-banner').style.display = 'none';
     const now = new Date();
@@ -2067,10 +2059,17 @@ async function loadPedidos(nivelOverride) {
     document.getElementById('pe-demo-banner').style.display = 'flex';
     document.getElementById('pe-last-update').textContent = '⚠ Modo demo';
   }
-
-  // Guardar nivel de acceso en state para los renders
-  state.nivelPedidos = nivel;
   updateKPIs();
+}
+
+async function loadPedidos(nivelOverride) {
+  const nivel = nivelOverride || state.currentUser.pantallas['PedidosEspeciales'];
+  const icon  = document.getElementById('pe-refresh-icon');
+  icon.classList.add('spin');
+  document.getElementById('pedidos-container').innerHTML =
+    '<div class="loading-state"><div class="loading-spinner"></div><div>Cargando pedidos…</div></div>';
+  state.nivelPedidos = nivel;
+  await loadPedidosData();
   filterPedidos();
   icon.classList.remove('spin');
 }
@@ -2085,9 +2084,9 @@ function updateKPIs() {
 }
 
 function filterPedidos() {
-  const q      = (document.getElementById('pe-search').value||'').toLowerCase();
-  const pago   = document.getElementById('pe-filter-pago').value;
-  const tab    = state.peTab || 'proceso';
+  const q    = (document.getElementById('pe-search').value||'').toLowerCase();
+  const pago = document.getElementById('pe-filter-pago').value;
+  const tab  = state.peTab || 'proceso';
   state.filtered = state.pedidos.filter(p => {
     const mQ = !q || (p.NumeroPedido||'').toLowerCase().includes(q)||(p.Cliente||'').toLowerCase().includes(q)||(p.Proyecto||'').toLowerCase().includes(q);
     const mP = !pago || (pago==='Pendiente'&&p.CondicionPago==='Pendiente')||(pago==='OK'&&p.CondicionPago==='OK');
@@ -2102,25 +2101,35 @@ function filterPedidos() {
 function setPeTab(tab) {
   state.peTab = tab;
   ['proceso','autorizado','rechazado'].forEach(t => {
-    const btn = document.getElementById('pe-tab-'+t);
-    if (btn) btn.classList.toggle('pe-tab-active', t===tab);
+    var btn = document.getElementById('pe-tab-'+t);
+    if (btn) { btn.classList.toggle('pe-tab-active', t===tab); }
   });
   filterPedidos();
 }
 
-// Auto-refresh cada 15 segundos solo cuando la pantalla de PedidosEspeciales está activa
-(function initPeAutoRefresh() {
-  var countdown = 15;
-  var timer = null;
-  function tick() {
-    var el = document.getElementById('pe-auto-countdown');
-    var page = document.getElementById('page-PedidosEspeciales');
-    if (!page || !page.classList.contains('active')) { countdown=15; if(el) el.textContent='⏱ 15s'; return; }
-    countdown--;
-    if (el) el.textContent = '⏱ '+countdown+'s';
-    if (countdown<=0) { countdown=15; loadPedidos(); }
-  }
-  setInterval(tick, 1000);
+// Refresh silencioso: actualiza datos en background sin reemplazar el DOM completo
+// Preserva cards expandidas y posición de scroll
+async function silentRefreshPedidos() {
+  var page = document.getElementById('page-PedidosEspeciales');
+  if (!page || !page.classList.contains('active')) return;
+  // Guardar IDs de cards expandidas
+  var expanded = [];
+  document.querySelectorAll('.pedido-card.expanded').forEach(function(c){ expanded.push(c.dataset.id); });
+  var scrollY = window.scrollY;
+  // Recargar datos en segundo plano
+  await loadPedidosData();
+  filterPedidos();
+  // Restaurar cards expandidas
+  expanded.forEach(function(id){
+    var card = document.querySelector('.pedido-card[data-id="'+id+'"]');
+    if (card) card.classList.add('expanded');
+  });
+  window.scrollTo(0, scrollY);
+}
+
+// Auto-refresh cada 15s silencioso
+(function initPeAutoRefresh(){
+  setInterval(silentRefreshPedidos, 15000);
 })();
 
 function renderPedidos() {
