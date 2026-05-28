@@ -2071,14 +2071,20 @@ async function checkSessionAndVersion() {
   if (!state.currentUser || state.isDemoMode || !state.token) return;
   try {
     const sid = await getSiteId();
-    // Una sola llamada: traer el item del usuario actual
+    // Traer todos los usuarios y filtrar en cliente (evita requerir índice en SP)
     const res = await graphGet(
-      `sites/${sid}/lists/Usuarios/items?$expand=fields&$filter=fields/Email eq '${state.currentUser.email}'&$top=1`
+      'sites/'+sid+'/lists/Usuarios/items?$expand=fields&$top=500'
     ).catch(function(){ return null; });
 
-    if (!res || !res.value || !res.value.length) return; // error de red → no interrumpir
+    if (!res || !res.value) return; // error de red → no interrumpir
 
-    const uFields = res.value[0].fields;
+    const userEmail = (state.currentUser.email||'').toLowerCase();
+    const userItem  = res.value.find(function(i){
+      return (i.fields.Email||i.fields.Title||'').toLowerCase() === userEmail;
+    });
+    if (!userItem) return; // usuario no encontrado → no interrumpir (puede ser error de red)
+
+    const uFields = userItem.fields;
 
     // a) Verificar si el usuario fue desactivado
     if (uFields.Activo === false || uFields.Activo === 0) {
