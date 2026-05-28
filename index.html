@@ -2849,36 +2849,43 @@ async function cfgDoSave(sid){
 }
 
 // ── ELIMINAR ─────────────────────────────────────────────────────
-function cfgDeleteItem(tipo,itemId,nombre){
-  var listas={usuario:'Usuarios',modulo:'Modulos',submodulo:'SubModulos',pantalla:'Pantallas',puesto:'Puestos'};
-  var lista=listas[tipo];if(!lista)return;
-  // Usar modal propio de CFG para no interferir con PedidosEspeciales
-  var bodyHTML=
-    '<p style="color:var(--text);margin-bottom:20px;">Se eliminará <strong>"'+nombre+'"</strong> de la lista <em>'+lista+'</em>.<br>Esta acción no se puede deshacer.</p>'+
+function cfgDeleteItem(tipo, itemId, nombre) {
+  var listas = {usuario:'Usuarios',modulo:'Modulos',submodulo:'SubModulos',pantalla:'Pantallas',puesto:'Puestos'};
+  var lista = listas[tipo]; if (!lista) return;
+  // Guardar en CFG para el confirm (evita problemas de escapado en onclick inline)
+  CFG._pendingDelete = {tipo:tipo, itemId:itemId, lista:lista};
+  var bodyHTML =
+    '<p style="color:var(--text);margin-bottom:20px;">Se eliminará <strong>&ldquo;'+nombre+'&rdquo;</strong> de la lista <em>'+lista+'</em>.<br>Esta acción no se puede deshacer.</p>'+
     '<div style="display:flex;justify-content:flex-end;gap:10px;">'+
-      '<button onclick="cfgCloseModal()" style="padding:9px 20px;border:1px solid var(--border-color);background:none;color:var(--text);border-radius:8px;cursor:pointer;font-size:.85rem;">Cancelar</button>'+
-      '<button onclick="cfgConfirmDelete(''+tipo+'',''+itemId+'',''+lista+'')" style="padding:9px 20px;background:#cc3333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;">🗑️ Eliminar</button>'+
+      '<button onclick="cfgCancelDelete()" style="padding:9px 20px;border:1px solid var(--border-color);background:none;color:var(--text);border-radius:8px;cursor:pointer;font-size:.85rem;">Cancelar</button>'+
+      '<button onclick="cfgConfirmDelete()" style="padding:9px 20px;background:#cc3333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;">🗑️ Eliminar</button>'+
     '</div>';
-  CFG.currentModal='_confirm_delete';
-  document.getElementById('cfg-modal-title').textContent='¿Eliminar registro?';
-  document.getElementById('cfg-modal-body').innerHTML=bodyHTML;
-  // Ocultar el botón Guardar del footer del modal CFG
-  var saveBtn=document.getElementById('cfg-modal-save-btn');
-  if(saveBtn)saveBtn.style.display='none';
-  document.getElementById('cfg-modal-overlay').style.display='flex';
+  CFG.currentModal = '_confirm_delete';
+  document.getElementById('cfg-modal-title').textContent = '¿Eliminar registro?';
+  document.getElementById('cfg-modal-body').innerHTML = bodyHTML;
+  var saveBtn = document.getElementById('cfg-modal-save-btn');
+  if (saveBtn) saveBtn.style.display = 'none';
+  document.getElementById('cfg-modal-overlay').style.display = 'flex';
 }
-async function cfgConfirmDelete(tipo,itemId,lista){
+function cfgCancelDelete() {
+  CFG._pendingDelete = null;
   cfgCloseModal();
-  var saveBtn=document.getElementById('cfg-modal-save-btn');
-  if(saveBtn)saveBtn.style.display='';
-  try{
-    var sid=await cfgEnsureSiteId();var token=await getToken();
-    var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+lista+'/items/'+itemId;
-    var res=await fetch(url,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
-    if(!res.ok&&res.status!==204)throw new Error('Graph DELETE '+res.status);
-    cfgRefreshCurrentTab();
-  }catch(e){alert('Error al eliminar: '+e.message);}
 }
+async function cfgConfirmDelete() {
+  var pending = CFG._pendingDelete;
+  CFG._pendingDelete = null;
+  cfgCloseModal();
+  if (!pending) return;
+  try {
+    var sid = await cfgEnsureSiteId();
+    var token = await getToken();
+    var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+pending.lista+'/items/'+pending.itemId;
+    var res = await fetch(url, {method:'DELETE', headers:{Authorization:'Bearer '+token}});
+    if (!res.ok && res.status !== 204) throw new Error('Graph DELETE ' + res.status);
+    cfgRefreshCurrentTab();
+  } catch(e) { alert('Error al eliminar: ' + e.message); }
+}
+
 function cfgRefreshCurrentTab(){if(CFG.currentTab==='usuarios')cfgLoadUsuarios();else cfgLoadMenuData();}
 
 </script>
