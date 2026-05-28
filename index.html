@@ -2502,7 +2502,7 @@ async function cfgLoadUsuarios() {
     var sel = document.getElementById('cfg-usr-filter-puesto');
     if (sel) {
       var cv = sel.value; sel.innerHTML = '<option value="">Todos los puestos</option>';
-      CFG.puestos.forEach(function(p){ var o=document.createElement('option'); o.value=p.PuestoID||p.Title||''; o.textContent=p.Nombre||p.Title||''; sel.appendChild(o); }); sel.value = cv;
+      CFG.puestos.forEach(function(p){ var o=document.createElement('option'); o.value=p.PuestoID||p.Title||''; o.textContent=p.Title||''; sel.appendChild(o); }); sel.value = cv;
     }
     cfgRenderUsuarios(CFG.usuarios);
   } catch(e) { if(tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>'; }
@@ -2533,7 +2533,7 @@ function cfgRenderUsuarios(list) {
     var nombre = u.NombreCompleto || (!titleIsEmail && u.Title ? u.Title : '') || (email ? email.split('@')[0] : '—');
     var puesto=u.PuestoID||'—';
     var pObj=CFG.puestos.find(function(p){return (p.PuestoID||p.Title||'')===puesto;})||{};
-    var pNombre=pObj.Nombre||puesto;
+    var pNombre=pObj.Title||puesto;
     var activo=u.Activo!==false&&u.Activo!==0;
     var rowBg=i%2===1?'background:var(--bg-hover);':'';
     // Iniciales: campo Iniciales SP → desde nombre → desde email
@@ -2577,7 +2577,7 @@ function cfgRenderModulos(){
   if(!CFG.modulos.length){tb.innerHTML='<tr><td colspan="4" class="cfg-loading">Sin módulos registrados.</td></tr>';return;}
   tb.innerHTML=CFG.modulos.slice().sort(function(a,b){return(a.Orden||0)-(b.Orden||0);}).map(function(m,i){
     return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
-      '<td style="padding:9px 14px;font-weight:600;">'+(m.Nombre||m.Title)+'</td>'+
+      '<td style="padding:9px 14px;font-weight:600;">'+( m.Title||'—')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;font-size:1.2rem;">'+(m.Icono||'📦')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;">'+(m.Orden||'—')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;">'+
@@ -2592,7 +2592,7 @@ function cfgRenderSubModulos(){
   tb.innerHTML=CFG.submodulos.slice().sort(function(a,b){return(a.Orden||0)-(b.Orden||0);}).map(function(s,i){
     var modNombre=(CFG.modulos.find(function(m){return m.Nombre===s.ModuloID||m.Title===s.ModuloID;})||{}).Nombre||s.ModuloID||'—';
     return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
-      '<td style="padding:9px 14px;font-weight:600;">'+(s.Nombre||s.Title)+'</td>'+
+      '<td style="padding:9px 14px;font-weight:600;">'+( s.Title||'—')+'</td>'+
       '<td style="padding:9px 14px;color:var(--text-mid);">'+modNombre+'</td>'+
       '<td style="padding:9px 14px;text-align:center;font-size:1.2rem;">'+(s.Icono||'📁')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;">'+(s.Orden||'—')+'</td>'+
@@ -2607,7 +2607,7 @@ function cfgRenderPantallas(){
   if(!CFG.pantallas.length){tb.innerHTML='<tr><td colspan="5" class="cfg-loading">Sin pantallas registradas.</td></tr>';return;}
   tb.innerHTML=CFG.pantallas.map(function(p,i){
     return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
-      '<td style="padding:9px 14px;font-weight:600;">'+(p.Nombre||p.Title)+'</td>'+
+      '<td style="padding:9px 14px;font-weight:600;">'+( p.Title||'—')+'</td>'+
       '<td style="padding:9px 14px;color:var(--text-mid);">'+(p.ModuloID||'—')+'</td>'+
       '<td style="padding:9px 14px;color:var(--text-mid);">'+(p.SubModuloID||'—')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;"><code style="font-size:.75rem;background:var(--bg-hover);padding:2px 6px;border-radius:4px;">'+(p.PantallaID||p.Title)+'</code></td>'+
@@ -2624,7 +2624,7 @@ function cfgRenderPuestos(){
     var pans=[];try{pans=JSON.parse(p.Pantallas||'[]');}catch(e){}
     var pc=Array.isArray(pans)?pans.length:0;
     return '<tr class="cfg-table-row" style="'+(i%2?'background:var(--bg-hover);':'')+'">'+
-      '<td style="padding:9px 14px;font-weight:600;">'+(p.Nombre||p.Title)+'</td>'+
+      '<td style="padding:9px 14px;font-weight:600;">'+( p.Title||'—')+'</td>'+
       '<td style="padding:9px 14px;text-align:center;">'+(p.EsAdmin||p.esAdmin?'<span class="cfg-badge-admin">Admin</span>':'—')+'</td>'+
       '<td style="padding:9px 14px;color:var(--text-mid);">'+pc+' pantalla'+(pc!==1?'s':'')+' asignadas</td>'+
       '<td style="padding:9px 14px;text-align:center;">'+
@@ -2795,21 +2795,21 @@ async function cfgDoSave(sid){
     // Email = columna propia con el email
     // NombreCompleto = columna adicional por si SP lo tiene separado
     var iniciales=(nombre||'').split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase();
-    fields={Title:nombre,Email:email,NombreCompleto:nombre,Iniciales:iniciales,PuestoID:puesto,Activo:activo,Excepciones:exceps};
+    fields={Title:nombre,Email:email,Iniciales:iniciales,PuestoID:puesto,Activo:activo,Excepciones:exceps};
     lista='Usuarios';
   }else if(t==='modulo'){
     var nombre=((document.getElementById('cfgM-nombre')||{}).value||'').trim();
     var icono=((document.getElementById('cfgM-icono')||{}).value||'').trim();
     var orden=parseInt((document.getElementById('cfgM-orden')||{}).value||'0')||0;
     if(!nombre)throw new Error('El nombre es requerido');
-    fields={Title:nombre,Nombre:nombre,Icono:icono,Orden:orden};lista='Modulos';
+    fields={Title:nombre,Icono:icono,Orden:orden};lista='Modulos';
   }else if(t==='submodulo'){
     var nombre=((document.getElementById('cfgSM-nombre')||{}).value||'').trim();
     var modulo=((document.getElementById('cfgSM-modulo')||{}).value||'').trim();
     var icono=((document.getElementById('cfgSM-icono')||{}).value||'').trim();
     var orden=parseInt((document.getElementById('cfgSM-orden')||{}).value||'0')||0;
     if(!nombre)throw new Error('El nombre es requerido');if(!modulo)throw new Error('Debes seleccionar un módulo');
-    fields={Title:nombre,Nombre:nombre,ModuloID:modulo,Icono:icono,Orden:orden};lista='SubModulos';
+    fields={Title:nombre,ModuloID:modulo,Icono:icono,Orden:orden};lista='SubModulos';
   }else if(t==='pantalla'){
     var nombre=((document.getElementById('cfgP-nombre')||{}).value||'').trim();
     var pantallaID=((document.getElementById('cfgP-pantallaID')||{}).value||'').trim();
@@ -2817,14 +2817,14 @@ async function cfgDoSave(sid){
     var submodulo=((document.getElementById('cfgP-submodulo')||{}).value||'').trim();
     var icono=((document.getElementById('cfgP-icono')||{}).value||'').trim();
     if(!nombre)throw new Error('El nombre es requerido');if(!pantallaID)throw new Error('El PantallaID es requerido');
-    fields={Title:pantallaID,Nombre:nombre,PantallaID:pantallaID,ModuloID:modulo,SubModuloID:submodulo||'',Icono:icono};lista='Pantallas';
+    fields={Title:pantallaID,Nombre:nombre,ModuloID:modulo,SubModuloID:submodulo||'',Icono:icono};lista='Pantallas';
   }else if(t==='puesto'){
     var nombre=((document.getElementById('cfgPT-nombre')||{}).value||'').trim();
     var puestoID=((document.getElementById('cfgPT-puestoID')||{}).value||'').trim();
     var esAdmin=!!((document.getElementById('cfgPT-admin')||{}).checked);
     var pantallas=JSON.stringify(window._cfgPantallasAsig||[]);
     if(!nombre)throw new Error('El nombre es requerido');if(!puestoID)throw new Error('El PuestoID es requerido');
-    fields={Title:puestoID,Nombre:nombre,PuestoID:puestoID,EsAdmin:esAdmin,Pantallas:pantallas};lista='Puestos';
+    fields={Title:puestoID,EsAdmin:esAdmin,Pantallas:pantallas};lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
   if(id)await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields',fields);
   else await graphPost('sites/'+sid+'/lists/'+lista+'/items',{fields:fields});
