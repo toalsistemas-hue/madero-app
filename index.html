@@ -2469,7 +2469,28 @@ async function cfgLoadUsuarios() {
   try {
     var sid = await cfgEnsureSiteId();
     var res = await graphGet('sites/'+sid+'/lists/Usuarios/items?$expand=fields&$top=500');
-    CFG.usuarios = (res.value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    // Graph devuelve los campos con su nombre interno SP (puede diferir del display name)
+    // Normalizar: buscar NombreCompleto por sus posibles nombres internos
+    CFG.usuarios = (res.value||[]).map(function(i){
+      var f = i.fields;
+      // Diagnóstico — ver exactamente qué keys devuelve Graph (quitar cuando funcione)
+      console.log('[CFG Usuarios] item fields keys:', Object.keys(f).join(', '));
+      // SP a veces guarda "NombreCompleto" como "NombreCompleto0" o "_x004e_ombreCompleto" etc.
+      // Buscar el nombre real por patrones conocidos
+      var nombreReal = f.NombreCompleto || f.NombreCompleto0 || f.Nombre_x0020_Completo ||
+                       f.nombre_completo || f.nombreCompleto || '';
+      // Si Graph devolvió con otra clave, buscarla dinámicamente
+      if (!nombreReal) {
+        Object.keys(f).forEach(function(k) {
+          if (!nombreReal && k.toLowerCase().replace(/[^a-z]/g,'').indexOf('nombrecompleto') >= 0) {
+            nombreReal = f[k] || '';
+          }
+        });
+      }
+      var obj = Object.assign({id:i.id}, f);
+      if (nombreReal) obj.NombreCompleto = nombreReal; // normalizar al nombre esperado
+      return obj;
+    });
     var puestosRes = await graphGet('sites/'+sid+'/lists/Puestos/items?$expand=fields&$top=200');
     CFG.puestos = (puestosRes.value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
     var sel = document.getElementById('cfg-usr-filter-puesto');
