@@ -2653,7 +2653,13 @@ function cfgOpenModal(title,bodyHTML,modalType,editId){
   var btn=document.getElementById('cfg-modal-save-btn');if(btn){btn.disabled=false;btn.textContent='Guardar';}
   document.getElementById('cfg-modal-overlay').style.display='flex';
 }
-function cfgCloseModal(){document.getElementById('cfg-modal-overlay').style.display='none';CFG.currentModal=null;CFG.editingId=null;}
+function cfgCloseModal(){
+  document.getElementById('cfg-modal-overlay').style.display='none';
+  CFG.currentModal=null;CFG.editingId=null;
+  // Restaurar botón Guardar por si fue ocultado en modal de confirmación delete
+  var saveBtn=document.getElementById('cfg-modal-save-btn');
+  if(saveBtn){saveBtn.style.display='';saveBtn.disabled=false;saveBtn.textContent='Guardar';}
+}
 
 // ── MODAL: USUARIO ────────────────────────────────────────────────
 function cfgOpenUsuarioModal(itemId){
@@ -2835,7 +2841,7 @@ async function cfgDoSave(sid){
     var esAdmin=!!((document.getElementById('cfgPT-admin')||{}).checked);
     var pantallas=JSON.stringify(window._cfgPantallasAsig||[]);
     if(!nombre)throw new Error('El nombre es requerido');if(!puestoID)throw new Error('El PuestoID es requerido');
-    fields = {Title:puestoID, PuestoID:puestoID, EsAdministrador:esAdmin, Pantallas:pantallas};
+    fields = {Title:nombre, PuestoID:puestoID, EsAdministrador:esAdmin, Pantallas:pantallas};
     lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
   if(id)await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields',fields);
@@ -2846,18 +2852,32 @@ async function cfgDoSave(sid){
 function cfgDeleteItem(tipo,itemId,nombre){
   var listas={usuario:'Usuarios',modulo:'Modulos',submodulo:'SubModulos',pantalla:'Pantallas',puesto:'Puestos'};
   var lista=listas[tipo];if(!lista)return;
-  pendingAction=async function(){
-    try{
-      var sid=await cfgEnsureSiteId();var token=await getToken();
-      var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+lista+'/items/'+itemId;
-      var res=await fetch(url,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
-      if(!res.ok&&res.status!==204)throw new Error('Graph DELETE '+res.status);
-      cfgRefreshCurrentTab();
-    }catch(e){alert('Error al eliminar: '+e.message);}
-  };
-  document.getElementById('modal-title').textContent='¿Eliminar registro?';
-  document.getElementById('modal-body').textContent='Se eliminará "'+nombre+'" de la lista '+lista+'. Esta acción no se puede deshacer.';
-  document.getElementById('modal-overlay').style.display='flex';
+  // Usar modal propio de CFG para no interferir con PedidosEspeciales
+  var bodyHTML=
+    '<p style="color:var(--text);margin-bottom:20px;">Se eliminará <strong>"'+nombre+'"</strong> de la lista <em>'+lista+'</em>.<br>Esta acción no se puede deshacer.</p>'+
+    '<div style="display:flex;justify-content:flex-end;gap:10px;">'+
+      '<button onclick="cfgCloseModal()" style="padding:9px 20px;border:1px solid var(--border-color);background:none;color:var(--text);border-radius:8px;cursor:pointer;font-size:.85rem;">Cancelar</button>'+
+      '<button onclick="cfgConfirmDelete(''+tipo+'',''+itemId+'',''+lista+'')" style="padding:9px 20px;background:#cc3333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;">🗑️ Eliminar</button>'+
+    '</div>';
+  CFG.currentModal='_confirm_delete';
+  document.getElementById('cfg-modal-title').textContent='¿Eliminar registro?';
+  document.getElementById('cfg-modal-body').innerHTML=bodyHTML;
+  // Ocultar el botón Guardar del footer del modal CFG
+  var saveBtn=document.getElementById('cfg-modal-save-btn');
+  if(saveBtn)saveBtn.style.display='none';
+  document.getElementById('cfg-modal-overlay').style.display='flex';
+}
+async function cfgConfirmDelete(tipo,itemId,lista){
+  cfgCloseModal();
+  var saveBtn=document.getElementById('cfg-modal-save-btn');
+  if(saveBtn)saveBtn.style.display='';
+  try{
+    var sid=await cfgEnsureSiteId();var token=await getToken();
+    var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+lista+'/items/'+itemId;
+    var res=await fetch(url,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
+    if(!res.ok&&res.status!==204)throw new Error('Graph DELETE '+res.status);
+    cfgRefreshCurrentTab();
+  }catch(e){alert('Error al eliminar: '+e.message);}
 }
 function cfgRefreshCurrentTab(){if(CFG.currentTab==='usuarios')cfgLoadUsuarios();else cfgLoadMenuData();}
 
