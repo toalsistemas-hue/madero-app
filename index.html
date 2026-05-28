@@ -2835,15 +2835,6 @@ async function cfgDoSave(sid){
     var esAdmin=!!((document.getElementById('cfgPT-admin')||{}).checked);
     var pantallas=JSON.stringify(window._cfgPantallasAsig||[]);
     if(!nombre)throw new Error('El nombre es requerido');if(!puestoID)throw new Error('El PuestoID es requerido');
-    // Detectar el nombre interno real de EsAdmin leyendo los keys del primer puesto cargado
-    var esAdminKey = 'EsAdmin'; // default
-    if(CFG.puestos.length) {
-      Object.keys(CFG.puestos[0]).forEach(function(k) {
-        var kn = k.toLowerCase().replace(/[^a-z]/g,'');
-        if(kn === 'esadmin' || kn === 'administrador' || kn === 'admin') esAdminKey = k;
-      });
-    }
-    console.log('[CFG DoSave Puestos] usando key EsAdmin:', esAdminKey);
     fields = {Title:puestoID, PuestoID:puestoID, EsAdministrador:esAdmin, Pantallas:pantallas};
     lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
