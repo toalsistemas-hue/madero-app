@@ -2498,13 +2498,17 @@ function cfgRenderUsuarios(list) {
   tbody.innerHTML=list.map(function(u,i){
     // Title = email (clave SP); Email = columna adicional; NombreCompleto = nombre visible
     var email=u.Email||u.Title||'';
-    var nombre=u.NombreCompleto||'—';
+    // Si NombreCompleto está vacío (usuario sin ese campo), usar email como nombre visible
+    var nombre=u.NombreCompleto||(email?email.split('@')[0]:'—');
     var puesto=u.PuestoID||'—';
     var pObj=CFG.puestos.find(function(p){return (p.PuestoID||p.Title||'')===puesto;})||{};
     var pNombre=pObj.Nombre||puesto;
     var activo=u.Activo!==false&&u.Activo!==0;
     var rowBg=i%2===1?'background:var(--bg-hover);':'';
-    var iniciales=u.Iniciales||(u.NombreCompleto||'').split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase()||email.substring(0,2).toUpperCase();
+    // Iniciales: desde Iniciales guardado → NombreCompleto → parte local del email
+    var iniciales=u.Iniciales||
+      (u.NombreCompleto?(u.NombreCompleto.split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase()):
+      (email?email.split('@')[0].substring(0,2).toUpperCase():'?'));
     return '<tr class="cfg-table-row" style="'+rowBg+'">'+
       '<td style="padding:9px 14px;"><div style="display:flex;align-items:center;gap:10px;">'+
         '<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0;">'+iniciales+'</div>'+
