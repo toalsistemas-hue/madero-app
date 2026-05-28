@@ -1785,7 +1785,9 @@ async function loadUserFromSharePoint(email) {
     window.CURRENT_USER_NAME = state.currentUser.nombre || email;
     state.isDemoMode = false;
     enterApp();
-    startSessionWatch(); // iniciar vigilancia de sesión
+    startSessionWatch(); // iniciar vigilancia de sesión periódica
+    // Validar versión inmediatamente al iniciar sesión (sin esperar los 30s del watch)
+    checkVersionOnLogin();
 
   } catch(e) {
     // Errores de acceso controlado → NO activar modo demo, mostrar error y cerrar sesión
@@ -2024,6 +2026,32 @@ async function graphPatch(endpoint, body, retry) {
 // ══════════════════════════════════════════════════════════════
 var _sessionWatchTimer = null;
 var APP_VERSION_CURRENT = (document.querySelector('.login-version')||{}).textContent || 'v1.6.4';
+
+// Verificación de versión inmediata al hacer login
+async function checkVersionOnLogin() {
+  if (state.isDemoMode || !state.token) return;
+  try {
+    const sid = await getSiteId();
+    const cfgRes = await graphGet(
+      'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=1'
+    ).catch(function(){ return null; });
+    if (cfgRes && cfgRes.value && cfgRes.value.length) {
+      var f = cfgRes.value[0].fields;
+      var versionSP = (f.Valor || f.Version || f.Title || '').trim();
+      if (versionSP && versionSP !== APP_VERSION_CURRENT) {
+        console.warn('[Login] Nueva versión en SP:', versionSP, '— actual:', APP_VERSION_CURRENT);
+        stopSessionWatch();
+        showSessionExpiredModal(
+          'Hay una nueva versión de la plataforma disponible (' + versionSP + '). ' +
+          'La página se recargará para actualizarte.', true
+        );
+      }
+    }
+  } catch(e) {
+    // Lista Configuracion no existe o error de red — continuar sin interrumpir
+    console.warn('[Login] checkVersionOnLogin ignorado:', e.message);
+  }
+}
 
 function startSessionWatch() {
   if (_sessionWatchTimer) return; // ya corriendo
