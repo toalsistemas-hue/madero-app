@@ -1785,11 +1785,50 @@ async function loadUserFromSharePoint(email) {
     window.CURRENT_USER_NAME = state.currentUser.nombre || email;
     state.isDemoMode = false;
     enterApp();
+    startSessionWatch(); // iniciar vigilancia de sesión
 
   } catch(e) {
+    // Errores de acceso controlado → NO activar modo demo, mostrar error y cerrar sesión
+    if (e.message === 'Usuario desactivado') {
+      console.warn('[Auth] Usuario inactivo — bloqueando acceso');
+      showLoginBlockedScreen('Tu cuenta está desactivada. Contacta al administrador.');
+      return;
+    }
+    if (e.message === 'Usuario no registrado en la plataforma') {
+      console.warn('[Auth] Usuario no registrado en SP');
+      showLoginBlockedScreen('Tu cuenta Microsoft no está registrada en la plataforma.');
+      return;
+    }
+    // Errores de red/SP → activar modo demo como fallback
     console.warn('loadUserFromSharePoint falló, activando modo demo:', e.message);
     loadUserDemo(email);
   }
+}
+
+// Pantalla de bloqueo (usuario inactivo / no registrado)
+function showLoginBlockedScreen(mensaje) {
+  // Cerrar sesión de MSAL silenciosamente
+  try {
+    if (window._msalInstance) window._msalInstance.logoutRedirect({ onRedirectNavigate: () => false });
+  } catch(e) {}
+  // Mostrar pantalla de error sin redirigir
+  const app = document.getElementById('app-shell');
+  if (app) app.style.display = 'none';
+  const loginBox = document.getElementById('login-screen');
+  if (loginBox) loginBox.style.display = 'flex';
+  const errEl = document.getElementById('login-error');
+  if (errEl) {
+    errEl.style.display = 'block';
+    errEl.textContent = '🚫 ' + mensaje;
+    errEl.style.background = '#fdecea';
+    errEl.style.border = '1px solid #cc3333';
+    errEl.style.padding = '12px';
+    errEl.style.borderRadius = '8px';
+  }
+  const btn = document.getElementById('btn-ms-login');
+  if (btn) { btn.disabled = false; }
+  const status = document.getElementById('login-status');
+  if (status) status.textContent = '';
 }
 
 async function loadModulosFromSharePoint(siteId) {
@@ -1980,6 +2019,91 @@ async function graphPatch(endpoint, body, retry) {
 // ═══════════════════════════════════════════════════════
 // ENTRAR A LA APP
 // ═══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// SESSION WATCH — verifica usuario activo + versión cada 5 min
+// ══════════════════════════════════════════════════════════════
+var _sessionWatchTimer = null;
+var APP_VERSION_CURRENT = (document.querySelector('.login-version')||{}).textContent || 'v1.6.4';
+
+function startSessionWatch() {
+  if (_sessionWatchTimer) return; // ya corriendo
+  if (state.isDemoMode) return;   // no aplica en demo
+  // Primera verificación a los 30s de entrar, luego cada 5 min
+  _sessionWatchTimer = setInterval(checkSessionAndVersion, 5 * 60 * 1000);
+  setTimeout(checkSessionAndVersion, 30 * 1000);
+  console.log('[SessionWatch] Iniciado — verificación cada 5 min');
+}
+
+function stopSessionWatch() {
+  if (_sessionWatchTimer) { clearInterval(_sessionWatchTimer); _sessionWatchTimer = null; }
+  console.log('[SessionWatch] Detenido');
+}
+
+async function checkSessionAndVersion() {
+  if (!state.currentUser || state.isDemoMode || !state.token) return;
+  try {
+    const sid = await getSiteId();
+    // Una sola llamada: traer el item del usuario actual
+    const res = await graphGet(
+      `sites/${sid}/lists/Usuarios/items?$expand=fields&$filter=fields/Email eq '${state.currentUser.email}'&$top=1`
+    ).catch(function(){ return null; });
+
+    if (!res || !res.value || !res.value.length) return; // error de red → no interrumpir
+
+    const uFields = res.value[0].fields;
+
+    // a) Verificar si el usuario fue desactivado
+    if (uFields.Activo === false || uFields.Activo === 0) {
+      console.warn('[SessionWatch] Usuario desactivado — cerrando sesión');
+      stopSessionWatch();
+      showSessionExpiredModal('Tu cuenta fue desactivada por el administrador.');
+      return;
+    }
+
+    // b) Verificar versión de la plataforma
+    // Lista "Configuracion" en SP — columna Title (renombrada "Version") contiene el valor de versión
+    // Estructura: un ítem donde Title = "v1.6.4" (o la versión actual)
+    try {
+      const cfgRes = await graphGet(
+        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=1'
+      ).catch(function(){ return null; });
+      if (cfgRes && cfgRes.value && cfgRes.value.length) {
+        const f = cfgRes.value[0].fields;
+        // El valor de versión puede estar en Title, o en columna Valor si existe
+        var versionSP = (f.Valor || f.Version || f.Title || '').trim();
+        if (versionSP && versionSP !== APP_VERSION_CURRENT) {
+          console.warn('[SessionWatch] Nueva versión detectada:', versionSP, '(actual:', APP_VERSION_CURRENT+')');
+          stopSessionWatch();
+          showSessionExpiredModal('Hay una nueva versión de la plataforma disponible (' + versionSP + '). La página se recargará para actualizarte.', true);
+          return;
+        }
+      }
+    } catch(e) { /* lista Configuracion no existe todavía — ignorar */ }
+
+  } catch(e) {
+    console.warn('[SessionWatch] Error en verificación:', e.message);
+    // Nunca interrumpir la app por errores de red en el watch
+  }
+}
+
+function showSessionExpiredModal(mensaje, isVersionUpdate) {
+  isVersionUpdate = isVersionUpdate || false;
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML =
+    '<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:36px 32px;max-width:420px;width:90%;text-align:center;">'+
+      '<div style="font-size:2.5rem;margin-bottom:16px;">'+(isVersionUpdate?'🔄':'🔒')+'</div>'+
+      '<h3 style="margin:0 0 12px;color:var(--text);font-size:1rem;">'+(isVersionUpdate?'Nueva versión disponible':'Sesión finalizada')+'</h3>'+
+      '<p style="color:var(--text-mid);font-size:.875rem;margin-bottom:24px;line-height:1.5;">'+mensaje+'</p>'+
+      '<button onclick="window.location.reload(true)" style="width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:600;">'+
+        (isVersionUpdate?'Actualizar ahora':'Volver al inicio')+
+      '</button>'+
+    '</div>';
+  document.body.appendChild(overlay);
+  // Auto-recarga tras 10s para no dejar la sesión colgada
+  setTimeout(function(){ window.location.reload(true); }, 10000);
+}
+
 function enterApp() {
   const u = state.currentUser;
   document.getElementById('login-screen').style.display = 'none';
@@ -2372,6 +2496,7 @@ async function executeModalAction() {
 // LOGOUT
 // ═══════════════════════════════════════════════════════
 function doLogout() {
+  if (typeof stopSessionWatch === 'function') stopSessionWatch();
   state.currentUser=null; state.token=null;
   state.pedidos=[]; state.filtered=[]; state.modulos=[];
   cachedSiteId=null;
