@@ -2452,6 +2452,17 @@ function cfgShowTab(tab) {
   if (tab==='usuarios') cfgLoadUsuarios();
   if (tab==='menu')     cfgLoadMenuData();
 }
+async function cfgDiagListFields(listName) {
+  try {
+    var sid = await cfgEnsureSiteId();
+    var res = await graphGet('sites/'+sid+'/lists/'+listName+'/columns');
+    var cols = (res.value||[]).map(function(col){
+      return col.name + ' (display: "'+col.displayName+'", readOnly: '+!!col.readOnly+')';
+    });
+    console.log('[CFG Schema] Lista '+listName+' columnas:\n  '+cols.join('\n  '));
+  } catch(e) { console.warn('[CFG Schema] Error leyendo schema de '+listName+':', e.message); }
+}
+
 function cfgShowSubTab(sub) {
   CFG.currentSubTab = sub;
   ['modulos','submodulos','pantallas','puestos'].forEach(function(s) {
@@ -2572,6 +2583,12 @@ async function cfgLoadMenuData() {
     CFG.puestos=(results[3].value||[]).map(function(i){return Object.assign({id:i.id},i.fields);});
     if(CFG.puestos.length) console.log('[CFG Puestos] keys reales de SP:', Object.keys(CFG.puestos[0]).join(', '));
     cfgRenderModulos();cfgRenderSubModulos();cfgRenderPantallas();cfgRenderPuestos();
+    // Diagnóstico: imprimir schema real de todas las listas de configuración
+    cfgDiagListFields('Puestos');
+    cfgDiagListFields('Modulos');
+    cfgDiagListFields('SubModulos');
+    cfgDiagListFields('Pantallas');
+    cfgDiagListFields('Usuarios');
   } catch(e){['mod','submod','pan','pst'].forEach(function(t){var tb=document.getElementById('cfg-'+t+'-tbody');if(tb)tb.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>';});}
 }
 function cfgRenderModulos(){
@@ -2835,8 +2852,21 @@ async function cfgDoSave(sid){
       });
     }
     console.log('[CFG DoSave Puestos] usando key EsAdmin:', esAdminKey);
-    fields={Title:puestoID,Pantallas:pantallas};
-    fields[esAdminKey]=esAdmin;
+    // LOG: ver keys reales de SP antes de guardar
+    console.log('[CFG Puestos] puestos cargados:', CFG.puestos.length);
+    if(CFG.puestos.length) console.log('[CFG Puestos] KEYS REALES:', JSON.stringify(Object.keys(CFG.puestos[0])));
+    // Buscar el key real de EsAdmin y Pantallas dinámicamente
+    var knownKeys = CFG.puestos.length ? Object.keys(CFG.puestos[0]) : [];
+    var esAdminKey = null, pantallasKey = null;
+    knownKeys.forEach(function(k){
+      var kn = k.toLowerCase().replace(/[^a-z]/g,'');
+      if(!esAdminKey && (kn==='esadmin'||kn==='administrador'||kn==='isadmin')) esAdminKey=k;
+      if(!pantallasKey && kn==='pantallas') pantallasKey=k;
+    });
+    console.log('[CFG Puestos] esAdminKey:', esAdminKey, '| pantallasKey:', pantallasKey);
+    fields = {Title: puestoID};
+    if(esAdminKey)   fields[esAdminKey]   = esAdmin;   else fields['EsAdmin']   = esAdmin;
+    if(pantallasKey) fields[pantallasKey] = pantallas; else fields['Pantallas'] = pantallas;
     lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
   if(id)await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields',fields);
