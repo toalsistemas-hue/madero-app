@@ -2522,7 +2522,7 @@ function cfgFilterUsuarios() {
   var puesto=(document.getElementById('cfg-usr-filter-puesto')||{value:''}).value;
   var activo=(document.getElementById('cfg-usr-filter-activo')||{value:''}).value;
   var list=CFG.usuarios;
-  if(q) list=list.filter(function(u){var nm=u.NombreCompleto||(!u.Title||u.Title.indexOf('@')>=0?'':u.Title)||'';var em=u.Email||u.Title||'';return nm.toLowerCase().includes(q)||em.toLowerCase().includes(q);});
+  if(q) list=list.filter(function(u){var nm=(u.Title||'').toLowerCase();var em=(u.Email||'').toLowerCase();return nm.includes(q)||em.includes(q);});
   if(puesto) list=list.filter(function(u){return (u.PuestoID||'')===puesto;});
   if(activo==='1') list=list.filter(function(u){return u.Activo!==false&&u.Activo!==0;});
   if(activo==='0') list=list.filter(function(u){return u.Activo===false||u.Activo===0;});
@@ -2533,14 +2533,9 @@ function cfgRenderUsuarios(list) {
   if(!list.length){tbody.innerHTML='<tr><td colspan="5" class="cfg-loading">No se encontraron usuarios.</td></tr>';if(count)count.textContent='0 usuarios';return;}
   if(count)count.textContent=list.length+' usuario'+(list.length!==1?'s':'');
   tbody.innerHTML=list.map(function(u,i){
-    // En la lista Usuarios:
-    // - Title puede ser el NombreCompleto (si el campo fue renombrado en SP) O el email (si se guardó desde la app)
-    // - Email = columna propia con el email
-    // - NombreCompleto = columna separada (si existe)
-    // Lógica: si Title contiene '@' → es email; si no → es el nombre
-    var titleIsEmail = u.Title && u.Title.indexOf('@') >= 0;
-    var email  = u.Email || (titleIsEmail ? u.Title : '') || '';
-    var nombre = u.NombreCompleto || (!titleIsEmail && u.Title ? u.Title : '') || (email ? email.split('@')[0] : '—');
+    // Title = NombreCompleto (campo renombrado en SP), Email = columna propia
+    var email  = u.Email || '';
+    var nombre = u.Title || (email ? email.split('@')[0] : '—');
     var puesto=u.PuestoID||'—';
     var pObj=CFG.puestos.find(function(p){return (p.PuestoID||p.Title||'')===puesto;})||{};
     var pNombre=pObj.Title||puesto;
@@ -2667,11 +2662,11 @@ function cfgCloseModal(){
 function cfgOpenUsuarioModal(itemId){
   var u=itemId?CFG.usuarios.find(function(x){return x.id===itemId;}):null;
   if(itemId&&!u){cfgLoadUsuarios().then(function(){cfgOpenUsuarioModal(itemId);});return;}
-  var email=u?(u.Title||u.Email||''):''; var nombre=u?(u.NombreCompleto||''):'';
+  var email=u?(u.Email||''):''; var nombre=u?(u.Title||''):'';
   var puesto=u?(u.PuestoID||''):''; var activo=u?(u.Activo!==false&&u.Activo!==0):true;
   var exceps=[];try{exceps=JSON.parse(u?(u.Excepciones||'[]'):'[]');}catch(e){}
   window._cfgExceps=JSON.parse(JSON.stringify(exceps));
-  var puestosOpts=CFG.puestos.map(function(p){return '<option value="'+(p.Title||p.PuestoID||'')+'" '+((p.Title||p.PuestoID)===puesto?'selected':'')+'>'+( p.Nombre||p.Title)+'</option>';}).join('');
+  var puestosOpts=CFG.puestos.map(function(p){var pid=p.PuestoID||'';var pnombre=p.Title||pid;return '<option value="'+pid+'" '+(pid===puesto?'selected':'')+'>'+pnombre+'</option>';}).join('');
   function buildExcRow(ex,idx){
     var panOpts=CFG.pantallas.map(function(p){var pid=p.PantallaID||p.Title||'';return '<option value="'+pid+'" '+(ex.pantallaID===pid?'selected':'')+'>'+(p.Nombre||p.Title)+'</option>';}).join('');
     return '<div class="cfg-excepcion-row" id="excRow'+idx+'">'+
