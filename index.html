@@ -2499,6 +2499,7 @@ async function cfgLoadUsuarios() {
     });
     var puestosRes = await graphGet('sites/'+sid+'/lists/Puestos/items?$expand=fields&$top=200');
     CFG.puestos = (puestosRes.value||[]).map(function(i){ return Object.assign({id:i.id},i.fields); });
+    if(CFG.puestos.length) console.log('[CFG Puestos desde Usuarios] keys reales de SP:', Object.keys(CFG.puestos[0]).join(', '));
     var sel = document.getElementById('cfg-usr-filter-puesto');
     if (sel) {
       var cv = sel.value; sel.innerHTML = '<option value="">Todos los puestos</option>';
@@ -2569,6 +2570,7 @@ async function cfgLoadMenuData() {
     CFG.submodulos=(results[1].value||[]).map(function(i){return Object.assign({id:i.id},i.fields);});
     CFG.pantallas=(results[2].value||[]).map(function(i){return Object.assign({id:i.id},i.fields);});
     CFG.puestos=(results[3].value||[]).map(function(i){return Object.assign({id:i.id},i.fields);});
+    if(CFG.puestos.length) console.log('[CFG Puestos] keys reales de SP:', Object.keys(CFG.puestos[0]).join(', '));
     cfgRenderModulos();cfgRenderSubModulos();cfgRenderPantallas();cfgRenderPuestos();
   } catch(e){['mod','submod','pan','pst'].forEach(function(t){var tb=document.getElementById('cfg-'+t+'-tbody');if(tb)tb.innerHTML='<tr><td colspan="5" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>';});}
 }
@@ -2824,7 +2826,18 @@ async function cfgDoSave(sid){
     var esAdmin=!!((document.getElementById('cfgPT-admin')||{}).checked);
     var pantallas=JSON.stringify(window._cfgPantallasAsig||[]);
     if(!nombre)throw new Error('El nombre es requerido');if(!puestoID)throw new Error('El PuestoID es requerido');
-    fields={Title:puestoID,EsAdmin:esAdmin,Pantallas:pantallas};lista='Puestos';
+    // Detectar el nombre interno real de EsAdmin leyendo los keys del primer puesto cargado
+    var esAdminKey = 'EsAdmin'; // default
+    if(CFG.puestos.length) {
+      Object.keys(CFG.puestos[0]).forEach(function(k) {
+        var kn = k.toLowerCase().replace(/[^a-z]/g,'');
+        if(kn === 'esadmin' || kn === 'administrador' || kn === 'admin') esAdminKey = k;
+      });
+    }
+    console.log('[CFG DoSave Puestos] usando key EsAdmin:', esAdminKey);
+    fields={Title:puestoID,Pantallas:pantallas};
+    fields[esAdminKey]=esAdmin;
+    lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
   if(id)await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields',fields);
   else await graphPost('sites/'+sid+'/lists/'+lista+'/items',{fields:fields});
