@@ -2473,19 +2473,25 @@ async function cfgLoadUsuarios() {
     // Normalizar: buscar NombreCompleto por sus posibles nombres internos
     CFG.usuarios = (res.value||[]).map(function(i){
       var f = i.fields;
-      // Diagnóstico — ver exactamente qué keys devuelve Graph (quitar cuando funcione)
-      console.log('[CFG Usuarios] item fields keys:', Object.keys(f).join(', '));
-      // SP a veces guarda "NombreCompleto" como "NombreCompleto0" o "_x004e_ombreCompleto" etc.
-      // Buscar el nombre real por patrones conocidos
+      // Diagnóstico completo — loguear TODOS los campos para identificar el nombre interno real
+      console.log('[CFG Usuarios] TODOS los campos del item:', JSON.stringify(f));
+      // Graph puede devolver NombreCompleto con distintos nombres internos de SP.
+      // Estrategia: buscar en TODOS los keys el que contenga el valor que esperamos,
+      // o el key cuyo nombre parezca "nombre" ignorando mayúsculas/espacios/guiones.
       var nombreReal = f.NombreCompleto || f.NombreCompleto0 || f.Nombre_x0020_Completo ||
-                       f.nombre_completo || f.nombreCompleto || '';
-      // Si Graph devolvió con otra clave, buscarla dinámicamente
+                       f.nombre_completo || f.nombreCompleto || f.Nombre || '';
+      // Búsqueda dinámica por nombre de key que contenga "nombre"
       if (!nombreReal) {
         Object.keys(f).forEach(function(k) {
-          if (!nombreReal && k.toLowerCase().replace(/[^a-z]/g,'').indexOf('nombrecompleto') >= 0) {
-            nombreReal = f[k] || '';
+          if (!nombreReal) {
+            var kn = k.toLowerCase().replace(/[^a-z]/g,'');
+            if (kn.indexOf('nombre') >= 0 && k !== 'Title') nombreReal = f[k] || '';
           }
         });
+      }
+      // Último recurso: si Title no parece un email, podría ser el nombre
+      if (!nombreReal && f.Title && f.Title.indexOf('@') === -1) {
+        nombreReal = f.Title;
       }
       var obj = Object.assign({id:i.id}, f);
       if (nombreReal) obj.NombreCompleto = nombreReal; // normalizar al nombre esperado
@@ -2506,7 +2512,7 @@ function cfgFilterUsuarios() {
   var puesto=(document.getElementById('cfg-usr-filter-puesto')||{value:''}).value;
   var activo=(document.getElementById('cfg-usr-filter-activo')||{value:''}).value;
   var list=CFG.usuarios;
-  if(q) list=list.filter(function(u){return ((u.NombreCompleto||u.Title||'').toLowerCase().includes(q)||(u.Title||'').toLowerCase().includes(q));});
+  if(q) list=list.filter(function(u){var nm=u.NombreCompleto||(!u.Title||u.Title.indexOf('@')>=0?'':u.Title)||'';var em=u.Email||u.Title||'';return nm.toLowerCase().includes(q)||em.toLowerCase().includes(q);});
   if(puesto) list=list.filter(function(u){return (u.PuestoID||'')===puesto;});
   if(activo==='1') list=list.filter(function(u){return u.Activo!==false&&u.Activo!==0;});
   if(activo==='0') list=list.filter(function(u){return u.Activo===false||u.Activo===0;});
@@ -2517,19 +2523,24 @@ function cfgRenderUsuarios(list) {
   if(!list.length){tbody.innerHTML='<tr><td colspan="5" class="cfg-loading">No se encontraron usuarios.</td></tr>';if(count)count.textContent='0 usuarios';return;}
   if(count)count.textContent=list.length+' usuario'+(list.length!==1?'s':'');
   tbody.innerHTML=list.map(function(u,i){
-    // Title = email (clave SP); Email = columna adicional; NombreCompleto = nombre visible
-    var email=u.Email||u.Title||'';
-    // Si NombreCompleto está vacío (usuario sin ese campo), usar email como nombre visible
-    var nombre=u.NombreCompleto||(email?email.split('@')[0]:'—');
+    // En la lista Usuarios:
+    // - Title puede ser el NombreCompleto (si el campo fue renombrado en SP) O el email (si se guardó desde la app)
+    // - Email = columna propia con el email
+    // - NombreCompleto = columna separada (si existe)
+    // Lógica: si Title contiene '@' → es email; si no → es el nombre
+    var titleIsEmail = u.Title && u.Title.indexOf('@') >= 0;
+    var email  = u.Email || (titleIsEmail ? u.Title : '') || '';
+    var nombre = u.NombreCompleto || (!titleIsEmail && u.Title ? u.Title : '') || (email ? email.split('@')[0] : '—');
     var puesto=u.PuestoID||'—';
     var pObj=CFG.puestos.find(function(p){return (p.PuestoID||p.Title||'')===puesto;})||{};
     var pNombre=pObj.Nombre||puesto;
     var activo=u.Activo!==false&&u.Activo!==0;
     var rowBg=i%2===1?'background:var(--bg-hover);':'';
-    // Iniciales: desde Iniciales guardado → NombreCompleto → parte local del email
+    // Iniciales: campo Iniciales SP → desde nombre → desde email
     var iniciales=u.Iniciales||
-      (u.NombreCompleto?(u.NombreCompleto.split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase()):
-      (email?email.split('@')[0].substring(0,2).toUpperCase():'?'));
+      (nombre && nombre.indexOf('@')<0 ?
+        nombre.split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase() :
+        (email?email.split('@')[0].substring(0,2).toUpperCase():'?'));
     return '<tr class="cfg-table-row" style="'+rowBg+'">'+
       '<td style="padding:9px 14px;"><div style="display:flex;align-items:center;gap:10px;">'+
         '<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0;">'+iniciales+'</div>'+
@@ -2779,9 +2790,12 @@ async function cfgDoSave(sid){
     var activo=!!((document.getElementById('cfgU-activo')||{}).checked);
     var exceps=JSON.stringify(window._cfgExceps||[]);
     if(!email)throw new Error('El email es requerido');if(!nombre)throw new Error('El nombre es requerido');
-    // Title = email (clave SP); Email = columna adicional para compatibilidad; Iniciales = auto-generadas
+    // Guardar AMBAS formas para máxima compatibilidad:
+    // Title = nombre (campo interno renombrado a NombreCompleto en SP)
+    // Email = columna propia con el email
+    // NombreCompleto = columna adicional por si SP lo tiene separado
     var iniciales=(nombre||'').split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase();
-    fields={Title:email,Email:email,NombreCompleto:nombre,Iniciales:iniciales,PuestoID:puesto,Activo:activo,Excepciones:exceps};
+    fields={Title:nombre,Email:email,NombreCompleto:nombre,Iniciales:iniciales,PuestoID:puesto,Activo:activo,Excepciones:exceps};
     lista='Usuarios';
   }else if(t==='modulo'){
     var nombre=((document.getElementById('cfgM-nombre')||{}).value||'').trim();
