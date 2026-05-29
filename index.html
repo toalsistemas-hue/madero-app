@@ -512,7 +512,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.6.4</div>
+    <div class="login-version">v1.6.5</div>
   </div>
 </div>
 
@@ -1445,6 +1445,7 @@ tr:last-child td{border-bottom:none;}
       <div id="cfg-tabs" style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid var(--border-color);padding-bottom:0;">
         <button class="cfg-tab-btn cfg-tab-active" id="cfg-tab-usuarios" onclick="cfgShowTab('usuarios')">👤 Usuarios</button>
         <button class="cfg-tab-btn" id="cfg-tab-menu" onclick="cfgShowTab('menu')">🗂️ Módulos y Accesos</button>
+        <button class="cfg-tab-btn" id="cfg-tab-sesiones" onclick="cfgShowTab('sesiones')">🟢 Sesiones Activas</button>
       </div>
 
       <!-- TAB: USUARIOS -->
@@ -1562,6 +1563,54 @@ tr:last-child td{border-bottom:none;}
         </div>
       </div>
     </div>
+
+      <!-- TAB: SESIONES ACTIVAS -->
+      <div id="cfg-view-sesiones" style="display:none;">
+        <!-- Barra superior -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div id="ses-status-dot" style="width:10px;height:10px;border-radius:50%;background:#28a05a;box-shadow:0 0 6px #28a05a;flex-shrink:0;"></div>
+            <span id="ses-summary" style="font-size:.85rem;color:var(--text-mid);">Cargando sesiones…</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="ses-last-refresh" style="font-size:.75rem;color:var(--text-mid);"></span>
+            <button onclick="cfgLoadSesiones()" class="btn-primary" style="padding:7px 16px;font-size:.8rem;">↻ Actualizar</button>
+          </div>
+        </div>
+
+        <!-- Leyenda -->
+        <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text-mid);">
+            <span style="width:10px;height:10px;border-radius:50%;background:#28a05a;display:inline-block;box-shadow:0 0 5px #28a05a;"></span> Activo (heartbeat &lt; 5 min)
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text-mid);">
+            <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;"></span> Inactivo (5–15 min)
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text-mid);">
+            <span style="width:10px;height:10px;border-radius:50%;background:var(--text-mid);display:inline-block;"></span> Desconectado (&gt;15 min / logout)
+          </div>
+        </div>
+
+        <!-- Tabla -->
+        <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+            <thead>
+              <tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Usuario</th>
+                <th style="padding:10px 14px;text-align:left;">Puesto</th>
+                <th style="padding:10px 14px;text-align:center;">Estado</th>
+                <th style="padding:10px 14px;text-align:center;">Último Login</th>
+                <th style="padding:10px 14px;text-align:center;">Última Actividad</th>
+                <th style="padding:10px 14px;text-align:center;">Último Cierre</th>
+              </tr>
+            </thead>
+            <tbody id="cfg-ses-tbody">
+              <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="cfg-ses-count" style="margin-top:8px;font-size:.75rem;color:var(--text-mid);"></div>
+      </div>
 
     <!-- MODAL UNIVERSAL DE CONFIGURACIÓN -->
     <div id="cfg-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;justify-content:center;align-items:flex-start;padding-top:60px;overflow-y:auto;">
@@ -1784,7 +1833,9 @@ async function loadUserFromSharePoint(email) {
     // Global variable for quick access anywhere in the app
     window.CURRENT_USER_NAME = state.currentUser.nombre || email;
     state.isDemoMode = false;
+    if (window._cachedSpItemId) state.currentUser._spItemId = window._cachedSpItemId;
     enterApp();
+    markSessionLogin(); // registrar hora de login en SP
     startSessionWatch(); // iniciar vigilancia de sesión periódica
     // Validar versión inmediatamente al iniciar sesión (sin esperar los 30s del watch)
     checkVersionOnLogin();
@@ -1936,7 +1987,7 @@ function loadUserDemo(email) {
 // ═══════════════════════════════════════════════════════
 let cachedSiteId = null;
 async function getSiteId() {
-  if (cachedSiteId) return cachedSiteId;
+  if (cachedSiteId) { window._cachedSiteId = cachedSiteId; return cachedSiteId; }
   const host = 'maderoequipos.sharepoint.com';
   const path = '/sites/AutomatizacionMadero';
   const res  = await graphGet(`sites/${host}:${path}`);
@@ -2025,7 +2076,8 @@ async function graphPatch(endpoint, body, retry) {
 // SESSION WATCH — verifica usuario activo + versión cada 5 min
 // ══════════════════════════════════════════════════════════════
 var _sessionWatchTimer = null;
-var APP_VERSION_CURRENT = (document.querySelector('.login-version')||{}).textContent || 'v1.6.4';
+var _heartbeatTimer    = null;
+var APP_VERSION_CURRENT = (document.querySelector('.login-version')||{}).textContent || 'v1.6.5';
 
 // Verificación de versión inmediata al hacer login
 async function checkVersionOnLogin() {
@@ -2056,15 +2108,71 @@ async function checkVersionOnLogin() {
 function startSessionWatch() {
   if (_sessionWatchTimer) return; // ya corriendo
   if (state.isDemoMode) return;   // no aplica en demo
-  // Primera verificación a los 30s de entrar, luego cada 5 min
+  // Verificación de sesión/versión cada 5 min
   _sessionWatchTimer = setInterval(checkSessionAndVersion, 5 * 60 * 1000);
   setTimeout(checkSessionAndVersion, 30 * 1000);
-  console.log('[SessionWatch] Iniciado — verificación cada 5 min');
+  // Heartbeat cada 3 min — registra actividad en SP
+  sendHeartbeat(); // primer heartbeat inmediato al entrar
+  _heartbeatTimer = setInterval(sendHeartbeat, 3 * 60 * 1000);
+  // Marcar cierre al salir de la página (best-effort)
+  window.addEventListener('beforeunload', markSessionClosed);
+  console.log('[SessionWatch] Iniciado — heartbeat 3min, verificación 5min');
 }
 
 function stopSessionWatch() {
   if (_sessionWatchTimer) { clearInterval(_sessionWatchTimer); _sessionWatchTimer = null; }
+  if (_heartbeatTimer)    { clearInterval(_heartbeatTimer);    _heartbeatTimer = null; }
+  window.removeEventListener('beforeunload', markSessionClosed);
   console.log('[SessionWatch] Detenido');
+}
+
+// ── HEARTBEAT & SESIÓN ───────────────────────────────────────────
+async function sendHeartbeat() {
+  if (!state.currentUser || state.isDemoMode || !state.token) return;
+  try {
+    var sid = await getSiteId();
+    var iid = state.currentUser._spItemId;
+    if (!iid) return; // no tenemos el item ID de SP
+    var now = new Date().toISOString();
+    await graphPatch('sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields', {
+      UltimaActividad: now,
+      SesionActiva: true
+    });
+  } catch(e) { /* silencioso — no interrumpir la app */ }
+}
+
+async function markSessionLogin() {
+  if (!state.currentUser || state.isDemoMode || !state.token) return;
+  try {
+    var sid = await getSiteId();
+    var iid = state.currentUser._spItemId;
+    if (!iid) return;
+    var now = new Date().toISOString();
+    await graphPatch('sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields', {
+      UltimoLogin:      now,
+      UltimaActividad:  now,
+      SesionActiva:     true
+    });
+  } catch(e) { /* silencioso */ }
+}
+
+function markSessionClosed() {
+  // beforeunload — usar sendBeacon para garantizar envío aunque la página se cierre
+  if (!state.currentUser || state.isDemoMode || !state.token || !state.currentUser._spItemId) return;
+  try {
+    var sid = window._cachedSiteId || null; // usar el siteId ya cacheado
+    if (!sid) return;
+    var iid = state.currentUser._spItemId;
+    var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields';
+    var body = JSON.stringify({ SesionActiva: false, UltimoCierre: new Date().toISOString() });
+    // sendBeacon no soporta PATCH con auth header — usar fetch keep-alive como fallback
+    fetch(url, {
+      method: 'PATCH',
+      headers: { 'Authorization': 'Bearer '+state.token, 'Content-Type': 'application/json' },
+      body: body,
+      keepalive: true
+    }).catch(function(){});
+  } catch(e) {}
 }
 
 async function checkSessionAndVersion() {
@@ -2096,7 +2204,7 @@ async function checkSessionAndVersion() {
 
     // b) Verificar versión de la plataforma
     // Lista "Configuracion" en SP — columna Title (renombrada "Version") contiene el valor de versión
-    // Estructura: un ítem donde Title = "v1.6.4" (o la versión actual)
+    // Estructura: un ítem donde Title = "v1.6.5" (o la versión actual)
     try {
       const cfgRes = await graphGet(
         'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=1'
@@ -2530,6 +2638,17 @@ async function executeModalAction() {
 // LOGOUT
 // ═══════════════════════════════════════════════════════
 function doLogout() {
+  // Marcar cierre de sesión en SP antes de limpiar estado
+  if (state.currentUser && !state.isDemoMode && state.token && state.currentUser._spItemId) {
+    try {
+      var sid = window._cachedSiteId || null;
+      if (sid) {
+        graphPatch('sites/'+sid+'/lists/Usuarios/items/'+state.currentUser._spItemId+'/fields', {
+          SesionActiva: false, UltimoCierre: new Date().toISOString()
+        }).catch(function(){});
+      }
+    } catch(e) {}
+  }
   if (typeof stopSessionWatch === 'function') stopSessionWatch();
   state.currentUser=null; state.token=null;
   state.pedidos=[]; state.filtered=[]; state.modulos=[];
@@ -2603,13 +2722,14 @@ var CFG = { usuarios:[], puestos:[], modulos:[], submodulos:[], pantallas:[], cu
 // ── TAB NAVIGATION ────────────────────────────────────────────────
 function cfgShowTab(tab) {
   CFG.currentTab = tab;
-  ['usuarios','menu'].forEach(function(t) {
+  ['usuarios','menu','sesiones'].forEach(function(t) {
     var el = document.getElementById('cfg-view-'+t); var btn = document.getElementById('cfg-tab-'+t);
     if (el) el.style.display = (t===tab)?'':'none';
     if (btn) btn.classList.toggle('cfg-tab-active', t===tab);
   });
   if (tab==='usuarios') cfgLoadUsuarios();
   if (tab==='menu')     cfgLoadMenuData();
+  if (tab==='sesiones') cfgLoadSesiones();
 }
 async function cfgDiagListFields(listName) {
   try {
@@ -3044,7 +3164,102 @@ async function cfgConfirmDelete() {
   } catch(e) { alert('Error al eliminar: ' + e.message); }
 }
 
-function cfgRefreshCurrentTab(){if(CFG.currentTab==='usuarios')cfgLoadUsuarios();else cfgLoadMenuData();}
+function cfgRefreshCurrentTab(){
+  if(CFG.currentTab==='usuarios') cfgLoadUsuarios();
+  else if(CFG.currentTab==='menu') cfgLoadMenuData();
+  else if(CFG.currentTab==='sesiones') cfgLoadSesiones();
+}
+
+// ── SESIONES ACTIVAS ──────────────────────────────────────────────
+async function cfgLoadSesiones() {
+  var tbody  = document.getElementById('cfg-ses-tbody');
+  var count  = document.getElementById('cfg-ses-count');
+  var sumEl  = document.getElementById('ses-summary');
+  var refEl  = document.getElementById('ses-last-refresh');
+  var dotEl  = document.getElementById('ses-status-dot');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando sesiones…</td></tr>';
+
+  try {
+    var sid = await cfgEnsureSiteId();
+    var res = await graphGet('sites/'+sid+'/lists/Usuarios/items?$expand=fields&$top=500');
+    var usuarios = (res.value||[]).map(function(i){ return Object.assign({id:i.id}, i.fields); });
+
+    var now = new Date();
+    var activos = 0, inactivos = 0;
+
+    tbody.innerHTML = usuarios.map(function(u, i) {
+      var nombre  = u.Title || u.Email || '—';
+      var email   = u.Email || '—';
+      var puesto  = u.PuestoID || '—';
+      var rowBg   = i%2===1 ? 'background:var(--bg-hover);' : '';
+
+      // Calcular estado por UltimaActividad
+      var estado = 'desconectado';
+      var minutos = null;
+      if (u.UltimaActividad) {
+        var last = new Date(u.UltimaActividad);
+        minutos = Math.round((now - last) / 60000);
+        if (u.SesionActiva === false) estado = 'desconectado';
+        else if (minutos < 5)  estado = 'activo';
+        else if (minutos < 15) estado = 'inactivo';
+        else                   estado = 'desconectado';
+      }
+
+      if (estado === 'activo')   activos++;
+      if (estado === 'inactivo') inactivos++;
+
+      var dotColor = estado==='activo' ? '#28a05a' : estado==='inactivo' ? '#f59e0b' : 'var(--text-mid)';
+      var dotGlow  = estado==='activo' ? 'box-shadow:0 0 6px #28a05a;' : '';
+      var estadoBadge =
+        '<div style="display:flex;align-items:center;justify-content:center;gap:6px;">'+
+          '<span style="width:9px;height:9px;border-radius:50%;background:'+dotColor+';flex-shrink:0;'+dotGlow+'"></span>'+
+          '<span style="font-size:.78rem;color:'+dotColor+';">'+
+            (estado==='activo'?'Activo':estado==='inactivo'?'Inactivo':'Desconectado')+
+            (minutos!==null && estado!=='desconectado' ? ' ('+minutos+'m)':'') +
+          '</span>'+
+        '</div>';
+
+      function fmtDate(iso) {
+        if (!iso) return '<span style="color:var(--text-mid);">—</span>';
+        var d = new Date(iso);
+        return '<span style="font-size:.75rem;">'+
+          d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+' '+
+          d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})+
+        '</span>';
+      }
+
+      return '<tr style="'+rowBg+'">'+
+        '<td style="padding:9px 14px;"><div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;'+
+               'display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">'+
+            (u.Iniciales||(nombre.substring(0,2).toUpperCase()))+
+          '</div>'+
+          '<div><div style="font-weight:600;font-size:.82rem;">'+nombre+'</div>'+
+          '<div style="font-size:.72rem;color:var(--text-mid);">'+email+'</div></div>'+
+        '</div></td>'+
+        '<td style="padding:9px 14px;color:var(--text-mid);font-size:.8rem;">'+puesto+'</td>'+
+        '<td style="padding:9px 14px;text-align:center;">'+estadoBadge+'</td>'+
+        '<td style="padding:9px 14px;text-align:center;">'+fmtDate(u.UltimoLogin)+'</td>'+
+        '<td style="padding:9px 14px;text-align:center;">'+fmtDate(u.UltimaActividad)+'</td>'+
+        '<td style="padding:9px 14px;text-align:center;">'+fmtDate(u.UltimoCierre)+'</td>'+
+      '</tr>';
+    }).join('');
+
+    // Resumen
+    var total = usuarios.length;
+    if (sumEl) sumEl.textContent = activos + ' activo' + (activos!==1?'s':'') +
+      (inactivos ? ', ' + inactivos + ' inactivo'+(inactivos!==1?'s':'') : '') +
+      ' — ' + total + ' usuario'+(total!==1?'s':'') + ' en total';
+    if (dotEl) dotEl.style.background = activos>0 ? '#28a05a' : 'var(--text-mid)';
+    if (dotEl) dotEl.style.boxShadow  = activos>0 ? '0 0 6px #28a05a' : 'none';
+    if (count) count.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-MX');
+    if (refEl) refEl.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-MX');
+
+  } catch(e) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#cc3333;">Error: '+e.message+'</td></tr>';
+  }
+}
 
 </script>
 
