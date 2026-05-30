@@ -2135,9 +2135,9 @@ async function sendHeartbeat() {
     var iid = state.currentUser._spItemId;
     if (!iid) return; // no tenemos el item ID de SP
     var now = new Date().toISOString();
+    // Solo actualizar timestamp — evita conflictos con campo Sí/No de SP
     await graphPatch('sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields', {
-      UltimaActividad: now,
-      SesionActiva: true
+      UltimaActividad: now
     });
   } catch(e) { /* silencioso — no interrumpir la app */ }
 }
@@ -2149,10 +2149,10 @@ async function markSessionLogin() {
     var iid = state.currentUser._spItemId;
     if (!iid) return;
     var now = new Date().toISOString();
+    // Registrar login y actividad inicial
     await graphPatch('sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields', {
-      UltimoLogin:      now,
-      UltimaActividad:  now,
-      SesionActiva:     true
+      UltimoLogin:     now,
+      UltimaActividad: now
     });
   } catch(e) { /* silencioso */ }
 }
@@ -2165,7 +2165,8 @@ function markSessionClosed() {
     if (!sid) return;
     var iid = state.currentUser._spItemId;
     var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/Usuarios/items/'+iid+'/fields';
-    var body = JSON.stringify({ SesionActiva: false, UltimoCierre: new Date().toISOString() });
+    var now = new Date().toISOString();
+    var body = JSON.stringify({ UltimoCierre: now, UltimaActividad: now });
     // sendBeacon no soporta PATCH con auth header — usar fetch keep-alive como fallback
     fetch(url, {
       method: 'PATCH',
@@ -2645,7 +2646,7 @@ function doLogout() {
       var sid = window._cachedSiteId || null;
       if (sid) {
         graphPatch('sites/'+sid+'/lists/Usuarios/items/'+state.currentUser._spItemId+'/fields', {
-          SesionActiva: false, UltimoCierre: new Date().toISOString()
+          UltimoCierre: new Date().toISOString()
         }).catch(function(){});
       }
     } catch(e) {}
@@ -3199,12 +3200,15 @@ async function cfgLoadSesiones() {
       var estado = 'desconectado';
       var minutos = null;
       if (u.UltimaActividad) {
-        var last = new Date(u.UltimaActividad);
+        var last    = new Date(u.UltimaActividad);
+        var cierre  = u.UltimoCierre ? new Date(u.UltimoCierre) : null;
         minutos = Math.round((now - last) / 60000);
-        if (u.SesionActiva === false) estado = 'desconectado';
-        else if (minutos < 5)  estado = 'activo';
-        else if (minutos < 15) estado = 'inactivo';
-        else                   estado = 'desconectado';
+        // Desconectado si cerró sesión después de la última actividad
+        if (cierre && cierre > last) {
+          estado = 'desconectado';
+        } else if (minutos < 5)  { estado = 'activo'; }
+        else if (minutos < 15)   { estado = 'inactivo'; }
+        else                     { estado = 'desconectado'; }
       }
 
       if (estado === 'activo')   activos++;
