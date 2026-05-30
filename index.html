@@ -1829,11 +1829,12 @@ async function loadUserFromSharePoint(email) {
       puesto:    pFields.NombrePuesto || pFields.Title || uFields.PuestoID,
       esAdmin:   pFields.EsAdministrador === true || pFields.EsAdministrador === 'true',
       pantallas: pantallasMap,
+      _spItemId: usuarioItem.id,  // ID del item en SP — necesario para heartbeat/sesiones
     };
-    // Global variable for quick access anywhere in the app
+    window._cachedSiteId  = siteId;       // cachear para beforeunload
     window.CURRENT_USER_NAME = state.currentUser.nombre || email;
     state.isDemoMode = false;
-    if (window._cachedSpItemId) state.currentUser._spItemId = window._cachedSpItemId;
+    console.log('[Auth] _spItemId:', usuarioItem.id);
     enterApp();
     markSessionLogin(); // registrar hora de login en SP
     startSessionWatch(); // iniciar vigilancia de sesión periódica
