@@ -2478,8 +2478,8 @@ function updateKPIs() {
   document.getElementById('ped-kpi-total').textContent     = p.length;
   document.getElementById('kpi-aut').textContent      = p.filter(x=>x.Estatus==='Autorizado').length;
   document.getElementById('kpi-pend').textContent     = p.filter(x=>x.Estatus==='Pendiente').length;
-  document.getElementById('kpi-rech').textContent     = p.filter(x=>x.Estatus==='Rechazado').length;
-  document.getElementById('kpi-pagopend').textContent = p.filter(x=>x.CondicionPago==='Pendiente').length;
+  document.getElementById('kpi-rech').textContent     = p.filter(x=>x.Estatus==='Rechazado'||x.Estatus==='Cancelado').length;
+  document.getElementById('kpi-pagopend').textContent = p.filter(x=>x.CondicionPago==='Pendiente' && x.Estatus==='Pendiente').length;
 }
 
 function filterPedidos() {
@@ -2491,7 +2491,7 @@ function filterPedidos() {
     const mP = !pago || (pago==='Pendiente'&&p.CondicionPago==='Pendiente')||(pago==='OK'&&p.CondicionPago==='OK');
     const mT = tab==='proceso'    ? p.Estatus==='Pendiente'
              : tab==='autorizado' ? p.Estatus==='Autorizado'
-             :                      p.Estatus==='Rechazado';
+             :                      (p.Estatus==='Rechazado'||p.Estatus==='Cancelado');
     return mQ&&mP&&mT;
   });
   renderPedidos();
@@ -2546,11 +2546,27 @@ function buildCard(p) {
   div.className=`pedido-card ${cls}`;
   div.dataset.id=p.ID;
 
-  const eBadge = p.Estatus==='Autorizado'?`<span class="badge badge-auth">✓ Autorizado</span>`:
-                 p.Estatus==='Rechazado' ?`<span class="badge badge-rech">✗ Rechazado</span>`:
-                                          `<span class="badge badge-pend">● Pendiente</span>`;
+  // Evaluar si el pedido Pendiente cumple todos los requisitos
+  function campoOK(val) { return !val || val==='OK' || val==='No aplica'; }
+  const listoIniciar = p.Estatus==='Pendiente' &&
+    campoOK(p.CondicionPago) &&
+    campoOK(p.JuntaTecnica) &&
+    campoOK(p.PedidoVenta) &&
+    campoOK(p.OrdenVenta) &&
+    campoOK(p.PedidoVentaCambiosInternos) &&
+    campoOK(p.Numeracion);
+  const eBadge = p.Estatus==='Autorizado'
+    ? `<span class="badge badge-auth">✓ Autorizado</span>`
+    : p.Estatus==='Rechazado'||p.Estatus==='Cancelado'
+    ? `<span class="badge badge-rech">✗ Cancelado</span>`
+    : listoIniciar
+    ? `<span class="badge" style="background:rgba(16,185,129,.18);color:#10b981;border:1px solid #10b981;">✅ Listo para iniciar</span>`
+    : `<span class="badge" style="background:rgba(239,68,68,.13);color:#ef4444;border:1px solid #ef4444;">🚫 No iniciar</span>`;
   const pBadge = p.CondicionPago==='OK'?`<span class="badge badge-ok">💳 Pago ✓</span>`:`<span class="badge badge-pend">💳 Pago ?</span>`;
-  const jBadge = p.JuntaTecnica==='No aplica'?'':p.JuntaTecnica==='OK'?`<span class="badge badge-ok">🔧 Junta ✓</span>`:`<span class="badge badge-pend">🔧 Junta ?</span>`;
+  const jBadge = p.JuntaTecnica==='No aplica' ? ''
+    : p.JuntaTecnica==='OK'         ? `<span class="badge badge-ok">🔧 Junta ✓</span>`
+    : p.JuntaTecnica==='Programada' ? `<span class="badge" style="background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid #f59e0b;">🗓️ Junta programada</span>`
+    :                                  `<span class="badge badge-pend">🔧 Junta ?</span>`;
   const fecha  = p.FechaDeteccion ? new Date(p.FechaDeteccion).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}) : '—';
   const accionInfo = p.AccionadoPor&&p.FechaAccion ? `<span class="accion-info">${p.AccionadoPor} · ${new Date(p.FechaAccion).toLocaleDateString('es-MX')}</span>` : '';
 
@@ -2559,7 +2575,7 @@ function buildCard(p) {
   const canAct = p.Estatus==='Pendiente' && nivel==='completo';
   const actions = canAct
     ? `<button class="btn btn-autorizar" onclick="confirmAction(${p.ID},'autorizar','${(p.NumeroPedido||'').replace(/'/g,"\'")}',event)">✓ Autorizar</button>
-       <button class="btn btn-rechazar"  onclick="confirmAction(${p.ID},'rechazar','${(p.NumeroPedido||'').replace(/'/g,"\'")}',event)">✗ Rechazar</button>`
+       <button class="btn btn-rechazar"  onclick="confirmAction(${p.ID},'rechazar','${(p.NumeroPedido||'').replace(/'/g,"\'")}',event)">✗ Cancelar</button>`
     : nivel==='lectura' && p.Estatus==='Pendiente'
     ? `<span style="font-size:.75rem;color:var(--text-dim)">Solo lectura</span>`
     : `<button class="btn btn-info" onclick="event.stopPropagation()">Ver detalle</button>`;
@@ -2597,10 +2613,10 @@ function toggleCard(h) { h.parentElement.classList.toggle('expanded'); }
 function confirmAction(id, action, numero, evt) {
   evt&&evt.stopPropagation();
   const isAut=action==='autorizar';
-  document.getElementById('modal-title').textContent=isAut?'¿Autorizar pedido?':'¿Rechazar pedido?';
-  document.getElementById('modal-body').textContent=`Pedido ${numero} — cambiará estatus a ${isAut?'Autorizado':'Rechazado'} y notificará al equipo.`;
+  document.getElementById('modal-title').textContent=isAut?'¿Autorizar pedido?':'¿Cancelar pedido?';
+  document.getElementById('modal-body').textContent=`Pedido ${numero} — cambiará estatus a ${isAut?'Autorizado':'Cancelado'} y notificará al equipo.`;
   const btn=document.getElementById('modal-confirm-btn');
-  btn.textContent=isAut?'✓ Confirmar autorización':'✗ Confirmar rechazo';
+  btn.textContent=isAut?'✓ Confirmar autorización':'✗ Confirmar cancelación';
   btn.className=isAut?'modal-confirm':'modal-confirm danger';
   pendingAction={id,action,numero};
   document.getElementById('modal-overlay').classList.add('active');
@@ -2616,7 +2632,7 @@ async function executeModalAction() {
   const actionCopy = { ...pendingAction }; // copiar antes de cerrar modal
   closeModal();
   const {id,action}=actionCopy;
-  const newEstatus=action==='autorizar'?'Autorizado':'Rechazado';
+  const newEstatus=action==='autorizar'?'Autorizado':'Cancelado';
   const idx=state.pedidos.findIndex(p=>p.ID===id||p.ID===String(id));
   if (idx>=0) {
     state.pedidos[idx].Estatus=newEstatus;
