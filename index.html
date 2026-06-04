@@ -1789,12 +1789,13 @@ async function loginMicrosoft() {
 async function loadUserFromSharePoint(email) {
   try {
     const siteId = await getSiteId();
+    console.log('[Login] Buscando email:', email);
 
     // 1. Buscar usuario en lista Usuarios
-    // Traer todos los usuarios y filtrar en cliente (evita requerir índice en SharePoint)
     const usuariosRes = await graphGet(
       `sites/${siteId}/lists/Usuarios/items?$expand=fields&$top=500`
     );
+    console.log('[Login] Emails en SP:', (usuariosRes.value||[]).map(i => i.fields.Email));
     const usuarioItem = (usuariosRes.value||[]).find(i =>
       (i.fields.Email||'').toLowerCase() === email.toLowerCase()
     );
