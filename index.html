@@ -1729,7 +1729,21 @@ async function initMsal() {
 
     if (redirectResult && redirectResult.accessToken) {
       state.token = redirectResult.accessToken;
-      await loadUserFromSharePoint(redirectResult.account.username.toLowerCase());
+      // Los usuarios externos (Guest) tienen username como:
+      // karim_maderodairysystems.com#EXT#@maderoequipos.com
+      // Hay que convertirlo a: karim@maderodairysystems.com
+      var rawEmail = redirectResult.account.username.toLowerCase();
+      var emailParaBuscar = rawEmail;
+      if (rawEmail.includes('#ext#')) {
+        // Extraer la parte antes de #EXT# y convertir _ a @ (solo el primer _)
+        var sinExt = rawEmail.split('#ext#')[0];
+        // El formato es: nombre_dominio.com → nombre@dominio.com
+        var lastUnderscore = sinExt.lastIndexOf('_');
+        if (lastUnderscore > 0) {
+          emailParaBuscar = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+        }
+      }
+      await loadUserFromSharePoint(emailParaBuscar);
     }
   } catch(e) {
     console.warn('initMsal error:', e);
