@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%231a3a5c'/><text y='72' x='50' text-anchor='middle' font-size='62' font-family='Arial' font-weight='bold' fill='white'>M</text></svg>">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -504,13 +505,13 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     </button>
     <div class="login-status" id="login-status">Inicializando…</div>
 
-    <!-- Fallback demo -->
-    <div class="login-divider">o modo demo</div>
-    <div class="field-label">Usuario</div>
-    <input type="email" id="login-email" class="field-input" placeholder="tu.nombre@maderoequipos.com">
-    <div class="field-label">Contraseña</div>
-    <input type="password" id="login-pass" class="field-input" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
-    <button class="btn-login" onclick="loginDemo()">Entrar en modo demo</button>
+    <!-- Fallback demo (oculto) -->
+    <div class="login-divider" style="display:none;">o modo demo</div>
+    <div class="field-label" style="display:none;">Usuario</div>
+    <input type="email" id="login-email" class="field-input" style="display:none;" placeholder="tu.nombre@maderoequipos.com">
+    <div class="field-label" style="display:none;">Contraseña</div>
+    <input type="password" id="login-pass" class="field-input" style="display:none;" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
+    <button class="btn-login" onclick="loginDemo()" style="display:none;">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
     <div class="login-version">v1.6.5</div>
   </div>
@@ -2702,6 +2703,9 @@ function doLogout() {
   cachedSiteId=null;
   document.getElementById('app-shell').style.display='none';
   document.getElementById('login-screen').style.display='flex';
+  // Ocultar iframe del cotizador para que no tape la pantalla de login
+  var ifrm = document.getElementById('cot-iframe');
+  if (ifrm) ifrm.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
