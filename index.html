@@ -1789,13 +1789,11 @@ async function loginMicrosoft() {
 async function loadUserFromSharePoint(email) {
   try {
     const siteId = await getSiteId();
-    console.log('[Login] Buscando email:', email);
 
     // 1. Buscar usuario en lista Usuarios
     const usuariosRes = await graphGet(
       `sites/${siteId}/lists/Usuarios/items?$expand=fields&$top=500`
     );
-    console.log('[Login] Emails en SP:', (usuariosRes.value||[]).map(i => i.fields.Email));
     const usuarioItem = (usuariosRes.value||[]).find(i =>
       (i.fields.Email||'').toLowerCase() === email.toLowerCase()
     );
@@ -2051,12 +2049,25 @@ async function graphGet(endpoint, retry) {
   const url   = endpoint.startsWith('https') ? endpoint : `https://graph.microsoft.com/v1.0/${endpoint}`;
   const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
 
-  // Si 401 y no hemos reintentado — renovar token y reintentar una vez
-  if (res.status === 401 && !retry) {
-    console.warn('Token expirado (401), renovando silenciosamente...');
+  // Si 401 o 403 y no hemos reintentado — limpiar cache y renovar token
+  if ((res.status === 401 || res.status === 403) && !retry) {
+    console.warn('Token sin permisos ('+res.status+'), renovando...');
     state.token = null;
-    await getToken(true);          // forceRefresh=true
-    return graphGet(endpoint, true); // reintentar
+    // Limpiar cache de MSAL para forzar re-consent
+    try {
+      if (state.msalInstance) {
+        const accounts = state.msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          state.token = await state.msalInstance.acquireTokenSilent({
+            scopes: CONFIG.scopes,
+            account: accounts[0],
+            forceRefresh: true
+          }).then(r => r.accessToken).catch(() => null);
+        }
+      }
+    } catch(e) {}
+    if (state.token) return graphGet(endpoint, true);
+    throw new Error(`Graph ${res.status}: ${endpoint}`);
   }
 
   // Si 503/429 (throttling SharePoint) — esperar 2s y reintentar una vez
