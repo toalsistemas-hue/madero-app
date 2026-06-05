@@ -5782,13 +5782,18 @@ async function appFlowGet(lista, top) {
 }
 
 async function appFlowEscribir(lista, operacion, itemId, datos) {
+  var payload = { lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos };
+  console.log('[FlowEscribir] '+lista+' op='+operacion+' itemId='+itemId+' datos_keys='+Object.keys(datos||{}).join(','));
   var res = await fetch(APP_FLOW_URL_ESCRIBIR, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos })
+    body: JSON.stringify(payload)
   });
+  console.log('[FlowEscribir] respuesta HTTP: '+res.status);
   if (!res.ok) throw new Error('AppFlow ESCRIBIR ' + lista + ' ' + res.status);
-  return res.json();
+  var result = await res.json();
+  console.log('[FlowEscribir] resultado:', JSON.stringify(result).slice(0,200));
+  return result;
 }
 
 async function appLoadDataFromSP() {
