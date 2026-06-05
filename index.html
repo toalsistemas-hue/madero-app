@@ -2503,6 +2503,7 @@ async function loadPedidosData() {
     const res    = await flowGet('PedidosEspeciales', '', 500);
     state.pedidos = res.value.map(i=>({ID:i.id, NumeroPedido:i.fields.Title||i.fields.NumeroPedido||'—', ...i.fields}))
       .sort((a,b)=> new Date(b.FechaDeteccion||0) - new Date(a.FechaDeteccion||0));
+    if (state.pedidos.length > 0) console.log('[DEBUG] Pedido sample fields:', JSON.stringify(state.pedidos[0]).slice(0,600));
     document.getElementById('pe-demo-banner').style.display = 'none';
     const now = new Date();
     document.getElementById('pe-last-update').textContent =
