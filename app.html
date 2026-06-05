@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.1</title>
+<title>FabTracker App v2.3</title>
 
 <!-- MSAL Browser -->
 
@@ -3684,7 +3684,13 @@ function appConfirmFinish(){
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
-    if(DB.timers[key])DB.timers[key].running=false;
+    if(DB.timers[key]){
+      // Acumular elapsed antes de detener para que appSaveTimerToSP lo registre correctamente
+      if(DB.timers[key].running && DB.timers[key].start){
+        DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now() - DB.timers[key].start);
+      }
+      DB.timers[key].running=false;
+    }
     // Auto-cerrar timers ayudantes
     if(!op.ayudTimes)op.ayudTimes={};
     (op.ayudantes||[]).forEach(function(a){
@@ -6057,7 +6063,7 @@ async function appSaveOpToSP(of_sap, opId) {
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
-    console.log('PATCH payload ['+opId+']: status='+patchFields.Status+' _spId='+op._spId);
+    console.log('PATCH payload ['+opId+']: status='+patchFields.Status+' Tip='+patchFields.Tip+' _spId='+op._spId);
 
     if (op._spId && String(op._spId).trim() !== '' && op._spId !== 'null') {
       try {
@@ -6108,8 +6114,13 @@ async function appSaveOpToSP(of_sap, opId) {
 async function appSaveTimerToSP(key) {
   try {
     const t = DB.timers[key]; if(!t) return;
+    // Calcular elapsed real: si estaba running, sumar tiempo desde start
+    var elapsedReal = t.elapsed || 0;
+    if (t.running && t.start) {
+      elapsedReal = (t.elapsed || 0) + (Date.now() - t.start);
+    }
     const fields={Title:key, Op_ID:key.split('_').slice(1).join('_'),
-      Start_MS:t.start, Elapsed_MS:t.elapsed||0, Running:t.running};
+      Start_MS:t.start, Elapsed_MS:elapsedReal, Running:t.running};
     if(t._spId){
       await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
     } else {
@@ -9132,7 +9143,13 @@ function appConfirmFinish(){
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
-    if(DB.timers[key])DB.timers[key].running=false;
+    if(DB.timers[key]){
+      // Acumular elapsed antes de detener para que appSaveTimerToSP lo registre correctamente
+      if(DB.timers[key].running && DB.timers[key].start){
+        DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now() - DB.timers[key].start);
+      }
+      DB.timers[key].running=false;
+    }
     // Auto-cerrar timers ayudantes
     if(!op.ayudTimes)op.ayudTimes={};
     (op.ayudantes||[]).forEach(function(a){
