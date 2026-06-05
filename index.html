@@ -2819,7 +2819,7 @@ window.addEventListener('message', async function(e) {
         // Reconstruir objeto exactamente como lo espera loadProject
         return {
           code:                 i.fields.Title,
-          date:                 i.fields.Created,
+          date:                 i.fields.FechaRegistro || i.fields.Created || new Date().toISOString(),
           clientName:           i.fields.ClienteNombre || '',
           lang:                 cfg.lang || 'es',
           salesChannel:         cfg.salesChannel || i.fields.Canal || 'dealer',
