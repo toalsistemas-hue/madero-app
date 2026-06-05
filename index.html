@@ -1915,9 +1915,9 @@ async function loadModulosFromSharePoint(siteId) {
   try {
     // Sin $orderby para evitar error 400 — se ordena en cliente
     const [modRes, subRes, panRes] = await Promise.all([
-      graphGet(`sites/${siteId}/lists/Modulos/items?$expand=fields&$top=100`),
-      graphGet(`sites/${siteId}/lists/SubModulos/items?$expand=fields&$top=100`),
-      graphGet(`sites/${siteId}/lists/Pantallas/items?$expand=fields&$top=100`),
+      flowGet('Modulos', '', 100),
+      flowGet('SubModulos', '', 100),
+      flowGet('Pantallas', '', 100),
     ]);
 
     // Ordenar en cliente por campo Orden
@@ -2124,9 +2124,7 @@ async function checkVersionOnLogin() {
   if (state.isDemoMode || !state.token) return;
   try {
     const sid = await getSiteId();
-    const cfgRes = await graphGet(
-      'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=1'
-    ).catch(function(){ return null; });
+    const cfgRes = await flowGet('Configuracion', '', 1).catch(function(){ return null; });
     if (cfgRes && cfgRes.value && cfgRes.value.length) {
       var f = cfgRes.value[0].fields;
       var versionSP = (f.Valor || f.Version || f.Title || '').trim();
@@ -2502,7 +2500,7 @@ async function loadPedidosData() {
   try {
     if (state.isDemoMode) throw new Error('demo');
     const siteId = await getSiteId();
-    const res    = await graphGet(`sites/${siteId}/lists/PedidosEspeciales/items?$expand=fields&$top=500`);
+    const res    = await flowGet('PedidosEspeciales', '', 500);
     state.pedidos = res.value.map(i=>({ID:i.id, NumeroPedido:i.fields.Title||i.fields.NumeroPedido||'—', ...i.fields}))
       .sort((a,b)=> new Date(b.FechaDeteccion||0) - new Date(a.FechaDeteccion||0));
     document.getElementById('pe-demo-banner').style.display = 'none';
@@ -2698,10 +2696,7 @@ async function executeModalAction() {
   try {
     if (!state.isDemoMode) {
       const siteId = await getSiteId();
-      await graphPatch(
-        `sites/${siteId}/lists/PedidosEspeciales/items/${id}/fields`,
-        { Estatus: newEstatus, AccionadoPor: state.currentUser.nombre }
-      );
+      await flowEscribir('PedidosEspeciales', 'actualizar', id, { Estatus: newEstatus, AccionadoPor: state.currentUser.nombre });
       console.log(`PATCH OK — item ${id} → ${newEstatus}`);
     }
   } catch(e) { console.warn('PATCH fallido:', e); }
@@ -2766,13 +2761,12 @@ window.addEventListener('message', async function(e) {
 
     if (action === 'SAVE_PROJECT') {
       // Buscar si ya existe por Title
-      var listBase = 'sites/' + sid + '/lists/CotizadorProyectos';
-      var existing = await graphGet(listBase + '/items?$expand=fields&$top=500');
+      var existing = await flowGet('CotizadorProyectos', '', 500);
       var found = (existing.value || []).find(function(i){ return i.fields.Title === payload.Title; });
       if (found) {
-        await graphPatch(listBase + '/items/' + found.id + '/fields', payload);
+        await flowEscribir('CotizadorProyectos', 'actualizar', found.id, payload);
       } else {
-        await graphPost(listBase + '/items', { fields: payload });
+        await flowEscribir('CotizadorProyectos', 'crear', 0, payload);
       }
       reply(null, 'ok');
 
@@ -2799,11 +2793,12 @@ window.addEventListener('message', async function(e) {
 
     } else if (action === 'DELETE_PROJECT') {
       try {
-        var listBase = 'sites/' + sid + '/lists/CotizadorProyectos';
-        var existing = await graphGet(listBase + '/items?$expand=fields&$top=500');
+        var existing = await flowGet('CotizadorProyectos', '', 500);
         var found = (existing.value || []).find(function(i){ return i.fields.Title === payload.code; });
         if (found) {
-          await fetch('https://graph.microsoft.com/v1.0/' + listBase + '/items/' + found.id, {
+          // DELETE requiere Graph directo con token del usuario
+          var sid2 = await getSiteId();
+          await fetch('https://graph.microsoft.com/v1.0/sites/' + sid2 + '/lists/CotizadorProyectos/items/' + found.id, {
             method: 'DELETE',
             headers: { Authorization: 'Bearer ' + state.token }
           });
@@ -2814,7 +2809,7 @@ window.addEventListener('message', async function(e) {
       }
 
     } else if (action === 'LOAD_PROJECTS') {
-      var res = await graphGet('sites/' + sid + '/lists/CotizadorProyectos/items?$expand=fields&$top=50');
+      var res = await flowGet('CotizadorProyectos', '', 50);
       var projects = (res.value || []).map(function(i) {
         var cfg = {};
         try { cfg = JSON.parse(i.fields.ConfiguracionJSON || '{}'); } catch(e) {}
@@ -3033,9 +3028,9 @@ async function cfgLoadMenuData() {
   try {
     var sid=await cfgEnsureSiteId(); var empty=function(){return{value:[]};};
     var results=await Promise.all([
-      graphGet('sites/'+sid+'/lists/Modulos/items?$expand=fields&$top=200').catch(empty),
-      graphGet('sites/'+sid+'/lists/SubModulos/items?$expand=fields&$top=200').catch(empty),
-      graphGet('sites/'+sid+'/lists/Pantallas/items?$expand=fields&$top=200').catch(empty),
+      flowGet('Modulos', '', 200).catch(empty),
+      flowGet('SubModulos', '', 200).catch(empty),
+      flowGet('Pantallas', '', 200).catch(empty),
       graphGet('sites/'+sid+'/lists/Puestos/items?$expand=fields&$top=200').catch(empty),
     ]);
     CFG.modulos=(results[0].value||[]).map(function(i){return Object.assign({id:i.id},i.fields);});
@@ -3309,8 +3304,8 @@ async function cfgDoSave(sid){
     fields = {Title:nombre, PuestoID:puestoID, EsAdministrador:esAdmin, Pantallas:pantallas};
     lista='Puestos';
   }else{throw new Error('Tipo de modal desconocido');}
-  if(id)await graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+id+'/fields',fields);
-  else await graphPost('sites/'+sid+'/lists/'+lista+'/items',{fields:fields});
+  if(id) await spEscribir(lista, fields, id);
+  else   await spEscribir(lista, fields, null);
 }
 
 // ── ELIMINAR ─────────────────────────────────────────────────────
@@ -4246,6 +4241,82 @@ async function graphPost(endpoint, body, retry) {
   return res.json();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PROXY VIA POWER AUTOMATE — Listas protegidas
+// Estas funciones usan Flows en lugar de Graph API directa
+// para que los usuarios no requieran permisos directos en SP
+// ═══════════════════════════════════════════════════════════════════
+const FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e0f8868e45b44f789cb935ac6b40eb0a/triggers/manual/paths/invoke?api-version=1';
+const FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1';
+
+// Listas que se leen/escriben via Flow (permisos restringidos en SP)
+const LISTAS_PROTEGIDAS = [
+  'Modulos','SubModulos','Pantallas','Configuracion',
+  'PedidosEspeciales','CotizadorProyectos','CotizadorDatos',
+  'FT_Operaciones','FT_Cola_Estacion','FT_Timers','FT_Status_Estacion',
+  'FT_CalTiempos','FT_Plantillas_Operaciones','FT_Articulos',
+  'FT_Catalogo_Operaciones','FT_OrdenesFabricacion','FT_Tecnicos',
+  'FT_Estaciones','FT_Pedidos'
+];
+
+function esListaProtegida(endpoint) {
+  return LISTAS_PROTEGIDAS.some(function(l){ return endpoint.indexOf('/lists/'+l) !== -1; });
+}
+
+async function flowGet(lista, filtro, top) {
+  filtro = filtro || '';
+  top    = top    || 500;
+  const token = await getToken();
+  const res = await fetch(FLOW_URL_LEER, {
+    method:  'POST',
+    headers: { Authorization: 'Bearer '+token, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ lista: lista, filtro: filtro, top: top })
+  });
+  if (!res.ok) throw new Error('Flow GET '+lista+' '+res.status);
+  const data = await res.json();
+  // El Flow devuelve body/value — normalizamos al formato que espera la plataforma
+  if (Array.isArray(data)) return { value: data };
+  if (data && data.value) return data;
+  return { value: [] };
+}
+
+async function flowEscribir(lista, operacion, itemId, datos) {
+  const token = await getToken();
+  const res = await fetch(FLOW_URL_ESCRIBIR, {
+    method:  'POST',
+    headers: { Authorization: 'Bearer '+token, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos })
+  });
+  if (!res.ok) throw new Error('Flow ESCRIBIR '+lista+' '+res.status);
+  return res.json();
+}
+
+// Wrapper inteligente: usa Flow si la lista está protegida, Graph si no
+async function spGet(lista, queryParams) {
+  queryParams = queryParams || '$expand=fields&$top=500';
+  if (LISTAS_PROTEGIDAS.indexOf(lista) !== -1) {
+    var top = 500;
+    var m = queryParams.match(/\$top=(\d+)/);
+    if (m) top = parseInt(m[1]);
+    return flowGet(lista, '', top);
+  }
+  const sid = await getSiteId();
+  return graphGet('sites/'+sid+'/lists/'+lista+'/items?'+queryParams);
+}
+
+async function spEscribir(lista, datos, itemId) {
+  if (LISTAS_PROTEGIDAS.indexOf(lista) !== -1) {
+    var op = itemId ? 'actualizar' : 'crear';
+    return flowEscribir(lista, op, itemId || 0, datos);
+  }
+  const sid = await getSiteId();
+  if (itemId) {
+    return graphPatch('sites/'+sid+'/lists/'+lista+'/items/'+itemId+'/fields', datos);
+  } else {
+    return graphPost('sites/'+sid+'/lists/'+lista+'/items', { fields: datos });
+  }
+}
+
 // -- SP Data Layer — Load FabTracker data --------------
 var FT_SITE_ID = null;
 // Reset SP column maps on each load to avoid stale cache
@@ -4265,16 +4336,16 @@ async function ftLoadDataFromSP() {
     // Load OFs and Operaciones in parallel
     const empty = function(){ return {value:[]}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes] = await Promise.all([
-      graphGet('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Operaciones/items?$expand=fields&$top=5000').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Tecnicos/items?$expand=fields&$top=200').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Estaciones/items?$expand=fields&$top=100').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Cola_Estacion/items?$expand=fields&$top=2000').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Status_Estacion/items?$expand=fields&$top=100').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Timers/items?$expand=fields&$top=2000').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Plantillas_Operaciones/items?$expand=fields&$top=500').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Articulos/items?$expand=fields&$top=2000').catch(empty),
-      graphGet('sites/' + siteId + '/lists/FT_Catalogo_Operaciones/items?$expand=fields&$top=5000').catch(empty),
+      flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
+      flowGet('FT_Operaciones', '', 5000).catch(empty),
+      flowGet('FT_Tecnicos', '', 200).catch(empty),
+      flowGet('FT_Estaciones', '', 100).catch(empty),
+      flowGet('FT_Cola_Estacion', '', 2000).catch(empty),
+      flowGet('FT_Status_Estacion', '', 100).catch(empty),
+      flowGet('FT_Timers', '', 2000).catch(empty),
+      flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
+      flowGet('FT_Articulos', '', 2000).catch(empty),
+      flowGet('FT_Catalogo_Operaciones', '', 5000).catch(empty),
     ]);
 
     // Build DB.ofs from SharePoint
