@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App</title>
+<title>FabTracker App v2.1</title>
 
 <!-- MSAL Browser -->
 
@@ -3726,7 +3726,11 @@ function appConfirmFinish(){
     ['app-finish-ok','app-finish-def','app-finish-chat','app-finish-def-retrabajo','app-finish-def-chatarra'].forEach(function(id){
       var el=document.getElementById(id);if(el)el.disabled=false;
     });
-    renderApp();fireSync("app","op_finished",{of_sap:ctx.of_sap});
+    renderApp();
+    // Persistir en SP
+    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
+    appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
+    fireSync("app","op_finished",{of_sap:ctx.of_sap});
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
   else doFinishLocal();
@@ -9001,6 +9005,9 @@ function doFinish(ctx, el, ok, def, rej) {
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
   closeAppModal('app-modal-finish'); renderApp();
+  // Persistir en SP
+  appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
+  appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
   fireSync('app','op_finished',{of_sap:ctx.of_sap, op_name:op.nombre, obs:obs});
 }
 
@@ -9167,7 +9174,11 @@ function appConfirmFinish(){
     ['app-finish-ok','app-finish-def','app-finish-chat','app-finish-def-retrabajo','app-finish-def-chatarra'].forEach(function(id){
       var el=document.getElementById(id);if(el)el.disabled=false;
     });
-    renderApp();fireSync("app","op_finished",{of_sap:ctx.of_sap});
+    renderApp();
+    // Persistir en SP
+    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
+    appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
+    fireSync("app","op_finished",{of_sap:ctx.of_sap});
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
   else doFinishLocal();
