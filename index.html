@@ -4273,11 +4273,22 @@ async function flowGet(lista, filtro, top) {
   });
   if (!res.ok) throw new Error('Flow GET '+lista+' '+res.status);
   const data = await res.json();
-  console.log('[flowGet] '+lista+' respuesta cruda:', JSON.stringify(data).slice(0,500));
-  // El Flow devuelve body/value — normalizamos al formato que espera la plataforma
-  if (Array.isArray(data)) return { value: data };
-  if (data && data.value) return data;
-  return { value: [] };
+  // El Flow de SP devuelve array de items con campos en el raíz
+  // Graph API devuelve { value: [ { id, fields: {...} } ] }
+  // Normalizamos al formato Graph para compatibilidad con la plataforma
+  const arr = Array.isArray(data) ? data : (data.value || []);
+  const normalized = arr.map(function(item) {
+    // Separar metadatos de campos
+    const meta = ['@odata.etag','ItemInternalId','ID','Modified','Created','Author','Editor','AuthorLookupId','EditorLookupId'];
+    const fields = {};
+    Object.keys(item).forEach(function(k) {
+      if (meta.indexOf(k) === -1 && !k.startsWith('@')) fields[k] = item[k];
+    });
+    // Asegurar que Title esté en fields
+    if (item.Title !== undefined) fields.Title = item.Title;
+    return { id: String(item.ID || item.ItemInternalId || ''), fields: fields };
+  });
+  return { value: normalized };
 }
 
 async function flowEscribir(lista, operacion, itemId, datos) {
