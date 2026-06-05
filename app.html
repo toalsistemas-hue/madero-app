@@ -5587,6 +5587,8 @@ async function appLoginSuccess() {
   document.getElementById('app-shell-mobile').style.display = 'block';
   document.getElementById('app-login-btn').disabled = false;
   document.getElementById('app-login-status').textContent = '';
+  // Inicializar appSiteId para que los guards funcionen aunque usemos Flows
+  try { await appGetSiteId(); } catch(e) { console.warn('appGetSiteId:', e.message); }
   await appLoadDataFromSP();
   try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load:', e); }
   // Auto-expandir OFs con operaciones activas (running/paused) para que sean visibles
