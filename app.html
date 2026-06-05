@@ -5509,6 +5509,7 @@ function appGetRedirectUri() {
   if (h === 'toalsistemas-hue.github.io') return 'https://toalsistemas-hue.github.io/madero-app/app.html';
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3000/';
   if (h.indexOf('netlify') >= 0) return 'https://automatizaciones-madero-app.netlify.app/app.html';
+  if (h === 'automatizaciones.maderoequipos.com') return 'https://automatizaciones.maderoequipos.com/app.html';
   return window.location.origin + '/madero-app/app.html';
 }
 
