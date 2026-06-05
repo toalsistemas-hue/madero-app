@@ -4273,6 +4273,7 @@ async function flowGet(lista, filtro, top) {
   });
   if (!res.ok) throw new Error('Flow GET '+lista+' '+res.status);
   const data = await res.json();
+  console.log('[flowGet] '+lista+' respuesta cruda:', JSON.stringify(data).slice(0,500));
   // El Flow devuelve body/value — normalizamos al formato que espera la plataforma
   if (Array.isArray(data)) return { value: data };
   if (data && data.value) return data;
