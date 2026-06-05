@@ -4266,10 +4266,9 @@ function esListaProtegida(endpoint) {
 async function flowGet(lista, filtro, top) {
   filtro = filtro || '';
   top    = top    || 500;
-  const token = await getToken();
   const res = await fetch(FLOW_URL_LEER, {
     method:  'POST',
-    headers: { Authorization: 'Bearer '+token, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ lista: lista, filtro: filtro, top: top })
   });
   if (!res.ok) throw new Error('Flow GET '+lista+' '+res.status);
@@ -4281,10 +4280,9 @@ async function flowGet(lista, filtro, top) {
 }
 
 async function flowEscribir(lista, operacion, itemId, datos) {
-  const token = await getToken();
   const res = await fetch(FLOW_URL_ESCRIBIR, {
     method:  'POST',
-    headers: { Authorization: 'Bearer '+token, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos })
   });
   if (!res.ok) throw new Error('Flow ESCRIBIR '+lista+' '+res.status);
