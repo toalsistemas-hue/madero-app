@@ -2503,7 +2503,6 @@ async function loadPedidosData() {
     const res    = await flowGet('PedidosEspeciales', '', 500);
     state.pedidos = res.value.map(i=>({ID:i.id, NumeroPedido:i.fields.Title||i.fields.NumeroPedido||'—', ...i.fields}))
       .sort((a,b)=> new Date(b.FechaDeteccion||0) - new Date(a.FechaDeteccion||0));
-    if (state.pedidos.length > 0) console.log('[DEBUG] Pedido sample fields:', JSON.stringify(state.pedidos[0]).slice(0,600));
     document.getElementById('pe-demo-banner').style.display = 'none';
     const now = new Date();
     document.getElementById('pe-last-update').textContent =
@@ -4283,10 +4282,18 @@ async function flowGet(lista, filtro, top) {
     const meta = ['@odata.etag','ItemInternalId','ID','Modified','Created','Author','Editor','AuthorLookupId','EditorLookupId'];
     const fields = {};
     Object.keys(item).forEach(function(k) {
-      if (meta.indexOf(k) === -1 && !k.startsWith('@')) fields[k] = item[k];
+      if (meta.indexOf(k) === -1 && !k.startsWith('@')) {
+        var v = item[k];
+        // Campos expandidos de SP vienen como { @odata.type, Id, Value } — extraer .Value
+        if (v && typeof v === 'object' && !Array.isArray(v) && v.Value !== undefined) {
+          fields[k] = v.Value;
+        } else if (k.endsWith('#Id')) {
+          // Ignorar campos auxiliares de lookup como "Estatus#Id"
+        } else {
+          fields[k] = v;
+        }
+      }
     });
-    // Asegurar que Title esté en fields
-    if (item.Title !== undefined) fields.Title = item.Title;
     return { id: String(item.ID || item.ItemInternalId || ''), fields: fields };
   });
   return { value: normalized };
