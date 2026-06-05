@@ -2367,15 +2367,11 @@ function appMoveOp(sap,idx,dir){
   sqSyncColaNumbers();
   renderApp();
   // Persist new Secuencia to SP for all ops of this OF
-  if(typeof appSiteId!=='undefined'&&appSiteId){
-    of.ops.forEach(function(op,i){
-      if(!op._spId) return;
-      appGraphPatch(
-        'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-        {Secuencia: i+1}
-      ).catch(function(e){ console.warn('MoveOp SP error:', e.message); });
-    });
-  }
+  of.ops.forEach(function(op,i){
+    if(!op._spId) return;
+    appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Secuencia: i+1})
+      .catch(function(e){ console.warn('MoveOp SP error:', e.message); });
+  });
   // Notify coordinator and show notification to supervisor too
   // Notify supervisor locally that reorder was saved
   if(typeof APP!=='undefined' && APP.role==='supervisor'){
@@ -2652,8 +2648,8 @@ function appConfirmReanudar(){
         await appSaveOpToSP(ctx.of_sap, ctx.op_id);
         console.log('✅ Turno A done guardado en SP');
         // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
-        if(newOp && typeof appGraphPost==='function'){
-          var seqNum = of.ops.length; // newOp already pushed → length = correct sequence
+        if(newOp){
+          var seqNum = of.ops.length;
           var postFields = {
             Title:     newOp.nombre,
             OF_SAP:    ctx.of_sap,
@@ -2668,19 +2664,19 @@ function appConfirmReanudar(){
             Mins:      0,
             Inicio:    '', Fin:''
           };
-          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items',{fields:postFields});
-          newOp._spId = res.id;
+          var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
+          newOp._spId = res && res.id ? res.id : null;
           newOp.isTemplate = false;
-          console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+          console.log('✅ Turno B creado en SP tecnico:'+nuevoTech+' pzas:'+pzRest);
           // 2b. Register Turno B in FT_Cola_Estacion
           if(newOp.estacion){
             var colFields2={
               Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
-              Estacion: newOp.estacion, Posicion: 999, // will be corrected by sqSyncColaNumbers
+              Estacion: newOp.estacion, Posicion: 999,
               Tipo_Cola:'normal', Status:'pending', Activo: true
             };
-            appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',{fields:colFields2})
-              .then(function(r2){ newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
+            appFlowEscribir('FT_Cola_Estacion', 'crear', 0, colFields2)
+              .then(function(r2){ if(r2&&r2.id) newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
               .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
           }
         }
@@ -5192,7 +5188,7 @@ async function appQueueSave(){
         for(var oi=0; oi<aof2.ops.length; oi++){
           var op = aof2.ops[oi];
           if(!op._spId) continue;
-          try { await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',{Cola:op.cola||0});
+          try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
                 console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
           } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
@@ -5747,19 +5743,65 @@ async function appGetSiteId() {
   return appSiteId;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PROXY VIA POWER AUTOMATE — App Móvil
+// Mismas URLs que el portal — los Flows son genéricos por lista
+// ═══════════════════════════════════════════════════════════════════
+var APP_FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/e0f8868e45b44f789cb935ac6b40eb0a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=ImS9no5VcUqCWZoYf8HS5rJIf7EmpBwjYok7-eMDjp4';
+var APP_FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ';
+
+async function appFlowGet(lista, top) {
+  top = top || 500;
+  var res = await fetch(APP_FLOW_URL_LEER, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lista: lista, filtro: '', top: top })
+  });
+  if (!res.ok) throw new Error('AppFlow GET ' + lista + ' ' + res.status);
+  var data = await res.json();
+  var arr = Array.isArray(data) ? data : (data.value || []);
+  var normalized = arr.map(function(item) {
+    var meta = ['@odata.etag','ItemInternalId','ID','Modified','Created','Author','Editor','AuthorLookupId','EditorLookupId'];
+    var fields = {};
+    Object.keys(item).forEach(function(k) {
+      if (meta.indexOf(k) === -1 && !k.startsWith('@')) {
+        var v = item[k];
+        if (v && typeof v === 'object' && !Array.isArray(v) && v.Value !== undefined) {
+          fields[k] = v.Value;
+        } else if (k.endsWith('#Id')) {
+          // ignorar campos auxiliares lookup
+        } else {
+          fields[k] = v;
+        }
+      }
+    });
+    return { id: String(item.ID || item.ItemInternalId || ''), fields: fields };
+  });
+  return { value: normalized };
+}
+
+async function appFlowEscribir(lista, operacion, itemId, datos) {
+  var res = await fetch(APP_FLOW_URL_ESCRIBIR, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos })
+  });
+  if (!res.ok) throw new Error('AppFlow ESCRIBIR ' + lista + ' ' + res.status);
+  return res.json();
+}
+
 async function appLoadDataFromSP() {
   try {
-    const siteId = await appGetSiteId();
     var emptyFn = function(){ return {value:[]}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes] = await Promise.all([
-      appGraphGet('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Operaciones/items?$expand=fields&$top=5000').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Tecnicos/items?$expand=fields&$top=200').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Estaciones/items?$expand=fields&$top=100').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Cola_Estacion/items?$expand=fields&$top=2000').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Status_Estacion/items?$expand=fields&$top=100').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Timers/items?$expand=fields&$top=2000').catch(emptyFn),
-      appGraphGet('sites/' + siteId + '/lists/FT_Plantillas_Operaciones/items?$expand=fields&$top=500').catch(emptyFn),
+      appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
+      appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
+      appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
+      appFlowGet('FT_Estaciones', 100).catch(emptyFn),
+      appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
+      appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
+      appFlowGet('FT_Timers', 2000).catch(emptyFn),
+      appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
     ]);
     const ofs = (ofsRes.value||[]).map(i => i.fields);
     DB.ofs = ofs.map(f => ({
@@ -5978,20 +6020,15 @@ async function appLoadDataFromSP() {
 
 // Persist op changes to SP from app
 async function appSaveOpToSP(of_sap, opId) {
-  if (!appSiteId) return;
   try {
     const aof = DB.activeOFs.find(a=>a.of_sap===of_sap);
     const op = aof ? aof.ops.find(o=>o.id===opId) : null;
     if (!op) return;
 
-    // ── ISO para SP, display para pantalla ───────────────────────────────────
-    const inicioVal = op.inicio || '';
-    const finVal    = op.fin    || '';
-
     const patchFields = {
       Status:         op.status || 'pending',
-      Inicio:         inicioVal,
-      Fin:            finVal,
+      Inicio:         op.inicio || '',
+      Fin:            op.fin    || '',
       Mins:           op.mins || 0,
       Qty_Total:      op.qty_total || 10,
       Qty_OK:         op.qty_ok || 0,
@@ -6003,48 +6040,37 @@ async function appSaveOpToSP(of_sap, opId) {
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)    patchFields.NeedsCal = true;
-    // Only save ValCalNote if it's a real cal note (not turno JSON accidentally stored there)
     if (op.valcalNote && op.valcalNote.charAt(0) !== '{') patchFields.ValCalNote = op.valcalNote;
-    else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = ''; // clear old JSON contamination
+    else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = '';
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
-    // ── LOG DIAGNÓSTICO visible en Debug Console ──────────────────────────────
-    console.log('PATCH payload ['+opId+']: status='+patchFields.Status
-      +' Inicio='+patchFields.Inicio
-      +' Tecnico='+patchFields.Tecnico
-      +' Qty_Total='+patchFields.Qty_Total
-      +' _spId='+op._spId
-      +' _inicioISO='+inicioVal);
+    console.log('PATCH payload ['+opId+']: status='+patchFields.Status+' _spId='+op._spId);
 
-    // ── Guard: _spId válido ───────────────────────────────────────────────────
-    const validSpId = op._spId && String(op._spId).trim() !== '' && op._spId !== 'null';
-    if (validSpId) {
+    if (op._spId && String(op._spId).trim() !== '' && op._spId !== 'null') {
       try {
-        await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
-        console.log('✅ PATCH OK ['+opId+'] status='+op.status+' Inicio='+inicioVal);
+        await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), patchFields);
+        console.log('✅ Flow PATCH OK ['+opId+'] status='+op.status);
       } catch(patchErr) {
-        if (patchErr.message && (patchErr.message.includes('404') || patchErr.message.includes('PATCH 404'))) {
+        if (patchErr.message && patchErr.message.includes('404')) {
           console.log('⚠ _spId 404 – limpiando: '+op._spId);
           op._spId = null;
         } else {
-          console.log('❌ PATCH error: '+patchErr.message);
           throw patchErr;
         }
       }
     }
-    if (!op._spId || !validSpId) {
+    if (!op._spId || op._spId === 'null') {
+      // Buscar en SP via Flow (fetch-all + filter JS)
       try {
-        const existing = await appGraphGet(
-          "sites/"+appSiteId+"/lists/FT_Operaciones/items?$filter=fields/Op_ID eq '"+encodeURIComponent(opId)+"'&$expand=fields&$top=5"
-        );
-        // Filter JS-side for OF_SAP match (Op_ID alone may not be unique across OFs)
-        const existMatch = (existing.value||[]).find(function(item){ return item.fields && item.fields.OF_SAP === of_sap; });
+        var existing = await appFlowGet('FT_Operaciones', 5000);
+        var existMatch = (existing.value||[]).find(function(item){
+          return item.fields && item.fields.Op_ID === opId && item.fields.OF_SAP === of_sap;
+        });
         if (existMatch) {
           op._spId = existMatch.id;
-          console.log('Op encontrada en SP _spId='+op._spId+' → PATCH');
-          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchFields);
-          console.log('✅ PATCH (restaurada) OK ['+opId+']');
+          await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), patchFields);
+          console.log('✅ Flow PATCH (restaurada) OK ['+opId+']');
           return;
         }
       } catch(checkErr) { console.log('⚠ check existente: '+checkErr.message); }
@@ -6053,48 +6079,46 @@ async function appSaveOpToSP(of_sap, opId) {
         Title:    op.nombre || op.id,
         OF_SAP:   of_sap,
         Op_ID:    op.id,
-        // 'Nombre' no existe en SP — Title cubre este campo
         Estacion: op.estacion||'',
         Tip:      op.tipo||'Secuencial',
         Secuencia: seqNum,
         Qty_Total: op.qty_total||10,
       }, patchFields);
       console.log('POST nueva op: '+op.nombre);
-      const res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items', {fields: postFields});
-      op._spId = res.id;
+      var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
+      op._spId = res && res.id ? res.id : null;
       op.isTemplate = false;
-      console.log('✅ POST OK: '+op.nombre+' _spId='+res.id);
+      console.log('✅ Flow POST OK: '+op.nombre);
     }
   } catch(e) { console.log('❌ appSaveOpToSP crash: '+e.message); console.warn('appSaveOpToSP:', e.message); }
 }
 
 async function appSaveTimerToSP(key) {
-  if (!appSiteId) return;
   try {
     const t = DB.timers[key]; if(!t) return;
     const fields={Title:key, Op_ID:key.split('_').slice(1).join('_'),
       Start_MS:t.start, Elapsed_MS:t.elapsed||0, Running:t.running};
     if(t._spId){
-      await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
+      await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
     } else {
-      // Duplicate guard
+      // Buscar existente via Flow
       try {
-        var ex = await appGraphGet('sites/'+appSiteId+'/lists/FT_Timers/items?$filter=fields/Title eq \''+encodeURIComponent(key)+'\'&$select=id&$top=1');
-        if (ex.value && ex.value.length) {
-          t._spId = ex.value[0].id;
-          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Timers/items/'+t._spId+'/fields',fields);
+        var ex = await appFlowGet('FT_Timers', 2000);
+        var found = (ex.value||[]).find(function(i){ return i.fields.Title === key; });
+        if (found) {
+          t._spId = found.id;
+          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
           return;
         }
       } catch(e2) {}
-      const res=await appGraphPost('sites/'+appSiteId+'/lists/FT_Timers/items',{fields});
-      t._spId=res.id;
+      var res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
+      if (res && res.id) t._spId = res.id;
     }
   } catch(e) { console.warn('appSaveTimerToSP:', e.message||e); }
 }
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
 async function appSaveQueueToSP(of_sap) {
-  if (!appSiteId) return;
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
@@ -6105,8 +6129,7 @@ async function appSaveQueueToSP(of_sap) {
       var colaPos = isDone ? 0 : (op.cola||0);
       try {
         if (op._queueSpId) {
-          // PATCH: NO incluir Title — SP no permite actualizarlo vía /fields
-          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', {
+          await appFlowEscribir('FT_Cola_Estacion', 'actualizar', parseInt(op._queueSpId), {
             OF_SAP:    of_sap,
             Op_ID:     op.id,
             Posicion:  colaPos,
@@ -6115,17 +6138,16 @@ async function appSaveQueueToSP(of_sap) {
           });
           console.log('✅ FT_Cola PATCH: '+op.id+' → pos '+colaPos);
         } else {
-          // POST: incluir Title (Estacion) solo al crear
-          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items', {fields: {
+          var res = await appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
             Title:     op.estacion,
             OF_SAP:    of_sap,
             Op_ID:     op.id,
             Posicion:  colaPos,
             Tipo_Cola: 'normal',
             Activo:    !isDone,
-          }});
-          op._queueSpId = res.id;
-          console.log('✅ FT_Cola POST: '+op.id+' → id '+res.id);
+          });
+          if (res && res.id) op._queueSpId = res.id;
+          console.log('✅ FT_Cola POST: '+op.id);
         }
       } catch(e) { console.warn('appSaveQueueToSP op '+op.id+':', e.message); }
     }
@@ -6134,7 +6156,7 @@ async function appSaveQueueToSP(of_sap) {
 
 // ── Save FT_Status_Estacion from app ──────────────────────
 async function appSaveStationStatusToSP(estacion) {
-  if (!appSiteId || !estacion) return;
+  if (!estacion) return;
   try {
     var ss = window.DB_STATION_STATUS && window.DB_STATION_STATUS[estacion];
     if (!ss) return;
@@ -6144,17 +6166,18 @@ async function appSaveStationStatusToSP(estacion) {
       Plan_JSON: JSON.stringify(ss.plan||[]),
     };
     if (ss._spId) {
-      await appGraphPatch('sites/'+appSiteId+'/lists/FT_Status_Estacion/items/'+ss._spId+'/fields', fields);
+      await appFlowEscribir('FT_Status_Estacion', 'actualizar', parseInt(ss._spId), fields);
     } else {
       try {
-        var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Status_Estacion/items', {fields});
-        ss._spId = res.id;
+        var res = await appFlowEscribir('FT_Status_Estacion', 'crear', 0, fields);
+        if (res && res.id) ss._spId = res.id;
       } catch(e) {
-        // May exist already — find and patch
-        var existRes = await appGraphGet("sites/"+appSiteId+"/lists/FT_Status_Estacion/items?$filter=fields/Title eq '"+encodeURIComponent(estacion)+"'&$expand=fields");
-        if (existRes.value && existRes.value.length) {
-          ss._spId = existRes.value[0].id;
-          await appGraphPatch('sites/'+appSiteId+'/lists/FT_Status_Estacion/items/'+ss._spId+'/fields', fields);
+        // Buscar existente y actualizar
+        var existRes = await appFlowGet('FT_Status_Estacion', 100);
+        var found = (existRes.value||[]).find(function(i){ return (i.fields.Estacion||i.fields.Title) === estacion; });
+        if (found) {
+          ss._spId = found.id;
+          await appFlowEscribir('FT_Status_Estacion', 'actualizar', parseInt(ss._spId), fields);
         }
       }
     }
@@ -6163,7 +6186,7 @@ async function appSaveStationStatusToSP(estacion) {
 
 // ── Save FT_CalTiempos from app ───────────────────────────
 async function appSaveCalTiempoToSP(key, calData) {
-  if (!appSiteId || !key) return;
+  if (!key) return;
   try {
     var fields = {
       Title:        key,
@@ -6177,17 +6200,17 @@ async function appSaveCalTiempoToSP(key, calData) {
       Registrado_Por: appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
     };
     if (calData._spId) {
-      await appGraphPatch('sites/'+appSiteId+'/lists/FT_CalTiempos/items/'+calData._spId+'/fields', fields);
+      await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
     } else {
-      var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_CalTiempos/items', {fields});
-      calData._spId = res.id;
+      var res = await appFlowEscribir('FT_CalTiempos', 'crear', 0, fields);
+      if (res && res.id) calData._spId = res.id;
     }
   } catch(e) { console.warn('appSaveCalTiempoToSP:', e.message); }
 }
 
 // ── Save FT_Pedidos status from app ───────────────────────
 async function appSavePedidoStatusToSP(pedido) {
-  if (!appSiteId || !pedido) return;
+  if (!pedido) return;
   try {
     var pedOFs = DB.activeOFs.filter(function(a){ return a.pedido===pedido; });
     if (!pedOFs.length) return;
@@ -6205,11 +6228,12 @@ async function appSavePedidoStatusToSP(pedido) {
       Ultima_Actualizacion: new Date().toISOString(),
     };
     try {
-      var existRes = await appGraphGet("sites/"+appSiteId+"/lists/FT_Pedidos/items?$filter=fields/Title eq '"+encodeURIComponent(pedido)+"'&$expand=fields&$top=1");
-      if (existRes.value && existRes.value.length) {
-        await appGraphPatch('sites/'+appSiteId+'/lists/FT_Pedidos/items/'+existRes.value[0].id+'/fields', fields);
+      var existRes = await appFlowGet('FT_Pedidos', 500);
+      var found = (existRes.value||[]).find(function(i){ return (i.fields.Title||i.fields.Pedido) === pedido; });
+      if (found) {
+        await appFlowEscribir('FT_Pedidos', 'actualizar', parseInt(found.id), fields);
       } else {
-        await appGraphPost('sites/'+appSiteId+'/lists/FT_Pedidos/items', {fields});
+        await appFlowEscribir('FT_Pedidos', 'crear', 0, fields);
       }
     } catch(e) { console.warn('appSavePedidoStatusToSP:', e.message); }
   } catch(e) { console.warn('appSavePedidoStatusToSP outer:', e.message); }
@@ -7763,13 +7787,14 @@ async function appSaveMoveToSP(of_sap, of){
       // If _spId missing, look it up in SP by Op_ID
       if(!op._spId && op.id){
         try {
-          // SP Graph OData filter - plain string format
-          var _filter = "sites/"+appSiteId+"/lists/FT_Operaciones/items?"+
-            "$filter=fields/Op_ID eq '"+op.id+"'&$select=id,fields/Op_ID&$top=2";
+          // Buscar _spId via Flow (fetch-all + filter JS)
           console.log('  🔍 Buscando _spId para:', op.id);
-          var searchRes = await appGraphGet(_filter);
-          if(searchRes && searchRes.value && searchRes.value.length>0){
-            op._spId = searchRes.value[0].id;
+          var allOps = await appFlowGet('FT_Operaciones', 5000);
+          var found = (allOps.value||[]).find(function(item){
+            return item.fields && item.fields.Op_ID === op.id;
+          });
+          if(found){
+            op._spId = found.id;
             console.log('  📌 _spId encontrado:', op._spId);
           } else {
             console.warn('  ⚠ No encontrado en SP:', op.id);
@@ -7778,10 +7803,7 @@ async function appSaveMoveToSP(of_sap, of){
       }
       if(!op._spId){ console.warn('  ❌ Sin _spId para '+op.id+' — saltando'); continue; }
       try {
-        await appGraphPatch(
-          'sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-          {Secuencia: newSeq}
-        );
+        await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Secuencia: newSeq});
         savedCount++;
         console.log('  ✅ Secuencia '+newSeq+' → op '+op.id+' (_spId:'+op._spId+')');
       } catch(pe){ console.warn('  ❌ PATCH error '+op.id+':', pe.message||pe); }
@@ -8053,8 +8075,8 @@ function appConfirmReanudar(){
         await appSaveOpToSP(ctx.of_sap, ctx.op_id);
         console.log('✅ Turno A done guardado en SP');
         // 2. Crear op B en SP (nueva op con piezas restantes para turno B)
-        if(newOp && typeof appGraphPost==='function'){
-          var seqNum = of.ops.length; // newOp already pushed → length = correct sequence
+        if(newOp){
+          var seqNum = of.ops.length;
           var postFields = {
             Title:     newOp.nombre,
             OF_SAP:    ctx.of_sap,
@@ -8069,19 +8091,19 @@ function appConfirmReanudar(){
             Mins:      0,
             Inicio:    '', Fin:''
           };
-          var res = await appGraphPost('sites/'+appSiteId+'/lists/FT_Operaciones/items',{fields:postFields});
-          newOp._spId = res.id;
+          var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
+          newOp._spId = res && res.id ? res.id : null;
           newOp.isTemplate = false;
-          console.log('✅ Turno B creado en SP _spId:'+res.id+' tecnico:'+nuevoTech+' pzas:'+pzRest);
+          console.log('✅ Turno B creado en SP tecnico:'+nuevoTech+' pzas:'+pzRest);
           // 2b. Register Turno B in FT_Cola_Estacion
           if(newOp.estacion){
             var colFields2={
               Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
-              Estacion: newOp.estacion, Posicion: 999, // will be corrected by sqSyncColaNumbers
+              Estacion: newOp.estacion, Posicion: 999,
               Tipo_Cola:'normal', Status:'pending', Activo: true
             };
-            appGraphPost('sites/'+appSiteId+'/lists/FT_Cola_Estacion/items',{fields:colFields2})
-              .then(function(r2){ newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
+            appFlowEscribir('FT_Cola_Estacion', 'crear', 0, colFields2)
+              .then(function(r2){ if(r2&&r2.id) newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
               .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
           }
         }
@@ -10592,7 +10614,7 @@ async function appQueueSave(){
         for(var oi=0; oi<aof2.ops.length; oi++){
           var op = aof2.ops[oi];
           if(!op._spId) continue;
-          try { await appGraphPatch('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+op._spId+'/fields',{Cola:op.cola||0});
+          try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
                 console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
           } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
