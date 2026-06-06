@@ -4723,55 +4723,6 @@ async function ftSaveOpToSP(of_sap, opId) {
     }
   } catch(e) { console.warn('ftSaveOpToSP:', e.message); }
 }
-  if (!FT_SITE_ID) {
-    try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
-  }
-  try {
-    const aof = DB.activeOFs.find(a => a.of_sap === of_sap);
-    const op = aof ? aof.ops.find(o => o.id === opId) : null;
-    if (!op) return;
-    // Hardcoded writable field names for FT_Operaciones PATCH
-    // Determine Secuencia from current position in OF
-    var _seqIdx = aof ? aof.ops.indexOf(op) : -1;
-    var _secuencia = _seqIdx >= 0 ? _seqIdx + 1 : 0;
-    const fields = {
-      Status:         op.status || 'pending',
-      Inicio:         op.inicio || '',
-      Fin:            op.fin || '',
-      Mins:           op.mins || 0,
-      Qty_OK:         op.qty_ok || 0,
-      Qty_Def:        op.qty_def || 0,
-      Qty_Rej:        op.qty_rej || 0,
-      Tecnico:        op.tecnico || '',
-      Ayudantes_JSON: (op.ayudantes || []).join(','),
-      PauseReason:    op.pauseReason || '',
-      Tip:            op.tipo || 'Secuencial',
-      Secuencia:      _secuencia,  // persist current position
-    };
-    if (op.needsCal === true)   fields.NeedsCal = true;
-    if (op.valcalNote&&op.valcalNote.charAt(0)!=='{') fields.ValCalNote = op.valcalNote;
-    // Always save Cola so mobile app sees current queue position
-    fields.Cola = op.cola !== undefined ? (op.cola || 0) : 0;
-    if (op.isRetrabajo === true) fields.isRetrabajo = true;
-    if (op._spId) {
-      try {
-        await spEscribir('FT_Operaciones', fields, op._spId);
-      } catch(patchErr) {
-        if (patchErr.message && patchErr.message.indexOf('400') >= 0) {
-          // Try with minimal patch fields
-          const patchMin = { Status: op.status||'pending', Tecnico: op.tecnico||'', Inicio: op.inicio||'', Fin: op.fin||'', Mins: op.mins||0, Qty_OK: op.qty_ok||0, Qty_Def: op.qty_def||0, Qty_Rej: op.qty_rej||0 };
-          await spEscribir('FT_Operaciones', patchMin, op._spId);
-        } else { throw patchErr; }
-      }
-    } else {
-      // Op not in SP yet — create it
-      await ftCreateOpInSP(of_sap, op, aof);
-    }
-  } catch(e) {
-    console.error('ftSaveOpToSP FAILED for', of_sap, opId, ':', e.message);
-  }
-}
-
 async function ftCreateOpInSP(of_sap, op, aof) {
   if (!op) return;
   const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
