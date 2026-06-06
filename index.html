@@ -513,7 +513,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" style="display:none;" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()" style="display:none;">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.6.5</div>
+    <div class="login-version">v1.7.0</div>
   </div>
 </div>
 
@@ -3555,7 +3555,7 @@ async function ftConfirmExcelLoad() {
   try {
     const siteId = await getSiteId();
     // Load existing OFs from SharePoint to detect duplicates
-    const existRes = await graphGet('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000');
+    const existRes = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const existMap = {};
     (existRes.value||[]).forEach(i => { existMap[String(i.fields.Title||i.fields.OF_SAP||'')] = i.id; });
 
@@ -3590,14 +3590,14 @@ async function ftConfirmExcelLoad() {
 
         if (isNew) {
           // -- CREAR: nueva OF -----------------------------------------
-          const createRes = await graphPost('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items', { fields: { Title: ofSap } });
+          const createRes = await spEscribir('FT_OrdenesFabricacion', { Title: ofSap }, null);
           itemId = createRes.id;
           created++;
           // Patch todos los campos para OFs nuevas
           for (const [key, val] of Object.entries(patchFields)) {
             if (val === '' || val === null || val === undefined) continue;
             try {
-              await graphPatch('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items/' + itemId + '/fields', { [key]: val });
+              await spEscribir('FT_OrdenesFabricacion', { [key]: val }, itemId);
             } catch(fe) { console.warn('Campo nuevo rechazado "'+key+'":', fe && fe.message ? fe.message.substring(0,80) : fe); }
           }
         } else {
@@ -3610,7 +3610,7 @@ async function ftConfirmExcelLoad() {
             const val = patchFields[key];
             if (val === '' || val === null || val === undefined) continue;
             try {
-              await graphPatch('sites/' + siteId + '/lists/FT_OrdenesFabricacion/items/' + itemId + '/fields', { [key]: val });
+              await spEscribir('FT_OrdenesFabricacion', { [key]: val }, itemId);
             } catch(fe) { console.warn('Campo actualización rechazado "'+key+'":', fe && fe.message ? fe.message.substring(0,80) : fe); }
           }
         }
@@ -3649,17 +3649,15 @@ async function ftSaveProgramacionToSP() {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
   try {
-    const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000');
+    const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const itemMap = {};
     (res.value||[]).forEach(i => { itemMap[i.fields.Title||''] = i.id; });
     for (const of_ of DB.ofs) {
       const spId = itemMap[of_.of_sap];
       if (!spId) continue;
       const newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
-      await graphPatch(
-        'sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields',
-        { Programado_Hoy: of_.programadoHoy === true, Status: newStatus }
-      ).catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
+      await spEscribir('FT_OrdenesFabricacion', { Programado_Hoy: of_.programadoHoy === true, Status: newStatus }, spId)
+        .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
   } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
@@ -3672,25 +3670,20 @@ async function ftSavePrioridadToSP() {
   }
   try {
     // Get items + verify one item's actual field names for Prioridad
-    const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000');
+    const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const itemMap = {};
     (res.value||[]).forEach(function(i){ itemMap[i.fields.Title||''] = i.id; });
 
     let saved = 0, errors = 0;
-    // Use Promise.all for parallel PATCHes
     const patches = DB.ofs.map(function(of_) {
       const spId = itemMap[of_.of_sap];
       if (!spId) return Promise.resolve();
-      // Read from PENDING_PROG first (has pending changes), fallback to DB.ofs
       const pending = (typeof PENDING_PROG !== 'undefined') && PENDING_PROG[of_.of_sap];
       const p = (pending && pending.prioridad) ? pending.prioridad : (of_.prioridad || 'normal');
       const prioSP = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
-
-      return graphPatch(
-        'sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields',
-        { Prioridad: prioSP }
-      ).then(function(){ saved++; })
-       .catch(function(e){ errors++; console.warn('Prioridad PATCH error ('+of_.of_sap+'/'+prioSP+'):', e.message||e); });
+      return spEscribir('FT_OrdenesFabricacion', { Prioridad: prioSP }, spId)
+        .then(function(){ saved++; })
+        .catch(function(e){ errors++; console.warn('Prioridad error ('+of_.of_sap+'):', e.message||e); });
     });
     await Promise.all(patches);
     if(errors) console.warn('Prioridades SP: '+saved+' OK, '+errors+' errores');
@@ -3706,10 +3699,8 @@ async function ftSaveTemplateToSP(art) {
     if (!tpl) return;
     // Detect SP columns to avoid errors for optional columns
     if (!window._ftTplCols) {
-      try {
-        var colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Plantillas_Operaciones/columns?$select=name&$top=50');
-        window._ftTplCols = (colRes.value||[]).map(function(c){ return c.name; });
-      } catch(e) { window._ftTplCols = ['Title','Operaciones_JSON']; }
+      window._ftTplCols = ['Title','Articulo_Key','Nombre_Articulo','Operaciones_JSON',
+        'Padre_Articulo','Subarts_JSON','Sub_Articulos','Ultima_Modificacion','Modificado_Por'];
     }
     var tplCols = window._ftTplCols;
     var fields = {
@@ -3728,12 +3719,12 @@ async function ftSaveTemplateToSP(art) {
     if (tplCols.indexOf('Sub_Articulos') >= 0)        fields.Sub_Articulos        = (tpl.subarts||[]).map(function(sa){return sa.articulo||sa;}).join(',');
     if (tplCols.indexOf('Ultima_Modificacion') >= 0)  fields.Ultima_Modificacion  = now;
     if (tplCols.indexOf('Modificado_Por') >= 0)       fields.Modificado_Por       = whoName;
-    var existRes = await graphGet('sites/' + FT_SITE_ID + '/lists/FT_Plantillas_Operaciones/items?$expand=fields&$top=500&$select=id,fields');
+    var existRes = await flowGet('FT_Plantillas_Operaciones', '', 500);
     var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === art; });
     if (existing) {
-      await graphPatch('sites/' + FT_SITE_ID + '/lists/FT_Plantillas_Operaciones/items/' + existing.id + '/fields', fields);
+      await spEscribir('FT_Plantillas_Operaciones', fields, existing.id);
     } else {
-      await graphPost('sites/' + FT_SITE_ID + '/lists/FT_Plantillas_Operaciones/items', {fields: fields});
+      await spEscribir('FT_Plantillas_Operaciones', fields, null);
     }
     console.log('Template saved to SP:', art);
   } catch(e) { console.warn('ftSaveTemplateToSP error:', e); }
@@ -3768,7 +3759,7 @@ async function reloadArticulosFromSP(){
   if(status) status.textContent='⏳ Recargando desde SharePoint...';
   try{
     var siteId=await getSiteId();
-    var res=await graphGet('sites/'+siteId+'/lists/FT_Articulos/items?$expand=fields&$top=2000');
+    var res=await flowGet('FT_Articulos', '', 2000);
     var count=0;
     (res.value||[]).forEach(function(i){
       var f=i.fields;
@@ -3842,7 +3833,7 @@ function onArtExcelFile(input){
 async function saveArticulosToSP(newArts, statusEl){
   if(!FT_SITE_ID){ try{ FT_SITE_ID=await getSiteId(); }catch(e){ if(statusEl)statusEl.textContent='❌ Sin conexión SP.'; return; } }
   try{
-    var existRes=await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Articulos/items?$expand=fields&$select=id,fields&$top=2000');
+    var existRes=await flowGet('FT_Articulos', '', 2000);
     var existMap={};
     (existRes.value||[]).forEach(function(i){ existMap[i.fields.Title||'']=i.id; });
     var keys=Object.keys(newArts);
@@ -3853,9 +3844,9 @@ async function saveArticulosToSP(newArts, statusEl){
       var fields={Title:art, Descripcion:newArts[art]};
       try{
         if(existMap[art]){
-          await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Articulos/items/'+existMap[art]+'/fields',fields);
+          await spEscribir('FT_Articulos', fields, existMap[art]);
         } else {
-          await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Articulos/items',{fields:fields});
+          await spEscribir('FT_Articulos', fields, null);
         }
         saved++;
         if(statusEl && i % 5 === 0) statusEl.textContent='⏳ Guardando en SharePoint... '+saved+'/'+keys.length;
@@ -3944,7 +3935,7 @@ async function registerNewOpsInCatalog(art, ops){
     var opName = newOps[i].nombre;
     try {
       // FT_Catalogo_Operaciones: just Title (= nombre operacion)
-      await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Catalogo_Operaciones/items', { fields: { Title: opName } });
+      await spEscribir('FT_Catalogo_Operaciones', { Title: opName }, null);
       // Update in-memory catalog
       if (!DB.opCatalog) DB.opCatalog = [];
       if (DB.opCatalog.indexOf(opName) < 0) { DB.opCatalog.push(opName); DB.opCatalog.sort(); }
@@ -4034,7 +4025,7 @@ async function importOpsToCatalog(newOps, statusEl){
   // Get existing names to avoid duplicates (simple dedup by Title)
   var existingNames = [];
   try {
-    var existRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Catalogo_Operaciones/items?$expand=fields&$select=id,fields&$top=5000');
+    var existRes = await flowGet('FT_Catalogo_Operaciones', '', 5000);
     existingNames = (existRes.value||[]).map(function(i){ return (i.fields.Title||'').trim(); });
   } catch(e) { console.warn('No se pudo cargar catálogo existente:', e.message); }
 
@@ -4044,7 +4035,7 @@ async function importOpsToCatalog(newOps, statusEl){
     if (!op) continue;
     if (existingNames.indexOf(op) >= 0) { skipped++; continue; } // ya existe
     try {
-      await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Catalogo_Operaciones/items', { fields: { Title: op } });
+      await spEscribir('FT_Catalogo_Operaciones', { Title: op }, null);
       existingNames.push(op);
       // Update in-memory
       if (!DB.opCatalog) DB.opCatalog = [];
@@ -4068,7 +4059,7 @@ async function ftLoadTecnicos() {
   list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem;">⏳ Cargando...</div>';
   try {
     const siteId = await getSiteId();
-    const res = await graphGet('sites/' + siteId + '/lists/FT_Tecnicos/items?$expand=fields&$top=200');
+    const res = await flowGet('FT_Tecnicos', '', 200);
     const items = (res.value||[]).map(i => ({ id: i.id, ...i.fields })).sort((a,b)=>(a.Nombre||a.Title||'').localeCompare(b.Nombre||b.Title||''));
     if (!items.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem;">Sin técnicos registrados.</div>'; return; }
     list.innerHTML = items.map(t =>
@@ -4110,23 +4101,13 @@ async function ftSaveTecnico() {
     const siteId = await getSiteId();
     // Detect SP columns once and cache
     if (!window._ftTecColumnasConocidas) {
-      try {
-        const colRes = await graphGet('sites/'+siteId+'/lists/FT_Tecnicos/columns?$select=name&$top=50');
-        window._ftTecColumnasConocidas = (colRes.value||[]).map(function(c){ return c.name; });
-        console.log('FT_Tecnicos columnas disponibles:', window._ftTecColumnasConocidas);
-      } catch(e) { window._ftTecColumnasConocidas = ['Title']; }
+      window._ftTecColumnasConocidas = ['Title','Nombre','Puesto','Activo'];
     }
-    const cols = window._ftTecColumnasConocidas;
-    const fields = { Title: nombre };
-    if (cols.indexOf('Nombre') >= 0) fields.Nombre = nombre;
-    if (cols.indexOf('Puesto') >= 0) fields.Puesto = puesto;
-    if (cols.indexOf('Activo') >= 0) fields.Activo = activo;
-    if (cols.indexOf('Activa') >= 0) fields.Activa = activo;
-
+    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo };
     if (_ftEditTecId) {
-      await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'/fields', fields);
+      await spEscribir('FT_Tecnicos', fields, _ftEditTecId);
     } else {
-      await graphPost('sites/'+siteId+'/lists/FT_Tecnicos/items', { fields });
+      await spEscribir('FT_Tecnicos', fields, null);
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);
@@ -4145,7 +4126,7 @@ async function ftLoadEstaciones() {
   list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem;">⏳ Cargando...</div>';
   try {
     const siteId = await getSiteId();
-    const res = await graphGet('sites/' + siteId + '/lists/FT_Estaciones/items?$expand=fields&$top=200');
+    const res = await flowGet('FT_Estaciones', '', 200);
     const items = (res.value||[]).map(i => ({ id: i.id, ...i.fields }));
     if (!items.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--dim);font-size:.8rem;">Sin estaciones registradas.</div>'; return; }
     list.innerHTML = items.map(est =>
@@ -4194,26 +4175,13 @@ async function ftSaveEstacion() {
     const siteId = await getSiteId();
     // Detect which columns SP list actually has (cache the result)
     if (!window._ftEstColumnasConocidas) {
-      try {
-        const colRes = await graphGet('sites/'+siteId+'/lists/FT_Estaciones/columns?$select=name&$top=50');
-        window._ftEstColumnasConocidas = (colRes.value||[]).map(function(c){ return c.name; });
-        console.log('FT_Estaciones columnas disponibles:', window._ftEstColumnasConocidas);
-      } catch(e) {
-        window._ftEstColumnasConocidas = ['Title']; // fallback mínimo
-      }
+      window._ftEstColumnasConocidas = ['Title','Nombre','Status','Activa','Activo'];
     }
-    const cols = window._ftEstColumnasConocidas;
-    // Build fields object with only columns that exist in SP
-    const fields = { Title: nombre };
-    if (cols.indexOf('Nombre') >= 0) fields.Nombre = nombre;
-    if (cols.indexOf('Status') >= 0) fields.Status = status;
-    if (cols.indexOf('Activa') >= 0) fields.Activa = activa;
-    if (cols.indexOf('Activo') >= 0) fields.Activo = activa; // some lists use Activo
-
+    const fields = { Title: nombre, Nombre: nombre, Status: status, Activa: activa };
     if (_ftEditEstId) {
-      await graphPatch('sites/'+siteId+'/lists/FT_Estaciones/items/'+_ftEditEstId+'/fields', fields);
+      await spEscribir('FT_Estaciones', fields, _ftEditEstId);
     } else {
-      await graphPost('sites/'+siteId+'/lists/FT_Estaciones/items', { fields });
+      await spEscribir('FT_Estaciones', fields, null);
     }
     // Update in-memory immediately — no need to wait for SP reload
     if (!window.STATIONS) window.STATIONS = [];
@@ -4729,6 +4697,32 @@ async function ftLoadDataFromSP() {
 
 // -- SP Persistence — Save op status changes -----------
 async function ftSaveOpToSP(of_sap, opId) {
+  try {
+    const aof = ftState.activeOFs ? ftState.activeOFs.find(a=>a.of_sap===of_sap) : null;
+    const op = aof ? aof.ops.find(o=>o.id===opId) : null;
+    if (!op) return;
+    const fields = {
+      Status: op.status||'pending', Inicio: op.inicio||'', Fin: op.fin||'',
+      Mins: op.mins||0, Qty_Total: op.qty_total||0, Qty_OK: op.qty_ok||0,
+      Qty_Def: op.qty_def||0, Qty_Rej: op.qty_rej||0, Tecnico: op.tecnico||'',
+      Ayudantes_JSON: (op.ayudantes||[]).join(','), PauseReason: op.pauseReason||'',
+      Tip: op.tipo||'Secuencial',
+    };
+    if (op.needsCal===true) fields.NeedsCal=true;
+    if (op.valcalNote && op.valcalNote.charAt(0)!=='{') fields.ValCalNote=op.valcalNote;
+    if (op.isRetrabajo===true) fields.isRetrabajo=true;
+    if (op.turnoData) fields.TurnoData=op.turnoData;
+    if (op._spId) {
+      await spEscribir('FT_Operaciones', fields, op._spId);
+    } else {
+      // Buscar existente via Flow
+      var existing = await flowGet('FT_Operaciones', '', 5000);
+      var found = (existing.value||[]).find(function(i){ return i.fields.Op_ID===opId && i.fields.OF_SAP===of_sap; });
+      if (found) { op._spId=found.id; await spEscribir('FT_Operaciones', fields, op._spId); }
+      else await ftCreateOpInSP(of_sap, op, aof);
+    }
+  } catch(e) { console.warn('ftSaveOpToSP:', e.message); }
+}
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
@@ -4761,12 +4755,12 @@ async function ftSaveOpToSP(of_sap, opId) {
     if (op.isRetrabajo === true) fields.isRetrabajo = true;
     if (op._spId) {
       try {
-        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', fields);
+        await spEscribir('FT_Operaciones', fields, op._spId);
       } catch(patchErr) {
         if (patchErr.message && patchErr.message.indexOf('400') >= 0) {
           // Try with minimal patch fields
           const patchMin = { Status: op.status||'pending', Tecnico: op.tecnico||'', Inicio: op.inicio||'', Fin: op.fin||'', Mins: op.mins||0, Qty_OK: op.qty_ok||0, Qty_Def: op.qty_def||0, Qty_Rej: op.qty_rej||0 };
-          await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', patchMin);
+          await spEscribir('FT_Operaciones', patchMin, op._spId);
         } else { throw patchErr; }
       }
     } else {
@@ -4780,26 +4774,7 @@ async function ftSaveOpToSP(of_sap, opId) {
 
 async function ftCreateOpInSP(of_sap, op, aof) {
   if (!op) return;
-  // Resolve siteId if not yet available
-  if (!FT_SITE_ID) {
-    try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftCreateOpInSP: no siteId', e.message); return; }
-  }
   const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
-  // Get actual SP internal column names (cache per list)
-  if (!window._ftOpColMap) {
-    try {
-      const colRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/columns?$select=name,displayName,readOnly,hidden&$top=100');
-      window._ftOpColMap = {};
-      // Only include writable, non-hidden columns
-      (colRes.value||[]).forEach(function(c){
-        if (!c.readOnly && !c.hidden) {
-          window._ftOpColMap[c.displayName] = c.name;
-          window._ftOpColMap[c.name] = c.name;
-        }
-      });
-      console.log('FT_Operaciones col map (writable only):', JSON.stringify(window._ftOpColMap));
-    } catch(e) { window._ftOpColMap = {}; }
-  }
   // Use HARDCODED internal SP field names (confirmed from col map logs)
   // 'tipo' display name → 'Tip' internal name (confirmed)
   // All other custom fields have matching display/internal names
@@ -4829,27 +4804,21 @@ async function ftCreateOpInSP(of_sap, op, aof) {
   if (op.needsCal === true)    fields.NeedsCal = true;
 
   try {
-    const res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields });
-    op._spId = res.id;
-    console.log('✅ Op creada en SP:', op.nombre || op.id, '→ SP id', res.id);
+    const res = await spEscribir('FT_Operaciones', fields, null);
+    op._spId = res && res.id ? res.id : null;
+    console.log('✅ Op creada en SP via Flow:', op.nombre || op.id);
   } catch(e) {
     console.error('ftCreateOpInSP FAILED:', e.message);
-    // Try super-minimal: only Title (required), plus most basic fields
     try {
-      const minFields = { Title: op.id };
-      if (cm['OF_SAP']) minFields[cm['OF_SAP']] = of_sap;
-      if (cm['Op_ID'])  minFields[cm['Op_ID']]  = op.id;
-      if (cm['Status']) minFields[cm['Status']] = op.status||'pending';
-      if (cm['Secuencia']) minFields[cm['Secuencia']] = seqNum;
-      const res2 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: minFields });
-      op._spId = res2.id;
-      console.log('✅ Op creada en SP (mínima):', op.id, '→', res2.id);
+      const minFields = { Title: op.id, OF_SAP: of_sap, Op_ID: op.id, Status: op.status||'pending', Secuencia: seqNum };
+      const res2 = await spEscribir('FT_Operaciones', minFields, null);
+      op._spId = res2 && res2.id ? res2.id : null;
+      console.log('✅ Op creada en SP (mínima):', op.id);
     } catch(e2) {
-      // Last resort: just Title
       try {
-        const res3 = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items', { fields: { Title: op.id } });
-        op._spId = res3.id;
-        console.log('✅ Op creada en SP (solo Title):', op.id, '→', res3.id);
+        const res3 = await spEscribir('FT_Operaciones', { Title: op.id }, null);
+        op._spId = res3 && res3.id ? res3.id : null;
+        console.log('✅ Op creada en SP (solo Title):', op.id);
       } catch(e3) {
         console.error('ftCreateOpInSP FATAL:', e3.message);
         throw e3;
@@ -4885,10 +4854,16 @@ async function ftSaveTimerToSP(key) {
       Op_ID: key.split('_').slice(1).join('_'),
       Start_MS: t.start, Elapsed_MS: t.elapsed||0, Running: t.running };
     if (t._spId) {
-      await graphPatch('sites/' + FT_SITE_ID + '/lists/FT_Timers/items/' + t._spId + '/fields', fields);
+      await spEscribir('FT_Timers', fields, t._spId);
     } else {
-      const res = await graphPost('sites/' + FT_SITE_ID + '/lists/FT_Timers/items', { fields });
-      t._spId = res.id;
+      // Buscar existente
+      try {
+        var ex = await flowGet('FT_Timers', '', 2000);
+        var found = (ex.value||[]).find(function(i){ return i.fields.Title===key; });
+        if (found) { t._spId=found.id; await spEscribir('FT_Timers', fields, t._spId); return; }
+      } catch(e2){}
+      const res = await spEscribir('FT_Timers', fields, null);
+      if (res&&res.id) t._spId=res.id;
     }
   } catch(e) { console.warn('ftSaveTimerToSP error:', e); }
 }
@@ -4902,19 +4877,17 @@ async function ftSaveQueueToSP(of_sap) {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
 
-    // ── Step 1: Load existing FT_Cola_Estacion items ─────────────────────────
+    // ── Step 1: Load existing FT_Cola_Estacion items via Flow ──────────────
     if(!window._queueSpIdCache) window._queueSpIdCache = {};
     try {
-      var existingRes = await graphGet(
-        'sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
-      );
+      var existingRes = await flowGet('FT_Cola_Estacion', '', 500);
       (existingRes.value||[]).forEach(function(item){
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
       });
     } catch(e){ console.warn('ftSaveQueueToSP: error loading existing items:', e.message); }
 
-    // ── Step 2: Restore _queueSpId on all ops from cache ──────────────────────
+    // ── Step 2: Restore _queueSpId on all ops from cache ──────────────────
     DB.activeOFs.forEach(function(a){
       a.ops.forEach(function(op){
         if(!op._queueSpId && window._queueSpIdCache[op.id]){
@@ -4923,15 +4896,12 @@ async function ftSaveQueueToSP(of_sap) {
       });
     });
 
-    // ── Step 3: Upsert each op using _queueSpId (PATCH) or create new (POST) ──
+    // ── Step 3: Upsert each op via Flow ───────────────────────────────────
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
-      // Use op.cola set by sqSyncColaNumbers (1,2,3... for pending, null for running)
-      // Running/paused ops get Posicion=0, pending get their consecutive number
       var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating')
-                    ? 0
-                    : (op.cola || 0);
+                    ? 0 : (op.cola || 0);
       var fields = {
         Title:     op.estacion || of_sap,
         OF_SAP:    of_sap,
@@ -4942,11 +4912,10 @@ async function ftSaveQueueToSP(of_sap) {
       };
       try {
         if (op._queueSpId) {
-          await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields', fields);
+          await spEscribir('FT_Cola_Estacion', fields, op._queueSpId);
         } else {
-          var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items', { fields });
-          op._queueSpId = res.id;
-          window._queueSpIdCache[op.id] = res.id;
+          var res = await spEscribir('FT_Cola_Estacion', fields, null);
+          if(res&&res.id){ op._queueSpId=res.id; window._queueSpIdCache[op.id]=res.id; }
         }
       } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
     }
@@ -4968,18 +4937,15 @@ async function ftSaveStationStatusToSP(estacion) {
     };
     // Check if record exists
     if (ss._spId) {
-      await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Status_Estacion/items/'+ss._spId+'/fields', fields);
+      await spEscribir('FT_Status_Estacion', fields, ss._spId);
     } else {
       try {
-        var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Status_Estacion/items', { fields });
-        ss._spId = res.id;
+        var res = await spEscribir('FT_Status_Estacion', fields, null);
+        if (res&&res.id) ss._spId=res.id;
       } catch(e) {
-        // May already exist — try to find and patch
-        var existRes = await graphGet('sites/'+FT_SITE_ID+"/lists/FT_Status_Estacion/items?$filter=fields/Title eq '"+encodeURIComponent(estacion)+"'&$expand=fields");
-        if (existRes.value && existRes.value.length) {
-          ss._spId = existRes.value[0].id;
-          await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Status_Estacion/items/'+ss._spId+'/fields', fields);
-        }
+        var existRes = await flowGet('FT_Status_Estacion', '', 100);
+        var found = (existRes.value||[]).find(function(i){ return (i.fields.Estacion||i.fields.Title)===estacion; });
+        if (found) { ss._spId=found.id; await spEscribir('FT_Status_Estacion', fields, ss._spId); }
       }
     }
   } catch(e) { console.warn('ftSaveStationStatusToSP error:', e.message); }
@@ -5000,10 +4966,10 @@ async function ftSaveCalTiempoToSP(key, calData) {
       Registrado_Por: window.CURRENT_USER_NAME || 'Sistema',
     };
     if (calData._spId) {
-      await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items/'+calData._spId+'/fields', fields);
+      await spEscribir('FT_CalTiempos', fields, calData._spId);
     } else {
-      var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items', { fields });
-      calData._spId = res.id;
+      var res = await spEscribir('FT_CalTiempos', fields, null);
+      if (res&&res.id) calData._spId=res.id;
     }
   } catch(e) { console.warn('ftSaveCalTiempoToSP error:', e.message); }
 }
@@ -5034,12 +5000,10 @@ async function ftSavePedidoStatusToSP(pedido) {
     };
     // Upsert
     try {
-      var existRes = await graphGet('sites/'+FT_SITE_ID+"/lists/FT_Pedidos/items?$filter=fields/Title eq '"+pedido+"'&$expand=fields&$top=1");
-      if (existRes.value && existRes.value.length) {
-        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Pedidos/items/'+existRes.value[0].id+'/fields', fields);
-      } else {
-        await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Pedidos/items', { fields });
-      }
+      var existRes = await flowGet('FT_Pedidos', '', 500);
+      var found = (existRes.value||[]).find(function(i){ return (i.fields.Title||i.fields.Pedido)===pedido; });
+      if (found) { await spEscribir('FT_Pedidos', fields, found.id); }
+      else { await spEscribir('FT_Pedidos', fields, null); }
     } catch(e) { console.warn('ftSavePedidoStatusToSP error:', e.message); }
   } catch(e) { console.warn('ftSavePedidoStatusToSP outer error:', e.message); }
 }
@@ -7612,9 +7576,8 @@ appMoveOp = function(sap, idx, dir) {
   if(typeof FT_SITE_ID!=='undefined' && FT_SITE_ID){
     of.ops.forEach(function(op,i){
       if(!op._spId) return;
-      graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-        {Secuencia: i+1}
-      ).catch(function(e){ console.warn('MoveOp portal SP:', e.message); });
+      spEscribir('FT_Operaciones', {Secuencia: i+1}, op._spId)
+        .catch(function(e){ console.warn('MoveOp portal SP:', e.message); });
     });
   }
   // Coordinator notification (to supervisor via fireSync)
@@ -9360,7 +9323,7 @@ async function portalSaveColaToSP(estacion){
   // Always reload _queueSpIdCache from SP to get latest item IDs
   window._queueSpIdCache = {};
   try {
-    var existRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500');
+    var existRes = await flowGet('FT_Cola_Estacion', '', 500);
     (existRes.value||[]).forEach(function(item){
       if(item.fields && item.fields.Op_ID) window._queueSpIdCache[item.fields.Op_ID] = item.id;
     });
@@ -9386,7 +9349,7 @@ async function portalSaveColaToSP(estacion){
     // PATCH FT_Operaciones.Cola
     if(op._spId){
       try {
-        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields', {Cola: colaNum});
+        await spEscribir('FT_Operaciones', {Cola: colaNum}, op._spId);
         savedOps++;
       } catch(e){ console.warn('Cola PATCH FT_Op error:', e.message); }
     }
@@ -9394,8 +9357,7 @@ async function portalSaveColaToSP(estacion){
     // PATCH FT_Cola_Estacion.Posicion (never POST — avoid duplicates)
     if(op._queueSpId){
       try {
-        await graphPatch('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+op._queueSpId+'/fields',
-          {Posicion: colaNum, Activo: op.status!=='done'});
+        await spEscribir('FT_Cola_Estacion', {Posicion: colaNum, Activo: op.status!=='done'}, op._queueSpId);
         savedQueue++;
       } catch(e){ console.warn('Cola PATCH FT_Cola error:', e.message); }
     }
