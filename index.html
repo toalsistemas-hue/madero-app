@@ -3722,6 +3722,8 @@ async function ftSaveTemplateToSP(art) {
     if (tplCols.indexOf('Modificado_Por') >= 0)       fields.Modificado_Por       = whoName;
     var existRes = await flowGet('FT_Plantillas_Operaciones', '', 500);
     var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === art; });
+    console.log('[Template] fields:', JSON.stringify(fields).slice(0,500));
+    console.log('[Template] existing id:', existing ? existing.id : 'NUEVO');
     if (existing) {
       await spEscribir('FT_Plantillas_Operaciones', fields, existing.id);
     } else {
@@ -4274,7 +4276,11 @@ async function flowEscribir(lista, operacion, itemId, datos) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos })
   });
-  if (!res.ok) throw new Error('Flow ESCRIBIR '+lista+' '+res.status);
+  if (!res.ok) {
+    var errText = await res.text();
+    console.error('[flowEscribir] '+lista+' '+res.status+' error:', errText.slice(0,800));
+    throw new Error('Flow ESCRIBIR '+lista+' '+res.status);
+  }
   return res.json();
 }
 
