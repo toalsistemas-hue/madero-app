@@ -3717,7 +3717,8 @@ async function ftSaveTemplateToSP(art) {
     if (tplCols.indexOf('Padre_Articulo') >= 0)       fields.Padre_Articulo       = tpl.padre || '';
     if (tplCols.indexOf('Subarts_JSON') >= 0)         fields.Subarts_JSON         = JSON.stringify(tpl.subarts || []);
     if (tplCols.indexOf('Sub_Articulos') >= 0)        fields.Sub_Articulos        = (tpl.subarts||[]).map(function(sa){return sa.articulo||sa;}).join(',');
-    if (tplCols.indexOf('Ultima_Modificacion') >= 0)  fields.Ultima_Modificacion  = now;
+    // Ultima_Modificacion es tipo Fecha en SP — el Flow no puede escribirla como string ISO
+    // SP registra Modified automáticamente, que cumple la misma función
     if (tplCols.indexOf('Modificado_Por') >= 0)       fields.Modificado_Por       = whoName;
     var existRes = await flowGet('FT_Plantillas_Operaciones', '', 500);
     var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === art; });
@@ -4913,7 +4914,7 @@ async function ftSaveCalTiempoToSP(key, calData) {
       Estacion:    calData.estacion || '',
       Muestras_JSON: JSON.stringify(calData.muestras || []),
       Promedio_Seg: calData.promedio || 0,
-      Fecha:       new Date().toISOString(),
+      // Fecha omitida — SP registra Modified automáticamente
       Registrado_Por: window.CURRENT_USER_NAME || 'Sistema',
     };
     if (calData._spId) {
@@ -4947,7 +4948,7 @@ async function ftSavePedidoStatusToSP(pedido) {
       Avance_Pct:        pct,
       Ops_Total:         totalOps,
       Ops_Done:          doneOps,
-      Ultima_Actualizacion: new Date().toISOString(),
+      // Ultima_Actualizacion omitida — SP registra Modified automáticamente
     };
     // Upsert
     try {
