@@ -3579,7 +3579,6 @@ async function ftConfirmExcelLoad() {
         Sub_Articulos: String(row.Sub_Articulos || row.sub_articulos || row['Sub Articulos'] || ''),
         Status: 'Sin programar',
         Programado_Hoy: false,
-        Fecha_Carga: new Date().toISOString().split('T')[0],
       };
       // Try adding each optional field — if a field name is wrong SP will reject the whole batch
       // so we merge them all (user must ensure column names match)
@@ -3589,30 +3588,22 @@ async function ftConfirmExcelLoad() {
         let itemId = existMap[ofSap] || null;
 
         if (isNew) {
-          // -- CREAR: nueva OF -----------------------------------------
-          const createRes = await spEscribir('FT_OrdenesFabricacion', { Title: ofSap }, null);
-          itemId = createRes.id;
+          // -- CREAR: nueva OF con todos los campos en una sola llamada --
+          const createRes = await spEscribir('FT_OrdenesFabricacion', fields, null);
+          itemId = createRes && createRes.id ? createRes.id : null;
           created++;
-          // Patch todos los campos para OFs nuevas
-          for (const [key, val] of Object.entries(patchFields)) {
-            if (val === '' || val === null || val === undefined) continue;
-            try {
-              await spEscribir('FT_OrdenesFabricacion', { [key]: val }, itemId);
-            } catch(fe) { console.warn('Campo nuevo rechazado "'+key+'":', fe && fe.message ? fe.message.substring(0,80) : fe); }
-          }
         } else {
-          // -- ACTUALIZAR: OF existente --------------------------------
-          // Solo actualizar campos que vienen del Excel — NO sobreescribir datos operacionales
-          // Preservar: Status, Programado_Hoy, Fecha_Carga, Prioridad
+          // -- ACTUALIZAR: OF existente — solo campos del Excel ----------
           const ACTUALIZAR = ['Numero_Articulo', 'Descripcion_Articulo', 'Pedido', 'Cliente', 'Rotacion', 'Sub_Articulos'];
-          updated++;
+          const updateFields = {};
           for (const key of ACTUALIZAR) {
-            const val = patchFields[key];
-            if (val === '' || val === null || val === undefined) continue;
-            try {
-              await spEscribir('FT_OrdenesFabricacion', { [key]: val }, itemId);
-            } catch(fe) { console.warn('Campo actualización rechazado "'+key+'":', fe && fe.message ? fe.message.substring(0,80) : fe); }
+            const val = optFields[key];
+            if (val !== '' && val !== null && val !== undefined) updateFields[key] = val;
           }
+          if (Object.keys(updateFields).length > 0) {
+            await spEscribir('FT_OrdenesFabricacion', updateFields, itemId);
+          }
+          updated++;
         }
       } catch(e) { errors++; console.warn('Error OF ' + ofSap + ':', e); }
     }
