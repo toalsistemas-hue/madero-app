@@ -4354,7 +4354,7 @@ async function ftLoadDataFromSP() {
     const allOps=Object.values(_seen);
     if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
     DB.activeOFs = ofs
-      .filter(f => f.Programado_Hoy === true || ['Planeacion','En Fabricacion'].includes(f.Status))
+      .filter(f => f.Programado_Hoy === true || ['Planeacion','En Fabricacion','Sin programar'].includes(f.Status))
       .map(f => {
         const ofSap = f.OF_SAP || f.Title || '';
         return {
@@ -4420,6 +4420,7 @@ async function ftLoadDataFromSP() {
       }
     });
     console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
+    if (ofs.length > 0) console.log('[DEBUG OF fields]:', JSON.stringify(ofs[0]).slice(0,400));
     // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
     if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
       console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
