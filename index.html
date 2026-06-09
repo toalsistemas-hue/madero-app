@@ -7012,6 +7012,7 @@ function renderProg() {
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
       var total = aof ? aof.ops.length : 0;
+      if (of.articulo === 'ES100408') console.log('[RENDER] OF', of.of_sap, 'aof='+!!aof, 'total='+total, 'ops=', aof?aof.ops.length:0);
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var borderStyle = pending ? 'border-left:3px solid var(--yellow);' : '';
       h += '<div class="prog-of-row" style="'+borderStyle+'">';
