@@ -3703,8 +3703,6 @@ async function ftSaveTemplateToSP(art) {
     // Ultima_Modificacion (DateTime) y Modificado_Por (User) omitidos
     var existRes = await flowGet('FT_Plantillas_Operaciones', '', 500);
     var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === art; });
-    console.log('[Template] fields:', JSON.stringify(fields).slice(0,500));
-    console.log('[Template] existing id:', existing ? existing.id : 'NUEVO');
     if (existing) {
       await spEscribir('FT_Plantillas_Operaciones', fields, existing.id);
     } else {
@@ -4492,9 +4490,7 @@ async function ftLoadDataFromSP() {
     // For OFs with no FT_Operaciones records: fill from template AND persist to SP
     // NOTA: este bloque se ejecuta DESPUÉS de cargar DB.templates (línea ~4541)
     var ofsNeedingSpCreate = [];
-    console.log('[TPL] templates disponibles:', Object.keys(DB.templates));
     DB.activeOFs.forEach(function(aof){
-      console.log('[TPL] OF', aof.of_sap, 'articulo='+aof.articulo, 'ops='+aof.ops.length, 'tpl='+!!DB.templates[aof.articulo]);
       if (aof.ops.length === 0 && aof.articulo) {
         var tpl = DB.templates[aof.articulo];
         if (tpl && tpl.ops && tpl.ops.length) {
@@ -4507,6 +4503,7 @@ async function ftLoadDataFromSP() {
               status: 'pending', inicio: null, fin: null, mins: 0,
               isTemplate: true, pauseReason: null, valcalNote: null,
               needsCal: false, calResult: null, calComment: null,
+              cola: 0, secuencia: i + 1,
             };
           });
           if (tpl.padre) aof.padre = {articulo: tpl.padre, nombre: DB.articles[tpl.padre]||''};
@@ -7012,7 +7009,6 @@ function renderProg() {
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
       var total = aof ? aof.ops.length : 0;
-      if (of.articulo === 'ES100408') console.log('[RENDER] OF', of.of_sap, 'aof='+!!aof, 'total='+total, 'ops=', aof?aof.ops.length:0);
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var borderStyle = pending ? 'border-left:3px solid var(--yellow);' : '';
       h += '<div class="prog-of-row" style="'+borderStyle+'">';
@@ -7970,14 +7966,9 @@ function saveTplModal(){
           var tpl = DB.templates[art];
           if (!tpl || !tpl.ops) continue;
 
-          // ── SAFE SYNC: Always reload current ops from SP before making changes ──
-          // This ensures we use the true SP state (with correct _spId values)
-          // and never operate on stale in-memory ops from previous supervisor reorders
+          // ── SAFE SYNC: Reload current ops from SP via Flow ──
           try {
-            // Graph API doesn't support $filter with $expand on SP lists — fetch all and filter in JS
-            var freshRes = await graphGet(
-              "sites/"+FT_SITE_ID+"/lists/FT_Operaciones/items?$expand=fields&$select=id,fields&$top=500"
-            );
+            var freshRes = await flowGet('FT_Operaciones', '', 500);
             // Filter in JS to only keep items for this OF
             if(freshRes && freshRes.value){
               freshRes.value = freshRes.value.filter(function(item){
@@ -9063,6 +9054,8 @@ function renderHist(){
   var estOps2={};
   DB.activeOFs.forEach(function(aof){
     var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
+    // Carga por Estación: solo OFs programadas para hoy
+    if(!ofRec.programadoHoy) return;
     aof.ops.forEach(function(op){
       if(!op.estacion) return;
       if(!estOps2[op.estacion]) estOps2[op.estacion]=[];

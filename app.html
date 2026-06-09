@@ -5853,7 +5853,7 @@ async function appLoadDataFromSP() {
     const allOps = Object.values(opsSeen);
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
-    DB.activeOFs = ofs.filter(f=>f.Programado_Hoy===true||['Planeacion','En Fabricacion'].includes(f.Status)).map(f => ({
+    DB.activeOFs = ofs.filter(f=>f.Programado_Hoy===true).map(f => ({
       of_sap:      f.OF_SAP||f.Title||'',
       pedido:      f.Numero_Pedido||f.Pedido||'',
       cliente:     f.Cliente||'',
