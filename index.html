@@ -4300,7 +4300,8 @@ async function spGet(lista, queryParams) {
 async function spEscribir(lista, datos, itemId) {
   if (LISTAS_PROTEGIDAS.indexOf(lista) !== -1) {
     var op = itemId ? 'actualizar' : 'crear';
-    return flowEscribir(lista, op, itemId || 0, datos);
+    var idNum = itemId ? parseInt(itemId, 10) : 0;
+    return flowEscribir(lista, op, idNum, datos);
   }
   const sid = await getSiteId();
   if (itemId) {
