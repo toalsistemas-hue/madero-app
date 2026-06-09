@@ -4521,6 +4521,8 @@ async function ftLoadDataFromSP() {
       console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs:', ofsNeedingSpCreate);
       (async function(){
         try {
+          // Suprimir notificaciones de polling durante creación masiva
+          window._suppressCoordNotifs = true;
           for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
             var sapId = ofsNeedingSpCreate[ni];
             var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
@@ -4532,7 +4534,13 @@ async function ftLoadDataFromSP() {
             await ftSaveQueueToSP(sapId);
           }
           console.log('✅ Ops creadas en SP desde plantilla');
-        } catch(e) { console.error('Error creando ops en SP:', e.message); }
+        } catch(e) {
+          console.error('Error creando ops en SP:', e.message);
+        } finally {
+          // Re-activar notificaciones y actualizar baseline del polling
+          window._suppressCoordNotifs = false;
+          window._coordLastOpsMod = ''; // Reset para que el próximo poll establezca nueva baseline
+        }
       })();
     }
 
@@ -4653,7 +4661,7 @@ async function ftLoadDataFromSP() {
               if(op.status !== 'done') _seqChanges.push({of_sap: aof.of_sap, op_name: op.nombre, seq: idx+1});
             });
           });
-          if(typeof addCoordNotif==='function' && _seqChanges.length){
+          if(typeof addCoordNotif==='function' && _seqChanges.length && !window._suppressCoordNotifs){
             // Agrupar por OF para el detalle
             var _seqByOF = {};
             _seqChanges.forEach(function(s){
@@ -4666,7 +4674,7 @@ async function ftLoadDataFromSP() {
             addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by: 'app móvil', _detail_override: _seqDetail});
           }
           _statusEvents.forEach(function(e){
-            if(typeof addCoordNotif==='function') addCoordNotif(e.event,e);
+            if(typeof addCoordNotif==='function' && !window._suppressCoordNotifs) addCoordNotif(e.event,e);
           });
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
