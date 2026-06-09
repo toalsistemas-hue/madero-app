@@ -2738,8 +2738,11 @@ function appConfirmValCal(){
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
   closeAppModal("app-modal-valcal");renderApp();
+  console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' needsCal='+op.needsCal+' note='+note);
   if(typeof appSaveOpToSP==='function'){
-    appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){console.warn('SP valcal save:',e);});
+    appSaveOpToSP(ctx.of_sap, ctx.op_id)
+      .then(function(){ console.log('[ValCal] SP save OK'); })
+      .catch(function(e){ console.warn('[ValCal] SP save error:', e.message||e); });
   }
   // Detener timer al entrar en validación
   var key = ctx.of_sap+'_'+ctx.op_id;
