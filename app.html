@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.8</title>
+<title>FabTracker App v2.9</title>
 
 <!-- MSAL Browser -->
 
@@ -6074,8 +6074,11 @@ async function appSaveOpToSP(of_sap, opId) {
       Tip:            op.tipo || 'Secuencial',
     };
     if (op.needsCal === true)    patchFields.NeedsCal = true;
+    else                         patchFields.NeedsCal = false;
     if (op.valcalNote && op.valcalNote.charAt(0) !== '{') patchFields.ValCalNote = op.valcalNote;
     else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = '';
+    if (op.calResult)  patchFields.CalResult  = op.calResult;
+    if (op.calComment) patchFields.CalComment = op.calComment;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
@@ -8284,8 +8287,9 @@ function appCalRespond(result){
   op.calComment=comment;op.needsCal=false;
   if(result==="liberado"){
     op.calResult="liberado";op.status="running";op.qty_rej=0;
-    // Reiniciar timer desde donde lo dejó el supervisor
-    DB.timers[key]={start:Date.now(), elapsed:op.mins?op.mins*60000:0, running:true};
+    // Reiniciar timer usando el elapsed acumulado antes de la pausa de validación
+    var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
+    DB.timers[key]={start:Date.now(), elapsed:prevElapsed, running:true};
     appSaveTimerToSP(key).catch(function(e){});
   } else {
     // result === 'rechazado'
@@ -8310,8 +8314,9 @@ function appCalRespond(result){
     op.calResult="rechazado";
     op.status=lib>0?"running":"done";
     if(op.status==="running"){
-      // Parcialmente liberado — reiniciar timer
-      DB.timers[key]={start:Date.now(), elapsed:op.mins?op.mins*60000:0, running:true};
+      // Parcialmente liberado — reiniciar timer con elapsed previo
+      var prevElapsed2 = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
+      DB.timers[key]={start:Date.now(), elapsed:prevElapsed2, running:true};
       appSaveTimerToSP(key).catch(function(e){});
     } else {
       if(DB.timers[key]) DB.timers[key].running=false;

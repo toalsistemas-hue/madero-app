@@ -4388,6 +4388,9 @@ async function ftLoadDataFromSP() {
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
               needsCal: o.NeedsCal === true,
+              valcalNote: o.ValCalNote || '',
+              calResult: o.CalResult || '',
+              calComment: o.CalComment || '',
               _spId: o._itemId || String(o.ID||''), // REST item id for PATCH
             })),
         };
@@ -4619,6 +4622,7 @@ async function ftLoadDataFromSP() {
                 qty_rej:parseInt(o.Qty_Rej||0),cola:0, // reasignado desde FT_Cola_Estacion abajo
                 isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
+                calResult:o.CalResult||'',calComment:o.CalComment||'',
                 _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
             });
           });
@@ -4658,9 +4662,7 @@ async function ftLoadDataFromSP() {
               if(op.status==='running'){
                 var key = aof.of_sap+'_'+op.id;
                 if(!DB.timers[key] || !DB.timers[key].running){
-                  // Crear o reactivar timer con elapsed basado en mins ya guardados en SP
-                  var elapsedMs = (op.mins || 0) * 60000;
-                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : elapsedMs;
+                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
                   DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
                 }
               } else if(op.status==='validating'||op.status==='paused'){
