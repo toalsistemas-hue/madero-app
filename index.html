@@ -3703,23 +3703,13 @@ async function ftSaveTemplateToSP(art) {
         'Padre_Articulo','Subarts_JSON','Sub_Articulos','Ultima_Modificacion','Modificado_Por'];
     }
     var tplCols = window._ftTplCols;
-    var fields = {
-      Title: art,
-    };
-    var now = new Date().toISOString();
-    // Use global CURRENT_USER_NAME set at login — most reliable source
-    var whoName = window.CURRENT_USER_NAME || (state.currentUser && (state.currentUser.nombre||state.currentUser.email)) || 'Coordinador';
-    // Reset col cache so it always detects Modificado_Por fresh
-    window._ftTplCols = null;
-    if (tplCols.indexOf('Articulo_Key') >= 0)         fields.Articulo_Key         = art;
+    var fields = { Title: art }; // Title es el InternalName de Articulo_Key
     if (tplCols.indexOf('Nombre_Articulo') >= 0)      fields.Nombre_Articulo      = DB.articles[art] || art;
     if (tplCols.indexOf('Operaciones_JSON') >= 0)     fields.Operaciones_JSON     = JSON.stringify(tpl.ops || []);
     if (tplCols.indexOf('Padre_Articulo') >= 0)       fields.Padre_Articulo       = tpl.padre || '';
     if (tplCols.indexOf('Subarts_JSON') >= 0)         fields.Subarts_JSON         = JSON.stringify(tpl.subarts || []);
     if (tplCols.indexOf('Sub_Articulos') >= 0)        fields.Sub_Articulos        = (tpl.subarts||[]).map(function(sa){return sa.articulo||sa;}).join(',');
-    // Ultima_Modificacion es tipo Fecha en SP — el Flow no puede escribirla como string ISO
-    // SP registra Modified automáticamente, que cumple la misma función
-    if (tplCols.indexOf('Modificado_Por') >= 0)       fields.Modificado_Por       = whoName;
+    // Ultima_Modificacion (DateTime) y Modificado_Por (User) omitidos
     var existRes = await flowGet('FT_Plantillas_Operaciones', '', 500);
     var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === art; });
     console.log('[Template] fields:', JSON.stringify(fields).slice(0,500));
