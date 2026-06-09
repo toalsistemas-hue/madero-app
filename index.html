@@ -4395,57 +4395,6 @@ async function ftLoadDataFromSP() {
         };
       });
 
-    // For OFs with no FT_Operaciones records: fill from template AND persist to SP
-    var ofsNeedingSpCreate = [];
-    console.log('[TPL] templates disponibles:', Object.keys(DB.templates));
-    DB.activeOFs.forEach(function(aof){
-      console.log('[TPL] OF', aof.of_sap, 'articulo='+aof.articulo, 'ops='+aof.ops.length, 'tpl='+!!DB.templates[aof.articulo]);
-      if (aof.ops.length === 0 && aof.articulo) {
-        var tpl = DB.templates[aof.articulo];
-        if (tpl && tpl.ops && tpl.ops.length) {
-          aof.ops = tpl.ops.map(function(op, i){
-            return {
-              id: 'op_'+aof.of_sap+'_'+i,
-              nombre: op.nombre, estacion: op.estacion, tipo: op.tipo||'Secuencial',
-              tecnico: '', ayudantes: [], qty_total: 10,
-              qty_ok: 0, qty_def: 0, qty_rej: 0,
-              status: 'pending', inicio: null, fin: null, mins: 0,
-              isTemplate: true, pauseReason: null, valcalNote: null,
-              needsCal: false, calResult: null, calComment: null,
-            };
-          });
-          if (tpl.padre) aof.padre = {articulo: tpl.padre, nombre: DB.articles[tpl.padre]||''};
-          if (tpl.subarts && tpl.subarts.length) aof.subarts = tpl.subarts.slice();
-          // Mark for SP creation
-          ofsNeedingSpCreate.push(aof.of_sap);
-        }
-      }
-    });
-    console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
-    // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
-    if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
-      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
-      setTimeout(async function(){
-        try {
-          if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-          for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
-            var sapId = ofsNeedingSpCreate[ni];
-            var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
-            if (!aofToSave || !aofToSave.ops.length) continue;
-            console.log('  Creando', aofToSave.ops.length, 'ops en SP para OF', sapId);
-            for (var oi = 0; oi < aofToSave.ops.length; oi++) {
-              await ftSaveOpToSP(sapId, aofToSave.ops[oi].id);
-            }
-            await ftSaveQueueToSP(sapId);
-          }
-          console.log('✅ Ops creadas automáticamente en SP desde plantilla');
-          // Refresh seg panel if visible
-          if (typeof renderSeg === 'function' && C && C.currentPage === 'seguimiento') renderSeg();
-        } catch(e) {
-          console.error('Error auto-creando ops en SP:', e.message);
-        }
-      }, 800);
-    }
 
     // Técnicos → TECHNICIANS array
     window.TECHNICIANS = (tecRes.value||[]).map(i=>i.fields).filter(t=>t.Activo!==false).map(t=>t.Nombre||t.Title||'');
@@ -4539,6 +4488,60 @@ async function ftLoadDataFromSP() {
       } catch(e) { console.warn('Error parsing template', key, e); }
     });
     console.log('Templates loaded from SP:', Object.keys(DB.templates).length);
+
+    // For OFs with no FT_Operaciones records: fill from template AND persist to SP
+    // NOTA: este bloque se ejecuta DESPUÉS de cargar DB.templates (línea ~4541)
+    var ofsNeedingSpCreate = [];
+    console.log('[TPL] templates disponibles:', Object.keys(DB.templates));
+    DB.activeOFs.forEach(function(aof){
+      console.log('[TPL] OF', aof.of_sap, 'articulo='+aof.articulo, 'ops='+aof.ops.length, 'tpl='+!!DB.templates[aof.articulo]);
+      if (aof.ops.length === 0 && aof.articulo) {
+        var tpl = DB.templates[aof.articulo];
+        if (tpl && tpl.ops && tpl.ops.length) {
+          aof.ops = tpl.ops.map(function(op, i){
+            return {
+              id: 'op_'+aof.of_sap+'_'+i,
+              nombre: op.nombre, estacion: op.estacion, tipo: op.tipo||'Secuencial',
+              tecnico: '', ayudantes: [], qty_total: 10,
+              qty_ok: 0, qty_def: 0, qty_rej: 0,
+              status: 'pending', inicio: null, fin: null, mins: 0,
+              isTemplate: true, pauseReason: null, valcalNote: null,
+              needsCal: false, calResult: null, calComment: null,
+            };
+          });
+          if (tpl.padre) aof.padre = {articulo: tpl.padre, nombre: DB.articles[tpl.padre]||''};
+          if (tpl.subarts && tpl.subarts.length) aof.subarts = tpl.subarts.slice();
+          ofsNeedingSpCreate.push(aof.of_sap);
+        }
+      }
+    });
+    console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
+
+    // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
+    if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
+      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
+      setTimeout(async function(){
+        try {
+          if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+          for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
+            var sapId = ofsNeedingSpCreate[ni];
+            var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
+            if (!aofToSave || !aofToSave.ops.length) continue;
+            console.log('  Creando', aofToSave.ops.length, 'ops en SP para OF', sapId);
+            for (var oi = 0; oi < aofToSave.ops.length; oi++) {
+              await ftSaveOpToSP(sapId, aofToSave.ops[oi].id);
+            }
+            await ftSaveQueueToSP(sapId);
+          }
+          console.log('✅ Ops creadas automáticamente en SP desde plantilla');
+          // Refresh seg panel if visible
+          if (typeof renderSeg === 'function' && C && C.currentPage === 'seguimiento') renderSeg();
+        } catch(e) {
+          console.error('Error auto-creando ops en SP:', e.message);
+        }
+      }, 800);
+    }
+
 
     // Restore queue from SP — reset primero para evitar duplicados
     window.DB_STATION_QUEUE = {};
