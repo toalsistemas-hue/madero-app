@@ -4652,6 +4652,23 @@ async function ftLoadDataFromSP() {
             if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
           });
           if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+          // Inicializar timers para ops running que no tienen timer en memoria
+          DB.activeOFs.forEach(function(aof){
+            aof.ops.forEach(function(op){
+              if(op.status==='running'){
+                var key = aof.of_sap+'_'+op.id;
+                if(!DB.timers[key]){
+                  // Estimar start basado en el inicio registrado, o usar now
+                  var startMs = Date.now();
+                  if(op.inicio){
+                    // op.inicio es "HH:MM a.m." — usamos now como aproximación
+                    // El tiempo exacto vendrá del próximo reload de FT_Timers
+                  }
+                  DB.timers[key] = { start: startMs, elapsed: op.mins ? op.mins*60000 : 0, running: true };
+                }
+              }
+            });
+          });
           renderApp(); // actualizar badges de cola en estaciones
           // Notificar al coordinador los cambios detectados desde app móvil
           // Separar: si hubo cambios en Secuencia → notif de lista; siempre notif de cola
@@ -4661,21 +4678,29 @@ async function ftLoadDataFromSP() {
               if(op.status !== 'done') _seqChanges.push({of_sap: aof.of_sap, op_name: op.nombre, seq: idx+1});
             });
           });
-          if(typeof addCoordNotif==='function' && _seqChanges.length && !window._suppressCoordNotifs){
-            // Agrupar por OF para el detalle
-            var _seqByOF = {};
-            _seqChanges.forEach(function(s){
-              if(!_seqByOF[s.of_sap]) _seqByOF[s.of_sap] = [];
-              _seqByOF[s.of_sap].push(s.seq+'. '+s.op_name.slice(0,25));
-            });
-            var _seqDetail = Object.keys(_seqByOF).map(function(k){
-              return 'OF '+k+': '+_seqByOF[k].slice(0,3).join(', ')+((_seqByOF[k].length>3)?'…':'');
-            }).join('\n');
-            addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by: 'app móvil', _detail_override: _seqDetail});
-          }
+          // Notificar al coordinador los cambios de STATUS detectados desde app móvil
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function' && !window._suppressCoordNotifs) addCoordNotif(e.event,e);
           });
+          // Notificar reordenamiento SOLO si la secuencia cambió respecto al ciclo anterior
+          if(typeof addCoordNotif==='function' && !window._suppressCoordNotifs && _seqChanges.length) {
+            var _newSeqSig = _seqChanges.map(function(s){return s.of_sap+'_'+s.op_name;}).join('|');
+            if(window._lastSeqSig && window._lastSeqSig !== _newSeqSig){
+              var _seqByOF = {};
+              _seqChanges.forEach(function(s){
+                if(!_seqByOF[s.of_sap]) _seqByOF[s.of_sap] = [];
+                _seqByOF[s.of_sap].push(s.seq+'. '+s.op_name.slice(0,25));
+              });
+              var _seqDetail = Object.keys(_seqByOF).map(function(k){
+                return 'OF '+k+': '+_seqByOF[k].slice(0,3).join(', ')+((_seqByOF[k].length>3)?'…':'');
+              }).join('\n');
+              addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by: 'app móvil', _detail_override: _seqDetail});
+            }
+            window._lastSeqSig = _newSeqSig;
+          } else if(_seqChanges.length && !window._lastSeqSig) {
+            // Primera vez — solo establecer baseline sin notificar
+            window._lastSeqSig = _seqChanges.map(function(s){return s.of_sap+'_'+s.op_name;}).join('|');
+          }
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
