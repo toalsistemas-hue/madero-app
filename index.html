@@ -4516,13 +4516,14 @@ async function ftLoadDataFromSP() {
       }
     });
     console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
+    // Re-render inmediato para mostrar ops asignadas desde plantilla
+    if (typeof renderProg === 'function') renderProg();
 
-    // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
+    // Persist ops a SP en background (no bloquea el render)
     if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
-      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
-      setTimeout(async function(){
+      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs:', ofsNeedingSpCreate);
+      (async function(){
         try {
-          if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
           for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
             var sapId = ofsNeedingSpCreate[ni];
             var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
@@ -4533,13 +4534,9 @@ async function ftLoadDataFromSP() {
             }
             await ftSaveQueueToSP(sapId);
           }
-          console.log('✅ Ops creadas automáticamente en SP desde plantilla');
-          // Refresh seg panel if visible
-          if (typeof renderSeg === 'function' && C && C.currentPage === 'seguimiento') renderSeg();
-        } catch(e) {
-          console.error('Error auto-creando ops en SP:', e.message);
-        }
-      }, 800);
+          console.log('✅ Ops creadas en SP desde plantilla');
+        } catch(e) { console.error('Error creando ops en SP:', e.message); }
+      })();
     }
 
 
