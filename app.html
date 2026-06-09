@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.6</title>
+<title>FabTracker App v2.7</title>
 
 <!-- MSAL Browser -->
 
@@ -723,6 +723,7 @@ tr:last-child td{border-bottom:none;}
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
         <button class="app-mb app-mb-g" style="padding:10px;" onclick="appCalRespond('liberado')">✅ Liberado por Calidad</button>
         <button class="app-mb app-mb-r" style="padding:10px;" onclick="appShowRejOpts()">❌ Rechazado por Calidad</button>
+        <button class="app-mb app-mb-s" style="padding:8px;" onclick="closeAppModal('app-modal-cal-resp')">Cancelar</button>
       </div>
       <div id="app-rej-opts-panel" style="display:none;margin-top:10px;">
         <div class="app-fl">Disposición del material rechazado</div>
@@ -962,6 +963,7 @@ tr:last-child td{border-bottom:none;}
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
         <button class="app-mb app-mb-g" style="padding:10px;" onclick="appCalRespond('liberado')">✅ Liberado por Calidad</button>
         <button class="app-mb app-mb-r" style="padding:10px;" onclick="appShowRejOpts()">❌ Rechazado por Calidad</button>
+        <button class="app-mb app-mb-s" style="padding:8px;" onclick="closeAppModal('app-modal-cal-resp')">Cancelar</button>
       </div>
       <div id="app-rej-opts-panel" style="display:none;margin-top:10px;">
         <div class="app-fl">Disposición del material rechazado</div>
@@ -8307,6 +8309,8 @@ function appCalRespond(result){
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
   closeAppModal("app-modal-cal-resp");renderApp();
+  appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
+  _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
 }
 function appOpenFinish(sap,opId){
   APP.currentFinishCtx={of_sap:sap,op_id:opId};
