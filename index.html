@@ -4692,7 +4692,7 @@ async function ftLoadDataFromSP() {
 // -- SP Persistence — Save op status changes -----------
 async function ftSaveOpToSP(of_sap, opId) {
   try {
-    const aof = ftState.activeOFs ? ftState.activeOFs.find(a=>a.of_sap===of_sap) : null;
+    const aof = DB.activeOFs ? DB.activeOFs.find(a=>a.of_sap===of_sap) : null;
     const op = aof ? aof.ops.find(o=>o.id===opId) : null;
     if (!op) return;
     const fields = {
