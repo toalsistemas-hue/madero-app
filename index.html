@@ -4397,7 +4397,9 @@ async function ftLoadDataFromSP() {
 
     // For OFs with no FT_Operaciones records: fill from template AND persist to SP
     var ofsNeedingSpCreate = [];
+    console.log('[TPL] templates disponibles:', Object.keys(DB.templates));
     DB.activeOFs.forEach(function(aof){
+      console.log('[TPL] OF', aof.of_sap, 'articulo='+aof.articulo, 'ops='+aof.ops.length, 'tpl='+!!DB.templates[aof.articulo]);
       if (aof.ops.length === 0 && aof.articulo) {
         var tpl = DB.templates[aof.articulo];
         if (tpl && tpl.ops && tpl.ops.length) {
@@ -4420,7 +4422,6 @@ async function ftLoadDataFromSP() {
       }
     });
     console.log('ActiveOFs con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length, '/', DB.activeOFs.length);
-    if (ofs.length > 0) console.log('[DEBUG OF fields]:', JSON.stringify(ofs[0]).slice(0,400));
     // Persist ops to FT_Operaciones + FT_Cola_Estacion for OFs that got ops from template
     if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
       console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs sin registro en FT_Operaciones:', ofsNeedingSpCreate);
