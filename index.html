@@ -4658,13 +4658,10 @@ async function ftLoadDataFromSP() {
               if(op.status==='running'){
                 var key = aof.of_sap+'_'+op.id;
                 if(!DB.timers[key]){
-                  // Estimar start basado en el inicio registrado, o usar now
-                  var startMs = Date.now();
-                  if(op.inicio){
-                    // op.inicio es "HH:MM a.m." — usamos now como aproximación
-                    // El tiempo exacto vendrá del próximo reload de FT_Timers
-                  }
-                  DB.timers[key] = { start: startMs, elapsed: op.mins ? op.mins*60000 : 0, running: true };
+                  // Crear timer con elapsed basado en mins ya guardados en SP
+                  // start = ahora, elapsed = mins acumulados (para que el contador continúe desde ahí)
+                  var elapsedMs = (op.mins || 0) * 60000;
+                  DB.timers[key] = { start: Date.now(), elapsed: elapsedMs, running: true };
                 }
               }
             });

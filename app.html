@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.5</title>
+<title>FabTracker App v2.6</title>
 
 <!-- MSAL Browser -->
 
@@ -9684,6 +9684,18 @@ appConfirmValCal = function(){
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
   closeAppModal('app-modal-valcal'); renderApp();
+  console.log('[ValCal] _spId='+op._spId+' status='+op.status);
+  appSaveOpToSP(ctx.of_sap, ctx.op_id)
+    .then(function(){ console.log('[ValCal] SP OK'); })
+    .catch(function(e){ console.warn('[ValCal] SP error:', e.message||e); });
+  var key=ctx.of_sap+'_'+ctx.op_id;
+  if(DB.timers[key]){
+    if(DB.timers[key].running&&DB.timers[key].start){
+      DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
+    }
+    DB.timers[key].running=false;
+    appSaveTimerToSP(key).catch(function(e){});
+  }
   _basefireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
 
