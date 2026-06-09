@@ -4657,11 +4657,17 @@ async function ftLoadDataFromSP() {
             aof.ops.forEach(function(op){
               if(op.status==='running'){
                 var key = aof.of_sap+'_'+op.id;
-                if(!DB.timers[key]){
-                  // Crear timer con elapsed basado en mins ya guardados en SP
-                  // start = ahora, elapsed = mins acumulados (para que el contador continúe desde ahí)
+                if(!DB.timers[key] || !DB.timers[key].running){
+                  // Crear o reactivar timer con elapsed basado en mins ya guardados en SP
                   var elapsedMs = (op.mins || 0) * 60000;
-                  DB.timers[key] = { start: Date.now(), elapsed: elapsedMs, running: true };
+                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : elapsedMs;
+                  DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
+                }
+              } else if(op.status==='validating'||op.status==='paused'){
+                var key = aof.of_sap+'_'+op.id;
+                if(DB.timers[key] && DB.timers[key].running){
+                  DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now()-DB.timers[key].start);
+                  DB.timers[key].running = false;
                 }
               }
             });
