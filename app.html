@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.9</title>
+<title>FabTracker App v2.11</title>
 
 <!-- MSAL Browser -->
 
@@ -5912,7 +5912,10 @@ async function appLoadDataFromSP() {
           return [];
         })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
-        calComment: o.CalComment||null, _spId: o.ID||o._itemId||null,
+        calComment: o.CalComment||null,
+        qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||o.qty_def_retrabajo||0),
+        qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||o.qty_def_chatarra||0),
+        _spId: o.ID||o._itemId||null,
       })),
     }));
     // For OFs with no ops in FT_Operaciones, try to fill from FT_Plantillas
@@ -6079,6 +6082,8 @@ async function appSaveOpToSP(of_sap, opId) {
     else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = '';
     if (op.calResult)  patchFields.CalResult  = op.calResult;
     if (op.calComment) patchFields.CalComment = op.calComment;
+    if (op.qty_def_retrabajo) patchFields.Qty_Def_Retrabajo = op.qty_def_retrabajo;
+    if (op.qty_def_chatarra)  patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
@@ -8358,6 +8363,9 @@ function appOpenFinish(sap,opId){
     var lib = Math.max(0,op.qty_total-rejTotal);
     var retVal  = op.qty_def_retrabajo||0;
     var chatVal = op.qty_def_chatarra||0;
+    // Si calidad rechazó pero no se guardó disposición (columnas SP no creadas aún)
+    // derivar de qty_rej: asumir todo retrabajo
+    if(retVal===0 && chatVal===0 && rejTotal>0){ retVal = rejTotal; }
     okEl.value  = lib;  okEl.disabled  = true;
     defEl.value = rejTotal; defEl.disabled = true;
     if(chatEl){chatEl.value=chatVal; chatEl.disabled=true;}

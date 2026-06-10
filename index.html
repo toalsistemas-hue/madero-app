@@ -8536,7 +8536,9 @@ function renderSeg(){
         var comments=[];
         if(op.pauseReason) comments.push({ico:'⏸',col:'var(--yellow)',txt:op.pauseReason});
         if(op.valcalNote&&op.valcalNote.charAt(0)!=='{') comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
-        if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
+        if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',
+          txt:op.calComment+
+          (op.calResult==='rechazado'&&op.qty_rej>0?' ('+op.qty_rej+' rec / '+(op.qty_total-op.qty_rej)+' lib)':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
         if(op.qty_ok>0||op.qty_def>0){
           var qTxt='OK:'+op.qty_ok;
