@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.12</title>
+<title>FabTracker App v2.13</title>
 
 <!-- MSAL Browser -->
 
@@ -8313,7 +8313,8 @@ function appCalRespond(result){
       },"Sí, chatarra total","app-mb-r");return;
     }
     var lib=Math.max(0,op.qty_total-total);
-    op.qty_rej=total;op.qty_chat=(op.qty_chat||0)+chat;op.qty_ok=lib;
+    op.qty_rej=total;op.qty_chat=(op.qty_chat||0)+chat;
+    // NO actualizar qty_ok/qty_def aquí — el supervisor los confirma al terminar
     op.qty_def_retrabajo=(op.qty_def_retrabajo||0)+retr;
     op.qty_def_chatarra=(op.qty_def_chatarra||0)+chat;
     op.calResult="rechazado";
@@ -9244,6 +9245,9 @@ function appConfirmFinish(){
         msg:"🔄 Retrabajo generado: "+totalRetrabajo+" pieza(s) de "+op.nombre+(retrOp.tecnico?" · "+retrOp.tecnico:""),time:nowT(),read:false});
       // Add retrabajo op to queue immediately with correct number
       sqAddOF(ctx.of_sap);
+      // Persistir op retrabajo en SP
+      appSaveOpToSP(ctx.of_sap, retrOp.id).catch(function(e){ console.warn('SP retrOp save:', e.message); });
+      appSaveQueueToSP(ctx.of_sap).catch(function(e){});
     }
     // Purge done op and renumber queue
     sqPurge(); sqSyncColaNumbers();
