@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.11</title>
+<title>FabTracker App v2.12</title>
 
 <!-- MSAL Browser -->
 
@@ -4305,7 +4305,7 @@ function renderSeg(){
         if(op.valcalNote) comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
-        if(op.qty_ok>0||op.qty_def>0){
+        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0)){
           var qTxt='OK:'+op.qty_ok;
           if(op.qty_def>0){
             qTxt+=' Def:'+op.qty_def;
@@ -9191,6 +9191,12 @@ function appConfirmFinish(){
   var avail=op.qty_total-rej;
   var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo')||{value:0}).value)||0;
   var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
+  // Si calidad evaluó: usar valores de op directamente (campos disabled pueden no leer)
+  if(op.calResult==='rechazado'){
+    var _cr=op.qty_def_retrabajo||0, _cc=op.qty_def_chatarra||0;
+    if(_cr===0&&_cc===0&&rej>0) _cr=rej;
+    dRetr=_cr; dChat=_cc;
+  }
 
   function doFinishLocal(){
     var elFinal = getEl(key); // recalculate at actual confirm moment
@@ -9815,7 +9821,7 @@ function renderSeg(){
         if(op.valcalNote) comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
-        if(op.qty_ok>0||op.qty_def>0){
+        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0)){
           var qTxt='OK:'+op.qty_ok;
           if(op.qty_def>0){
             qTxt+=' Def:'+op.qty_def;
