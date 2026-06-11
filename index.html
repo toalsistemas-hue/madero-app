@@ -4721,6 +4721,30 @@ async function ftLoadDataFromSP() {
             setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 15s';},2500);}
         }
       } catch(e) { /* silencioso */ }
+      // ── Polling de plantillas (cada 60s aprox — cada 4 ciclos de 15s) ──
+      window._tplPollCount = (window._tplPollCount||0) + 1;
+      if(window._tplPollCount % 4 === 0){
+        try {
+          var tplR = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Plantillas_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
+          var latestTplMod = (tplR.value&&tplR.value.length) ? (tplR.value[0].lastModifiedDateTime||'') : '';
+          if(!window._tplLastMod && latestTplMod){
+            window._tplLastMod = latestTplMod;
+          } else if(window._tplLastMod && latestTplMod && latestTplMod !== window._tplLastMod){
+            window._tplLastMod = latestTplMod;
+            // Recargar plantillas sin rebuild completo
+            var freshTpl = await flowGet('FT_Plantillas_Operaciones','',500);
+            DB.templates = {};
+            (freshTpl.value||[]).forEach(function(i){
+              var f=i.fields, key=f.Articulo_Key||f.Title||'';
+              if(!key) return;
+              var ops=[]; try{ops=JSON.parse(f.Operaciones_JSON||'[]');}catch(e){}
+              DB.templates[key]={articulo:key,nombre:f.Nombre_Articulo||key,padre:f.Padre_Articulo||null,subarts:[],ops:ops};
+            });
+            console.log('Plantillas actualizadas:', Object.keys(DB.templates).length);
+            if(C&&C.currentPage==='fabricaciones') renderTpls();
+          }
+        } catch(e2) { /* silencioso */ }
+      }
     }, 15000); // cada 15s
   }
   } catch(e) {
@@ -8758,7 +8782,7 @@ function renderHist(){
           techStats[t].mins+=(op.mins||0);
           techStats[t].ok+=(op.qty_ok||0);
           techStats[t].def+=(op.qty_def||0);
-          techStats[t].chat+=(op.qty_def_chatarra||0);
+          techStats[t].chat+=Math.max(op.qty_chat||0, op.qty_def_chatarra||0);
           if(op.isRetrabajo){
             techStats[t].retrabajos++;
             techStats[t].minsRetrabajo+=(op.mins||0);
