@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.18</title>
+<title>FabTracker App v2.19</title>
 
 <!-- MSAL Browser -->
 
@@ -5906,19 +5906,22 @@ async function appLoadDataFromSP() {
         _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
         // Restaurar datos del turno A desde valcalNote JSON (guardado al pausar fin de turno)
         _pzasRestantes: (function(){
-          // Primero intentar desde campo dedicado TurnoData
-          try { var d=JSON.parse(o.TurnoData||''); if(d._turnoData) return d.qty_rest||0; } catch(e){}
-          // Fallback: parsear desde pauseReason
+          try {
+            var d=JSON.parse(o.TurnoData||'');
+            if(d._turnosArray && d.turnos && d.turnos.length) return d.turnos[d.turnos.length-1].qty_rest||0;
+            if(d._turnoData) return d.qty_rest||0;
+          } catch(e){}
           var m=(o.PauseReason||'').match(/(\d+) restantes/);
           return m?parseInt(m[1]):null;
         })(),
         turnos: (function(){
           try {
             var d=JSON.parse(o.TurnoData||'');
+            if(d._turnosArray && d.turnos) return d.turnos;
             if(d._turnoData){
-              return [{tecnico:d.tecnico||'',mins:d.mins||0,
-                qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,
-                inicio:d.inicio||'',fin:d.fin||''}];
+              return [{turno:1, tecnico:d.tecnico||'', mins:d.mins||0,
+                qty_ok:d.qty_ok||0, qty_def:d.qty_def||0, qty_rest:d.qty_rest||0,
+                inicio:d.inicio||'', fin:d.fin||'', fecha:''}];
             }
           } catch(e){}
           return [];
@@ -7975,17 +7978,24 @@ function appConfirmPause(){
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
     op._pzasRestantes=pzRest;
-    // Serializar datos del turno A en campo dedicado TurnoData (no contaminar ValCalNote de calidad)
-    op.turnoData = JSON.stringify({
-      _turnoData: true,
-      tecnico:    op.tecnico,
-      mins:       turnoMins,
-      qty_ok:     pzOk,
-      qty_def:    pzDef,
-      qty_rest:   pzRest,
-      inicio:     op.inicio,
-      fin:        nowT()
-    });
+    // Serializar historial de turnos como array (soporta múltiples turnos)
+    var turnoActual = {
+      turno: (op.turnos||[]).length + 1,
+      tecnico: op.tecnico,
+      inicio: op.inicio,
+      fin: nowT(),
+      mins: turnoMins,
+      qty_ok: pzOk,
+      qty_def: pzDef,
+      qty_rest: pzRest,
+      fecha: new Date().toLocaleDateString('es-MX')
+    };
+    if(!op.turnos) op.turnos = [];
+    // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
+    var existIdx = op.turnos.findIndex(function(t){ return t.inicio === turnoActual.inicio; });
+    if(existIdx >= 0) op.turnos[existIdx] = turnoActual;
+    else op.turnos.push(turnoActual);
+    op.turnoData = JSON.stringify({_turnosArray: true, turnos: op.turnos});
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
   }
@@ -11282,6 +11292,9 @@ async function appReloadOpsFromSP() {
     var allOps = Object.values(seenR);
     console.log('Poll SP ops:', rawOpsR.length, '→', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
+    // Debug: verificar que Qty_Chat viene en los datos
+    var doneOps = allOps.filter(function(o){return o.Status==='done' && (parseInt(o.Qty_Chat||0)>0 || parseInt(o.Qty_OK||0)>0);});
+    if(doneOps.length>0) console.log('[Poll] Sample done op:', JSON.stringify({Qty_OK:doneOps[0].Qty_OK, Qty_Chat:doneOps[0].Qty_Chat, Qty_Def:doneOps[0].Qty_Def}));
     // Update ops on existing activeOFs — don't replace the whole array
     DB.activeOFs.forEach(function(aof) {
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
@@ -11313,8 +11326,8 @@ async function appReloadOpsFromSP() {
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
-          _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
-          turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnoData)return [{tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||''}];}catch(e){}; return []; })(),
+          _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos&&d.turnos.length)return d.turnos[d.turnos.length-1].qty_rest||0;if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
+          turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}; return []; })(),
           needsCal:    o.NeedsCal === true,
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,

@@ -4704,23 +4704,33 @@ async function ftLoadDataFromSP() {
           _statusEvents.forEach(function(e){
             if(typeof addCoordNotif==='function' && !window._suppressCoordNotifs) addCoordNotif(e.event,e);
           });
-          // Notificar reordenamiento SOLO si la secuencia cambió respecto al ciclo anterior
+          // Detectar ops nuevas vs reordenamiento
           if(typeof addCoordNotif==='function' && !window._suppressCoordNotifs && _seqChanges.length) {
             var _newSeqSig = _seqChanges.map(function(s){return s.of_sap+'_'+s.op_name;}).join('|');
             if(window._lastSeqSig && window._lastSeqSig !== _newSeqSig){
-              var _seqByOF = {};
-              _seqChanges.forEach(function(s){
-                if(!_seqByOF[s.of_sap]) _seqByOF[s.of_sap] = [];
-                _seqByOF[s.of_sap].push(s.seq+'. '+s.op_name.slice(0,25));
-              });
-              var _seqDetail = Object.keys(_seqByOF).map(function(k){
-                return 'OF '+k+': '+_seqByOF[k].slice(0,3).join(', ')+((_seqByOF[k].length>3)?'…':'');
-              }).join('\n');
-              addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by: 'app móvil', _detail_override: _seqDetail});
+              // Detectar si hay ops nuevas que no estaban antes
+              var _prevNames = new Set(window._lastSeqSig.split('|'));
+              var _newOps = _seqChanges.filter(function(s){ return !_prevNames.has(s.of_sap+'_'+s.op_name); });
+              if(_newOps.length > 0){
+                // Op nueva agregada desde app
+                _newOps.forEach(function(s){
+                  addCoordNotif('op_added', {of_sap: s.of_sap, op_name: s.op_name, moved_by:'app móvil'});
+                });
+              } else {
+                // Reordenamiento real
+                var _seqByOF = {};
+                _seqChanges.forEach(function(s){
+                  if(!_seqByOF[s.of_sap]) _seqByOF[s.of_sap] = [];
+                  _seqByOF[s.of_sap].push(s.seq+'. '+s.op_name.slice(0,25));
+                });
+                var _seqDetail = Object.keys(_seqByOF).map(function(k){
+                  return 'OF '+k+': '+_seqByOF[k].slice(0,3).join(', ')+((_seqByOF[k].length>3)?'…':'');
+                }).join('\n');
+                addCoordNotif('op_moved', {of_sap: Object.keys(_seqByOF)[0], moved_by:'app móvil', _detail_override:_seqDetail});
+              }
             }
             window._lastSeqSig = _newSeqSig;
           } else if(_seqChanges.length && !window._lastSeqSig) {
-            // Primera vez — solo establecer baseline sin notificar
             window._lastSeqSig = _seqChanges.map(function(s){return s.of_sap+'_'+s.op_name;}).join('|');
           }
           if(C&&C.currentPage==='seguimiento') renderSeg();
@@ -8814,20 +8824,23 @@ function renderHist(){
           qty_def:rol==='principal'?(op.qty_def||0):0,
           qty_def_ret:rol==='principal'?(op.qty_def_retrabajo||0):0,
           qty_def_chat:rol==='principal'?Math.max(op.qty_chat||0, op.qty_def_chatarra||0):0,
-          inicio:op.inicio||'—', fin:op.fin||'—'
+          inicio:op.inicio||'—', fin:op.fin||'—',
+          fecha:op.fecha||''
         });
       }
 
       registerTech(op.tecnico, 'principal');
       (op.ayudantes||[]).forEach(function(a){ registerTech(a, 'ayudante'); });
-      // Registrar también segmentos de turno previos (turnos A)
-      (op.turnos||[]).forEach(function(seg){
+      // Registrar también segmentos de turno previos
+      (op.turnos||[]).forEach(function(seg, si){
+        var turnoLabel = seg.turno ? 'Turno '+seg.turno : 'Turno '+(si+1);
         var segOp=Object.assign({},op,{
           tecnico:seg.tecnico,ayudantes:seg.ayudantes||[],
           mins:seg.mins,qty_ok:seg.qty_ok,qty_def:seg.qty_def||0,
           qty_def_retrabajo:0,qty_def_chatarra:0,
           inicio:seg.inicio,fin:seg.fin,
-          nombre:op.nombre+' (Turno A)'
+          fecha:seg.fecha||'',
+          nombre:op.nombre+' ('+turnoLabel+')'
         });
         var savedOp=op;op=segOp;
         registerTech(seg.tecnico,'principal');
@@ -8984,7 +8997,7 @@ function renderHist(){
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+esc(r.of_sap)+'</td>';
           techH+='<td style="color:var(--dim);">'+esc(r.pedido)+'</td>';
           techH+='<td>'+esc(r.op)+'</td><td style="color:var(--dim);">'+esc(r.estacion)+'</td>';
-          techH+='<td style="font-family:\'DM Mono\',monospace;">'+esc(r.inicio)+'</td>';
+          techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fecha)+'</div>':'')+esc(r.inicio)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+esc(r.fin)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+(r.mins>0?fmtM(r.mins):'—')+'</td>';
           techH+='<td>'+opRefCell+'</td>';
