@@ -8540,13 +8540,14 @@ function renderSeg(){
           txt:op.calComment+
           (op.calResult==='rechazado'&&op.qty_rej>0?' ('+op.qty_rej+' rec / '+(op.qty_total-op.qty_rej)+' lib)':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
-        if(op.qty_ok>0||op.qty_def>0){
+        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0||op.qty_chat>0)){
           var qTxt='OK:'+op.qty_ok;
           if(op.qty_def>0){
             qTxt+=' Def:'+op.qty_def;
             if(op.qty_def_retrabajo>0) qTxt+=' Ret:'+op.qty_def_retrabajo;
             if(op.qty_def_chatarra>0)  qTxt+=' Chat:'+op.qty_def_chatarra;
           }
+          if((op.qty_chat||0)>0 && !op.qty_def_chatarra) qTxt+=' Chat:'+op.qty_chat;
           if(op.qty_rej>0) qTxt+=' Rec:'+op.qty_rej;
           comments.push({ico:'📦',col:'var(--dim)',txt:qTxt});
         }
@@ -8771,7 +8772,7 @@ function renderHist(){
           qty_ok:rol==='principal'?(op.qty_ok||0):0,
           qty_def:rol==='principal'?(op.qty_def||0):0,
           qty_def_ret:rol==='principal'?(op.qty_def_retrabajo||0):0,
-          qty_def_chat:rol==='principal'?(op.qty_def_chatarra||0):0,
+          qty_def_chat:rol==='principal'?((op.qty_def_chatarra||0)+(op.qty_chat||0)):0,
           inicio:op.inicio||'—', fin:op.fin||'—'
         });
       }

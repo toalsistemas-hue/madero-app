@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.15</title>
+<title>FabTracker App v2.16</title>
 
 <!-- MSAL Browser -->
 
@@ -4313,13 +4313,14 @@ function renderSeg(){
         if(op.valcalNote) comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
-        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0)){
+        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0||op.qty_chat>0)){
           var qTxt='OK:'+op.qty_ok;
           if(op.qty_def>0){
             qTxt+=' Def:'+op.qty_def;
             if(op.qty_def_retrabajo>0) qTxt+=' Ret:'+op.qty_def_retrabajo;
             if(op.qty_def_chatarra>0)  qTxt+=' Chat:'+op.qty_def_chatarra;
           }
+          if((op.qty_chat||0)>0 && !op.qty_def_chatarra) qTxt+=' Chat:'+(op.qty_chat||0);
           if(op.qty_rej>0) qTxt+=' Rec:'+op.qty_rej;
           comments.push({ico:'📦',col:'var(--dim)',txt:qTxt});
         }
@@ -8488,8 +8489,22 @@ function appConfirmAddOp(){
   if(saveTpl==='si' && of.articulo){
     if(!DB.templates[of.articulo]) DB.templates[of.articulo]={articulo:of.articulo,padre:padre,subarts:[],ops:[]};
     DB.templates[of.articulo].ops.push({id:newOp.id,nombre:name,estacion:newOp.estacion,tipo:newOp.tipo});
-    if(typeof ftSaveTemplateToSP==='function')
-      ftSaveTemplateToSP(of.articulo).catch(function(e){ console.warn('SP tpl save:', e.message); });
+    // Buscar si ya existe el registro en SP para actualizar o crear
+    appFlowGet('FT_Plantillas_Operaciones', 500).then(function(existRes){
+      var existing = (existRes.value||[]).find(function(i){ return i.fields.Title === of.articulo; });
+      var tplFields = {
+        Title: of.articulo,
+        Nombre_Articulo: DB.articles[of.articulo]||of.articulo,
+        Operaciones_JSON: JSON.stringify(DB.templates[of.articulo].ops)
+      };
+      if(existing){
+        appFlowEscribir('FT_Plantillas_Operaciones','actualizar',parseInt(existing.id),tplFields)
+          .catch(function(e){ console.warn('SP tpl update:', e.message); });
+      } else {
+        appFlowEscribir('FT_Plantillas_Operaciones','crear',0,tplFields)
+          .catch(function(e){ console.warn('SP tpl create:', e.message); });
+      }
+    }).catch(function(e){ console.warn('SP tpl fetch:', e.message); });
   }
   // Persistir op en SP
   appSaveOpToSP(ctx.of_sap, newOp.id).catch(function(e){ console.warn('SP addOp:', e.message); });
@@ -9863,13 +9878,14 @@ function renderSeg(){
         if(op.valcalNote) comments.push({ico:'🔍',col:'var(--purple)',txt:op.valcalNote});
         if(op.calComment) comments.push({ico:'🏭',col:op.calResult==='liberado'?'var(--green)':'var(--red)',txt:op.calComment+(op.calResult&&op.calResult!=='liberado'?' ('+{retrabajo:'Retrabajo',chatarra:'Chatarra'}[op.calResult]+')':'')});
         if(op.obs) comments.push({ico:'📝',col:'var(--dim)',txt:op.obs});
-        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0)){
+        if(op.status==='done' && (op.qty_ok>0||op.qty_def>0||op.qty_chat>0)){
           var qTxt='OK:'+op.qty_ok;
           if(op.qty_def>0){
             qTxt+=' Def:'+op.qty_def;
             if(op.qty_def_retrabajo>0) qTxt+=' Ret:'+op.qty_def_retrabajo;
             if(op.qty_def_chatarra>0)  qTxt+=' Chat:'+op.qty_def_chatarra;
           }
+          if((op.qty_chat||0)>0 && !op.qty_def_chatarra) qTxt+=' Chat:'+(op.qty_chat||0);
           if(op.qty_rej>0) qTxt+=' Rec:'+op.qty_rej;
           comments.push({ico:'📦',col:'var(--dim)',txt:qTxt});
         }
