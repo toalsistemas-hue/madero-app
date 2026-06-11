@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.16</title>
+<title>FabTracker App v2.17</title>
 
 <!-- MSAL Browser -->
 
@@ -11296,6 +11296,9 @@ async function appReloadOpsFromSP() {
           qty_ok:      parseInt(o.Qty_OK||0),
           qty_def:     parseInt(o.Qty_Def||0),
           qty_rej:     parseInt(o.Qty_Rej||0),
+          qty_chat:    parseInt(o.Qty_Chat||0),
+          qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
+          qty_def_chatarra:  parseInt(o.Qty_Def_Chatarra||0),
           cola:        0,  // siempre se asigna desde FT_Cola_Estacion, no desde campo Cola de SP
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
