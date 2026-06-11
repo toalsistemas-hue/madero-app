@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.13</title>
+<title>FabTracker App v2.14</title>
 
 <!-- MSAL Browser -->
 
@@ -527,8 +527,12 @@ tr:last-child td{border-bottom:none;}
         <div><div class="app-fl">Técnico</div><select class="app-fsel" id="app-op-tech"></select></div>
         <div><div class="app-fl">Piezas</div><input class="app-fi" id="app-op-qty" type="number" min="1" value="1"></div>
       </div>
-      <div class="app-fl">Sub-artículos</div><select class="app-fsel" id="app-op-subart" multiple style="height:65px;"></select>
-      <div class="app-fl">Artículo Padre</div><select class="app-fsel" id="app-op-padre"><option value="">No aplica</option></select>
+      <div class="app-fl" style="opacity:.7;">Sub-artículos (de plantilla)</div>
+      <div id="app-op-subart-info" style="font-size:.75rem;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:7px;color:var(--amuted);margin-bottom:6px;">—</div>
+      <select class="app-fsel" id="app-op-subart" multiple style="display:none;height:65px;"></select>
+      <div class="app-fl" style="opacity:.7;">Artículo Padre (de plantilla)</div>
+      <div id="app-op-padre-info" style="font-size:.75rem;padding:6px 10px;background:rgba(255,255,255,.04);border-radius:7px;color:var(--amuted);margin-bottom:6px;">—</div>
+      <select class="app-fsel" id="app-op-padre" style="display:none;"><option value="">No aplica</option></select>
       <div class="app-fl">Tipo</div>
       <select class="app-fsel" id="app-op-type"><option value="secuencial">Secuencial</option><option value="simultanea">Simultánea</option><option value="retorno">Retorno</option></select>
       <div class="app-fl">¿Guardar en plantilla?</div>
@@ -5888,6 +5892,9 @@ async function appLoadDataFromSP() {
         inicio: o.Inicio||'', fin: o.Fin||'', mins: parseInt(o.Mins||0),
         qty_total: parseInt(o.Qty_Total||10), qty_ok: parseInt(o.Qty_OK||0),
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
+        qty_chat: parseInt(o.Qty_Chat||0),
+        qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
+        qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||0),
         cola: parseInt(o.Cola||0)||null, isRetrabajo: o.isRetrabajo===true,
         pauseReason: o.PauseReason||'', needsCal: o.NeedsCal===true,
         // Inferir _pauseTipo desde el texto de pauseReason
@@ -6082,8 +6089,8 @@ async function appSaveOpToSP(of_sap, opId) {
     else if (op.valcalNote && op.valcalNote.charAt(0) === '{') patchFields.ValCalNote = '';
     if (op.calResult)  patchFields.CalResult  = op.calResult;
     if (op.calComment) patchFields.CalComment = op.calComment;
-    if (op.qty_def_retrabajo) patchFields.Qty_Def_Retrabajo = op.qty_def_retrabajo;
-    if (op.qty_def_chatarra)  patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra;
+    patchFields.Qty_Def_Retrabajo = op.qty_def_retrabajo || 0;
+    patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra  || 0;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
 
@@ -8436,57 +8443,37 @@ function appConfirmAddOp(){
   var name=document.getElementById("app-op-name").value.trim();if(!name){alert("Nombre requerido.");return;}
   var ctx=APP.currentOpCtx;
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});if(!of)return;
-  var selSa=document.getElementById("app-op-subart");var subartKeys=[];
-  for(var i=0;i<selSa.options.length;i++){if(selSa.options[i].selected)subartKeys.push(selSa.options[i].value);}
-  var padre=document.getElementById("app-op-padre").value||null;
+  var tpl = of.articulo ? DB.templates[of.articulo] : null;
   var isRetrabajo = !!(document.getElementById('app-op-is-retrabajo')||{checked:false}).checked;
   var saveTpl = isRetrabajo ? 'no' : document.getElementById('app-op-save-tpl').value;
-  var newOp={id:"op_app_"+Date.now(),nombre:name,subart:subartKeys.join(", "),estacion:document.getElementById("app-op-station").value,tecnico:document.getElementById("app-op-tech").value,qty_total:parseInt(document.getElementById("app-op-qty").value)||1,qty_ok:0,qty_def:0,qty_rej:0,tipo:document.getElementById("app-op-type").value,status:"pending",inicio:null,fin:null,mins:0,isTemplate:saveTpl==="si",isRetrabajo:isRetrabajo,needsCal:false,calResult:null,calComment:null,pauseReason:null,ayudantes:[]};
-  if(padre){of.padre={articulo:padre,nombre:DB.articles[padre]||""};}
+  var subartKeys = tpl&&tpl.subarts ? tpl.subarts.map(function(s){return s.articulo||s;})
+    : (of.subarts ? of.subarts.map(function(s){return s.articulo||s;}) : []);
+  var padre = tpl&&tpl.padre ? tpl.padre : (of.padre ? (of.padre.articulo||of.padre) : null);
+  var newOp={
+    id:"op_app_"+Date.now(), nombre:name,
+    estacion:document.getElementById("app-op-station").value,
+    tecnico:document.getElementById("app-op-tech").value,
+    qty_total:parseInt(document.getElementById("app-op-qty").value)||1,
+    qty_ok:0, qty_def:0, qty_rej:0,
+    tipo:document.getElementById("app-op-type").value,
+    status:"pending", inicio:null, fin:null, mins:0,
+    isTemplate:saveTpl==="si", isRetrabajo:isRetrabajo,
+    needsCal:false, calResult:null, calComment:null, pauseReason:null, ayudantes:[]
+  };
   of.ops.push(newOp);
-  // FIX 3: persist sub-arts to aof.subarts with real status
-  if(subartKeys.length){
-    var newSubarts = subartKeys.map(function(k){
-      var saOf = DB.activeOFs.find(function(a){
-        var rec = DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
-        return rec && (rec.articulo===k || rec._virtualArticulo===k);
-      });
-      var saStatus = 'missing', saOps_done=0, saOps_total=0, saPct=0;
-      if(saOf){
-        saOps_done = saOf.ops.filter(function(o){return o.status==='done';}).length;
-        saOps_total = saOf.ops.length;
-        saPct = saOps_total>0?Math.round(saOps_done/saOps_total*100):0;
-        if(saOps_done===saOps_total && saOps_total>0){ saStatus='done'; }
-        else if(saOps_done>0){ saStatus='running'; }
-        else {
-          var saRec = DB.ofs.find(function(o){return o.of_sap===saOf.of_sap;});
-          saStatus = (saRec && saRec.statusSAP==='EN PROCESO') ? 'running' : 'planeacion';
-        }
-      } else {
-        var saOfDef = DB.ofs.find(function(o){return o.articulo===k||o._virtualArticulo===k;});
-        if(saOfDef){ saStatus = saOfDef.statusSAP==='EN PROCESO' ? 'running' : 'planeacion'; }
-      }
-      return {articulo:k, nombre:DB.articles[k]||k,
-        of_sap:saOf?saOf.of_sap:null,
-        pedido:saOf?(DB.ofs.find(function(o){return o.of_sap===saOf.of_sap;})||{}).pedido:null,
-        status:saStatus, ops_done:saOps_done, ops_total:saOps_total, pct:saPct};
-    });
-    // Merge: keep existing sub-arts not in new selection, add/update new ones
-    var existingKept = (of.subarts||[]).filter(function(sa){return subartKeys.indexOf(sa.articulo)===-1;});
-    of.subarts = existingKept.concat(newSubarts);
-  }
-  // FIX 3: update plantilla subarts too if saving to template
-  if(newOp.isTemplate&&of.articulo){
-    if(!DB.templates[of.articulo])DB.templates[of.articulo]={articulo:of.articulo,padre:null,subarts:[],ops:[]};
+  // Guardar en plantilla solo la operación (sin subarts ni padre)
+  if(saveTpl==='si' && of.articulo){
+    if(!DB.templates[of.articulo]) DB.templates[of.articulo]={articulo:of.articulo,padre:padre,subarts:[],ops:[]};
     DB.templates[of.articulo].ops.push({id:newOp.id,nombre:name,estacion:newOp.estacion,tipo:newOp.tipo});
-    if(subartKeys.length){
-      DB.templates[of.articulo].subarts = subartKeys.map(function(k){return {articulo:k,nombre:DB.articles[k]||k};});
-    }
-    renderTpls();
+    if(typeof ftSaveTemplateToSP==='function')
+      ftSaveTemplateToSP(of.articulo).catch(function(e){ console.warn('SP tpl save:', e.message); });
   }
-  closeAppModal("app-modal-op");APP.expanded[ctx.of_sap]=true;renderApp();fireSync("app","op_added",{of_sap:ctx.of_sap});
-  // Auto-add new op to station queue
-  if(newOp.estacion){ sqAddOF(ctx.of_sap); sqSyncColaNumbers(); }
+  // Persistir op en SP
+  appSaveOpToSP(ctx.of_sap, newOp.id).catch(function(e){ console.warn('SP addOp:', e.message); });
+  closeAppModal("app-modal-op"); APP.expanded[ctx.of_sap]=true; renderApp();
+  fireSync("app","op_added",{of_sap:ctx.of_sap});
+  if(newOp.estacion){ sqAddOF(ctx.of_sap); sqSyncColaNumbers();
+    appSaveQueueToSP(ctx.of_sap).catch(function(e){}); }
 }
 // TICK
 setInterval(function(){
@@ -9510,41 +9497,50 @@ function saveTplModal(){
 function appOpenAddOp(sap){
   APP.currentOpCtx = {of_sap:sap};
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
+  var tpl = of && of.articulo ? DB.templates[of.articulo] : null;
+
+  // Reset campos básicos
   document.getElementById('app-op-name').value = '';
   document.getElementById('app-op-station').value = '';
   document.getElementById('app-op-tech').value = '';
-  document.getElementById('app-op-qty').value = '1';
+  document.getElementById('app-op-qty').value = of&&of.ops.length>0 ? (of.ops[0].qty_total||10) : 10;
   document.getElementById('app-op-type').value = 'secuencial';
   document.getElementById('app-op-save-tpl').value = 'si';
   var retrChk = document.getElementById('app-op-is-retrabajo');
-  if(retrChk) retrChk.checked = false;
-  // Poblar selects si aún no están poblados
+  if(retrChk){ retrChk.checked = false; }
+
+  // Poblar datalist de nombres desde DB.catalog (FT_Catalogo_Operaciones)
+  var nameInput = document.getElementById('app-op-name');
+  var datalist = document.getElementById('app-op-suggestions');
+  if(datalist){
+    datalist.innerHTML = '';
+    (DB.catalog||[]).forEach(function(opName){
+      var opt = document.createElement('option'); opt.value = opName; datalist.appendChild(opt);
+    });
+  }
+
+  // Sub-artículos y Padre: mostrar info de la plantilla como texto (readonly)
   var sa = document.getElementById('app-op-subart');
   var sp = document.getElementById('app-op-padre');
-  if(sa && sa.options.length === 0){
-    Object.keys(DB.articles).forEach(function(k){
-      var o=document.createElement('option');o.value=k;
-      o.textContent=k+' — '+DB.articles[k].substring(0,30);sa.appendChild(o);
-    });
+  var saInfo = document.getElementById('app-op-subart-info');
+  var spInfo = document.getElementById('app-op-padre-info');
+  if(sa) sa.style.display='none';
+  if(sp) sp.style.display='none';
+  if(saInfo){
+    var subartsList = tpl&&tpl.subarts&&tpl.subarts.length
+      ? tpl.subarts.map(function(s){return s.articulo||s;}).join(', ')
+      : (of&&of.subarts&&of.subarts.length ? of.subarts.map(function(s){return s.articulo||s;}).join(', ') : '—');
+    saInfo.textContent = subartsList;
   }
-  if(sp && sp.options.length <= 1){
-    Object.keys(DB.articles).forEach(function(k){
-      var o=document.createElement('option');o.value=k;
-      o.textContent=k+' — '+DB.articles[k].substring(0,30);sp.appendChild(o);
-    });
+  if(spInfo){
+    spInfo.textContent = tpl&&tpl.padre ? tpl.padre : (of&&of.padre ? (of.padre.articulo||of.padre) : '—');
   }
-  // ── 5: Pre-seleccionar subarts y padre existentes ──
-  if(of){
-    setTimeout(function(){
-      if(of.padre && sp){
-        sp.value = of.padre.articulo;
-      }
-      if(of.subarts && of.subarts.length && sa){
-        Array.from(sa.options).forEach(function(opt){
-          opt.selected = of.subarts.some(function(s){return s.articulo===opt.value;});
-        });
-      }
-    }, 50);
+
+  // Retrabajo → forzar "No - solo esta OF"
+  if(retrChk){
+    retrChk.onchange = function(){
+      if(retrChk.checked) document.getElementById('app-op-save-tpl').value = 'no';
+    };
   }
   openAppModal('app-modal-op');
 }
