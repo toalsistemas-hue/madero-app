@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.14</title>
+<title>FabTracker App v2.15</title>
 
 <!-- MSAL Browser -->
 
@@ -522,6 +522,10 @@ tr:last-child td{border-bottom:none;}
       <div class="app-fl">Nombre de la Operación</div>
       <input class="app-fi" id="app-op-name" list="app-op-suggestions" placeholder="Seleccionar o escribir...">
       <datalist id="app-op-suggestions"></datalist>
+      <div id="app-op-new-art-row" style="display:none;margin-top:4px;">
+        <div class="app-fl" style="color:var(--ayellow);">⚠ Operación nueva — ¿A qué artículo pertenece?</div>
+        <select class="app-fsel" id="app-op-new-art"><option value="">— Seleccionar artículo —</option></select>
+      </div>
       <div class="app-fl">Estación</div><select class="app-fsel" id="app-op-station"></select>
       <div class="app-f2">
         <div><div class="app-fl">Técnico</div><select class="app-fsel" id="app-op-tech"></select></div>
@@ -5831,7 +5835,7 @@ async function appFlowEscribir(lista, operacion, itemId, datos) {
 async function appLoadDataFromSP() {
   try {
     var emptyFn = function(){ return {value:[]}; };
-    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes] = await Promise.all([
+    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
       appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
@@ -5840,6 +5844,7 @@ async function appLoadDataFromSP() {
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
       appFlowGet('FT_Timers', 2000).catch(emptyFn),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
+      appFlowGet('FT_Catalogo_Operaciones', 500).catch(emptyFn),
     ]);
     const ofs = (ofsRes.value||[]).map(i => i.fields);
     DB.ofs = ofs.map(f => ({
@@ -5893,7 +5898,6 @@ async function appLoadDataFromSP() {
         qty_total: parseInt(o.Qty_Total||10), qty_ok: parseInt(o.Qty_OK||0),
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
         qty_chat: parseInt(o.Qty_Chat||0),
-        qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
         qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||0),
         cola: parseInt(o.Cola||0)||null, isRetrabajo: o.isRetrabajo===true,
         pauseReason: o.PauseReason||'', needsCal: o.NeedsCal===true,
@@ -6018,7 +6022,7 @@ async function appLoadDataFromSP() {
         }
       });
     });
-    // Load templates for filling ops when FT_Operaciones is empty
+    // Load templates
     DB.templates = DB.templates || {};
     (tplRes.value||[]).forEach(function(i){
       var f = i.fields;
@@ -6029,6 +6033,15 @@ async function appLoadDataFromSP() {
       DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
         subarts:[], ops:ops};
     });
+    // Load catálogo de operaciones
+    DB.catalog = [];
+    (catalogRes.value||[]).forEach(function(i){
+      var f = i.fields;
+      var nombre = f.Title || f.Operacion || f.Nombre || '';
+      if(nombre && DB.catalog.indexOf(nombre)===-1) DB.catalog.push(nombre);
+    });
+    DB.catalog.sort();
+    console.log('App catálogo cargado:', DB.catalog.length, 'operaciones');
     // Limpiar duplicados en SP (eliminar items con ID menor que tienen mismo OF_SAP+Op_ID)
     var dupesToDelete = [];
     var checkMap = {};
@@ -6078,6 +6091,7 @@ async function appSaveOpToSP(of_sap, opId) {
       Qty_OK:         op.qty_ok || 0,
       Qty_Def:        op.qty_def || 0,
       Qty_Rej:        op.qty_rej || 0,
+      Qty_Chat:       op.qty_chat || 0,
       Tecnico:        op.tecnico || '',
       Ayudantes_JSON: (op.ayudantes || []).join(','),
       PauseReason:    op.pauseReason || '',
@@ -8449,6 +8463,15 @@ function appConfirmAddOp(){
   var subartKeys = tpl&&tpl.subarts ? tpl.subarts.map(function(s){return s.articulo||s;})
     : (of.subarts ? of.subarts.map(function(s){return s.articulo||s;}) : []);
   var padre = tpl&&tpl.padre ? tpl.padre : (of.padre ? (of.padre.articulo||of.padre) : null);
+  // Si op nueva, agregar al catálogo SP
+  if(name && (DB.catalog||[]).indexOf(name)===-1){
+    var newArtKey = (document.getElementById('app-op-new-art')||{value:''}).value||'';
+    DB.catalog = DB.catalog||[];
+    DB.catalog.push(name); DB.catalog.sort();
+    var catFields = {Title: name};
+    if(newArtKey) catFields.Articulo_Key = newArtKey;
+    appFlowEscribir('FT_Catalogo_Operaciones','crear',0,catFields).catch(function(e){ console.warn('Catálogo:', e.message); });
+  }
   var newOp={
     id:"op_app_"+Date.now(), nombre:name,
     estacion:document.getElementById("app-op-station").value,
@@ -9517,6 +9540,25 @@ function appOpenAddOp(sap){
     (DB.catalog||[]).forEach(function(opName){
       var opt = document.createElement('option'); opt.value = opName; datalist.appendChild(opt);
     });
+  }
+  // Selector de artículo para op nueva
+  var newArtSel = document.getElementById('app-op-new-art');
+  var newArtRow = document.getElementById('app-op-new-art-row');
+  if(newArtSel){
+    newArtSel.innerHTML = '<option value="">— Seleccionar artículo —</option>';
+    Object.keys(DB.articles||{}).forEach(function(k){
+      var opt = document.createElement('option');
+      opt.value = k; opt.textContent = k+' — '+(DB.articles[k]||'').substring(0,30);
+      newArtSel.appendChild(opt);
+    });
+  }
+  // Mostrar selector de artículo cuando el nombre no está en el catálogo
+  if(nameInput && newArtRow){
+    nameInput.oninput = function(){
+      var val = nameInput.value.trim();
+      var inCatalog = val && (DB.catalog||[]).indexOf(val) !== -1;
+      newArtRow.style.display = val && !inCatalog ? 'block' : 'none';
+    };
   }
 
   // Sub-artículos y Padre: mostrar info de la plantilla como texto (readonly)
