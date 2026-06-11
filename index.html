@@ -1351,15 +1351,15 @@ tr:last-child td{border-bottom:none;}
         <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px;">Artículo al que pertenece</label>
         <div style="display:flex;gap:6px;">
           <input type="text" class="form-select" id="op-edit-art" placeholder="Buscar artículo..." oninput="ftAdmOpArtInput(this.value)" autocomplete="off" style="flex:1;">
-          <button onclick="openArtPickerFor('op-edit-art','op-edit-art-key',function(k,n){document.getElementById('op-edit-art').value=k;document.getElementById('op-edit-art-key').value=k;document.getElementById('op-edit-art-desc-info').textContent=n||'';document.getElementById('op-edit-art-dd').style.display='none';})" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 10px;cursor:pointer;font-size:.8rem;" title="Ver lista completa">🔎</button>
+          <button onclick="openArtPickerFor('op-edit-art','op-edit-art-key',function(k,n){document.getElementById('op-edit-art').value=k;document.getElementById('op-edit-art-key').value=k;var info=document.getElementById('op-edit-art-desc-info');if(info)info.textContent='';document.getElementById('op-edit-art-dd').style.display='none';})" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 10px;cursor:pointer;font-size:.8rem;" title="Ver lista completa">🔎</button>
         </div>
         <input type="hidden" id="op-edit-art-key">
-        <div id="op-edit-art-desc-info" style="font-size:.7rem;color:var(--accent-l);margin-top:3px;min-height:14px;"></div>
+        <div id="op-edit-art-desc-info" style="display:none;"></div>
         <div id="op-edit-art-dd" style="display:none;position:relative;z-index:200;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);"></div>
       </div>
       <div>
-        <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px;">Descripción <span style="color:var(--dim);font-size:.65rem;">(opcional)</span></label>
-        <input type="text" class="form-select" id="op-edit-desc" placeholder="Descripción adicional de la operación" style="width:100%;">
+        <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px;">Descripción</label>
+        <input type="text" class="form-select" id="op-edit-desc" placeholder="Descripción de la operación" style="width:100%;">
       </div>
     </div>
     <div class="coord-modal-actions" style="margin-top:16px;">
@@ -3834,8 +3834,9 @@ function ftAdmOpArtInput(val){
       var n=this.getAttribute('data-nom');
       document.getElementById('op-edit-art').value=k;
       document.getElementById('op-edit-art-key').value=k;
-      var info=document.getElementById('op-edit-art-desc-info');
-      if(info) info.textContent=n||'';
+      // Auto-rellenar descripción con la del artículo
+      var descInp=document.getElementById('op-edit-desc');
+      if(descInp && !descInp.value) descInp.value=n||'';
       dd.style.display='none';
     };
     div.onmouseover=function(){this.style.background='rgba(255,255,255,.07)';};
@@ -3982,13 +3983,12 @@ function artPickerSelect(key,nombre){
     _artPickerCb(key,nombre);
   } else if(_artPickerTargetId){
     var inp=document.getElementById(_artPickerTargetId);
-    if(inp) inp.value=key; // solo la clave, sin descripción
-    // Actualizar key hidden si existe
+    if(inp) inp.value=key;
     var keyInp=document.getElementById('op-edit-art-key');
     if(keyInp) keyInp.value=key;
-    // Mostrar descripción del artículo en el div informativo
-    var info=document.getElementById('op-edit-art-desc-info');
-    if(info) info.textContent=nombre||'';
+    // Auto-rellenar descripción con la del artículo si está vacía
+    var descInp=document.getElementById('op-edit-desc');
+    if(descInp && !descInp.value) descInp.value=nombre||'';
   }
   closeCModal('modal-art-picker');
 }
