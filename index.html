@@ -4384,6 +4384,9 @@ async function ftLoadDataFromSP() {
               qty_ok: parseInt(o.Qty_OK||0),
               qty_def: parseInt(o.Qty_Def||0),
               qty_rej: parseInt(o.Qty_Rej||0),
+              qty_chat: parseInt(o.Qty_Chat||0),
+              qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
+              qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||0),
               cola: 0, // se asigna desde FT_Cola_Estacion después, no desde el campo Cola de SP
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
@@ -4619,7 +4622,11 @@ async function ftLoadDataFromSP() {
                 status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
                 mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
-                qty_rej:parseInt(o.Qty_Rej||0),cola:0, // reasignado desde FT_Cola_Estacion abajo
+                qty_rej:parseInt(o.Qty_Rej||0),
+                qty_chat:parseInt(o.Qty_Chat||0),
+                qty_def_retrabajo:parseInt(o.Qty_Def_Retrabajo||0),
+                qty_def_chatarra:parseInt(o.Qty_Def_Chatarra||0),
+                cola:0,
                 isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
                 calResult:o.CalResult||'',calComment:o.CalComment||'',
