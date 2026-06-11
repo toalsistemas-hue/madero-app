@@ -4427,6 +4427,14 @@ async function ftLoadDataFromSP() {
         _spId: i.id,
       };
     });
+    // También cargar elapsed de timers pausados (para reanudación)
+    (timersRes.value||[]).filter(i=>i.fields&&i.fields.Running!==true&&i.fields.Running!==1&&parseInt(i.fields.Elapsed_MS||0)>0).forEach(i => {
+      const f = i.fields;
+      const key = f.Timer_Key || f.Title || '';
+      if (key && !DB.timers[key]) {
+        DB.timers[key] = { start: now, elapsed: parseInt(f.Elapsed_MS||0), running: false, _spId: i.id };
+      }
+    });
 
     // Rebuild DB.articles: primero desde OFs, luego enriquecer con FT_Articulos (lista maestra)
     DB.articles = {};
@@ -4669,7 +4677,9 @@ async function ftLoadDataFromSP() {
               if(op.status==='running'){
                 var key = aof.of_sap+'_'+op.id;
                 if(!DB.timers[key] || !DB.timers[key].running){
-                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
+                  // Usar elapsed guardado en SP (op.mins = mins acumulados) como base
+                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0)
+                    : (op.mins ? op.mins*60000 : 0);
                   DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
                 }
               } else if(op.status==='validating'||op.status==='paused'){

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.17</title>
+<title>FabTracker App v2.18</title>
 
 <!-- MSAL Browser -->
 
@@ -8510,8 +8510,12 @@ function appConfirmAddOp(){
   appSaveOpToSP(ctx.of_sap, newOp.id).catch(function(e){ console.warn('SP addOp:', e.message); });
   closeAppModal("app-modal-op"); APP.expanded[ctx.of_sap]=true; renderApp();
   fireSync("app","op_added",{of_sap:ctx.of_sap});
-  if(newOp.estacion){ sqAddOF(ctx.of_sap); sqSyncColaNumbers();
-    appSaveQueueToSP(ctx.of_sap).catch(function(e){}); }
+  if(newOp.estacion){
+    window._suppressCoordNotifs = true;
+    sqAddOF(ctx.of_sap); sqSyncColaNumbers();
+    appSaveQueueToSP(ctx.of_sap).catch(function(e){});
+    setTimeout(function(){ window._suppressCoordNotifs = false; }, 3000);
+  }
 }
 // TICK
 setInterval(function(){
@@ -9243,8 +9247,14 @@ function appConfirmFinish(){
       if(op.ayudTimes[a]===undefined){
         var ak=ctx.of_sap+'_'+ctx.op_id+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
         var t=DB.timers[ak];
-        op.ayudTimes[a]=t&&t.running?Math.floor(((t.elapsed||0)+(Date.now()-t.start))/60000):elFinal;
-        if(t)t.running=false;
+        if(t && t.running){
+          op.ayudTimes[a]=Math.floor(((t.elapsed||0)+(Date.now()-t.start))/60000);
+        } else if(t && !t.running){
+          op.ayudTimes[a]=Math.floor((t.elapsed||0)/60000);
+        } else {
+          op.ayudTimes[a]=elFinal; // fallback: no hay timer del ayudante
+        }
+        if(t) t.running=false;
       }
     });
     // Auto-generar op de retrabajo
