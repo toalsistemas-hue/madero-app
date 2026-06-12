@@ -697,6 +697,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
 /* Chips coord */
 .chip{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:12px;font-size:.67rem;font-weight:600;white-space:nowrap;}
+.c-cancel{background:rgba(239,68,68,.15);color:var(--red);}
 .c-ep{background:rgba(61,155,233,.15);color:var(--accent-l);}
 .c-plan{background:rgba(212,160,23,.15);color:var(--yellow);}
 .c-done{background:rgba(46,160,67,.15);color:var(--green);}
@@ -6036,15 +6037,19 @@ function renderProg(){
   var h="";
 
   groups.forEach(function(g){
+    // Verificar si el pedido tiene alguna OF cancelada
+    var cancelado = g.ofs.every(function(o){return o.status==='Pedido Cancelado';});
     var completed = pedidoIsComplete(g.pedido);
-    var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);" : "";
+    var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
+                 : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
     h+="<div class='prog-card' style='"+grpStyle+"'>";
-    h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":"")+"'>";
-    h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
-    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":"")+"</div></div>";
+    h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
+    h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
+    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
     h+="<div style='display:flex;align-items:center;gap:8px'>";
     h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
     if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
+    if(!cancelado) h+="<button onclick='cancelarPedido(\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 10px;font-size:.7rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar Pedido</button>";
     h+="</div></div>";
 
     g.ofs.forEach(function(of){
@@ -6053,29 +6058,33 @@ function renderProg(){
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
       var total = aof?aof.ops.length:0;
       var pct = total>0?Math.round(done/total*100):0;
-      h+="<div class='prog-of-row'>";
-      if(C.editingMode) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
-      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+( of.programadoHoy?"✓":"")+"</div>";
+      var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
+      h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
+      if(C.editingMode && !ofCancelada) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
+      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
-      if(C.editingMode){
+      // Fecha entrega y cantidad — editables en modo edición, visibles siempre
+      if(C.editingMode && !ofCancelada){
         h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
         h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
         h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
         h+="</div>";
-      } else if(of.fecha_entrega||of.cantidad){
+      } else {
+        // Siempre mostrar si tiene datos
         h+="<div style='display:flex;gap:10px;margin-top:2px;font-size:.7rem;color:var(--dim);'>";
-        if(of.fecha_entrega) h+="<span>📅 "+esc(of.fecha_entrega)+"</span>";
-        if(of.cantidad) h+="<span>📦 "+of.cantidad+" pzas</span>";
+        h+=(of.fecha_entrega?"<span>📅 "+esc(of.fecha_entrega)+"</span>":"<span style='color:rgba(255,255,255,.2);'>📅 Sin fecha</span>");
+        h+=(of.cantidad?"<span>📦 "+of.cantidad+" pzas</span>":"<span style='color:rgba(255,255,255,.2);'>📦 Sin cantidad</span>");
         h+="</div>";
       }
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
-      h+="<span class='chip "+(of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(of.statusSAP)+"</span>";
+      h+="<span class='chip "+(ofCancelada?"c-cancel":of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(ofCancelada?"Cancelada":of.status||of.statusSAP||'')+"</span>";
       h+="<span style='font-size:.72rem;color:var(--dim)'>"+(tpl?tpl.ops.length+" ops":"<span style='color:var(--red)'>Sin ops</span>")+"</span>";
+      if(!ofCancelada) h+="<button onclick='cancelarOrden(\""+esc(of.of_sap)+"\",\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:3px 8px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       h+="<button class='btn-sm-ghost' onclick='handleConfigClick(\""+of.of_sap+"\")'>⚙</button>";
       h+="</div>";
     });
@@ -6125,6 +6134,75 @@ function toggleProg(sap,val){
     }
   }
 }
+function cancelarOrden(sap, pedido){
+  var of = DB.ofs.find(function(o){return o.of_sap===sap;});
+  if(!of) return;
+  var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+  var tieneAvance = aof && aof.ops && aof.ops.some(function(op){
+    return op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='done'||op.qty_ok>0||op.mins>0;
+  });
+  var msg = 'Cancelar la Orden de Fabricación ' + sap + '?\n\n' + of.descripcion;
+  if(tieneAvance) msg = '⚠️ La OF ' + sap + ' tiene operaciones en proceso.\n\n' + of.descripcion + '\n\nAl cancelar, todas sus operaciones también se cancelarán.';
+  if(!confirm(msg + '\n\n¿Confirmar cancelación?')) return;
+  _ejecutarCancelacionOF(of, aof);
+}
+
+async function _ejecutarCancelacionOF(of, aof){
+  var sap = of.of_sap;
+  of.status = 'Pedido Cancelado';
+  of.programadoHoy = false;
+  // Cancelar ops en memoria
+  if(aof && aof.ops){
+    aof.ops.forEach(function(op){
+      if(op.status!=='done') op.status='cancelled';
+    });
+  }
+  renderProg();
+  // Persistir en SP — OF
+  try {
+    var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
+    var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
+    if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
+  } catch(e){ console.warn('SP cancel OF:', e.message); }
+  // Persistir en SP — Operaciones
+  if(aof && aof.ops){
+    for(var i=0;i<aof.ops.length;i++){
+      var op = aof.ops[i];
+      if(op.status==='cancelled' && op._spId){
+        try{ await spEscribir('FT_Operaciones',{Status:'cancelled'}, parseInt(op._spId)); }catch(e){}
+      }
+    }
+  }
+}
+
+async function cancelarPedido(pedido){
+  var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+  if(!ofsDelPedido.length) return;
+  // Verificar si hay OFs con avance
+  var ofsConAvance = ofsDelPedido.filter(function(of){
+    var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+    return aof && aof.ops && aof.ops.some(function(op){
+      return op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='done'||op.qty_ok>0||op.mins>0;
+    });
+  });
+  var cliente = ofsDelPedido[0].cliente || '';
+  var msg = 'Cancelar el Pedido ' + pedido + '\nCliente: ' + cliente + '\n' + ofsDelPedido.length + ' Orden(es) de Fabricación.';
+  if(ofsConAvance.length > 0){
+    msg += '\n\n⚠️ ' + ofsConAvance.length + ' OF(s) tienen operaciones en proceso:\n';
+    msg += ofsConAvance.slice(0,3).map(function(o){return '  · OF ' + o.of_sap;}).join('\n');
+    if(ofsConAvance.length > 3) msg += '\n  · ... y ' + (ofsConAvance.length-3) + ' más';
+    msg += '\n\nAl cancelar el pedido, TODAS sus órdenes y operaciones se cancelarán.';
+  }
+  if(!confirm(msg + '\n\n¿Confirmar cancelación del pedido?')) return;
+  for(var i=0;i<ofsDelPedido.length;i++){
+    var of = ofsDelPedido[i];
+    var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+    await _ejecutarCancelacionOF(of, aof);
+  }
+  renderProg();
+}
+
+
 function updatePedidoPrio(pedido,val){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
   DB.activeOFs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
