@@ -1018,16 +1018,16 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="filter-bar" style="flex-wrap:wrap;gap:8px;">
         <input class="form-input" id="filter-text" placeholder="Buscar pedido, cliente, OF..." oninput="C.filterText=this.value;renderProg()" style="flex:1;min-width:180px;">
-        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
-          <button id="ftab-todos"       onclick="setProgTab('todos')"       class="ftab-btn ftab-active">Todos</button>
-          <button id="ftab-sin-prog"    onclick="setProgTab('sin-prog')"    class="ftab-btn">Sin programar</button>
-          <button id="ftab-programados" onclick="setProgTab('programados')" class="ftab-btn">Programados</button>
-          <button id="ftab-terminados"  onclick="setProgTab('terminados')"  class="ftab-btn">Terminados</button>
-        </div>
         <button class="btn btn-ghost btn-sm" onclick="simulateRefresh()">↻ Actualizar</button>
       </div>
-      <div style="margin-bottom:6px;">
-        <button id="ftab-cancelados" onclick="setProgTab('cancelados')" class="ftab-btn ftab-cancel" style="font-size:.73rem;padding:4px 12px;">🚫 Ver Pedidos Cancelados <span id="ftab-cancelados-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:4px;">0</span></button>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+        <button id="ftab-todos"       onclick="setProgTab('todos')"       class="btn btn-sm btn-primary">Todos</button>
+        <button id="ftab-sin-prog"    onclick="setProgTab('sin-prog')"    class="btn btn-sm btn-ghost">Sin programar</button>
+        <button id="ftab-programados" onclick="setProgTab('programados')" class="btn btn-sm btn-ghost">Programados</button>
+        <button id="ftab-terminados"  onclick="setProgTab('terminados')"  class="btn btn-sm btn-ghost">Terminados</button>
+        <div style="margin-left:auto;">
+          <button id="ftab-cancelados" onclick="setProgTab('cancelados')" class="btn btn-sm btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,.3);">🚫 Cancelados <span id="ftab-cancelados-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:.65rem;margin-left:3px;">0</span></button>
+        </div>
       </div>
       <div id="prog-list"></div>
     </div>
@@ -6056,14 +6056,20 @@ function closeCModal(id){document.getElementById(id).classList.remove("show");}
 
 // --- PROGRAMACIÓN ---------------------------------------
 function setProgTab(tab){
-  // Toggle: si ya está en cancelados y se presiona de nuevo, volver a todos
-  if(tab==='cancelados' && C.filterStatus==='cancelados'){
-    tab='todos';
-  }
+  if(tab==='cancelados' && C.filterStatus==='cancelados') tab='todos';
   C.filterStatus = tab;
-  document.querySelectorAll('.ftab-btn').forEach(function(b){ b.classList.remove('ftab-active'); });
-  var btn = document.getElementById('ftab-'+tab);
-  if(btn) btn.classList.add('ftab-active');
+  // Actualizar estilos igual que Tiempo Real
+  ['todos','sin-prog','programados','terminados','cancelados'].forEach(function(t){
+    var b=document.getElementById('ftab-'+t);
+    if(!b) return;
+    if(t===tab){
+      b.className = 'btn btn-sm btn-primary';
+      if(t==='cancelados') b.style.cssText=''; // reset inline style cuando activo
+    } else {
+      b.className = 'btn btn-sm btn-ghost';
+      if(t==='cancelados') b.style.cssText='color:var(--red);border-color:rgba(239,68,68,.3);';
+    }
+  });
   renderProg();
 }
 function renderProg(){
@@ -8019,12 +8025,11 @@ function renderProg(){
   document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy&&o.status!=='Pedido Cancelado';}).length;
   var _nCan=DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';}).length;
   var _kc=document.getElementById("fabp-kpi-cancelados"); if(_kc) _kc.textContent=_nCan;
-  // Badge en botón cancelados
   var _badge=document.getElementById('ftab-cancelados-badge');
   if(_badge){_badge.textContent=_nCan; _badge.style.display=_nCan>0?'inline':'none';}
-  // Ocultar/mostrar sección cancelados separada (solo cuando NO estamos en pestaña cancelados)
+  // Ocultar sección pie de cancelados siempre (reemplazada por pestaña)
   var _canSec2=document.getElementById('prog-cancelados-section');
-  if(_canSec2) _canSec2.style.display = fStatus==='cancelados'?'none':'block';
+  if(_canSec2) _canSec2.style.display='none';
 }
 
 function getProgFields(sap){
