@@ -1351,7 +1351,7 @@ tr:last-child td{border-bottom:none;}
         <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px;">Artículo al que pertenece</label>
         <div style="display:flex;gap:6px;">
           <input type="text" class="form-select" id="op-edit-art" placeholder="Buscar artículo..." oninput="ftAdmOpArtInput(this.value)" autocomplete="off" style="flex:1;">
-          <button onclick="openArtPickerFor('op-edit-art','op-edit-art-key',function(k,n){document.getElementById('op-edit-art').value=k;document.getElementById('op-edit-art-key').value=k;var info=document.getElementById('op-edit-art-desc-info');if(info)info.textContent='';document.getElementById('op-edit-art-dd').style.display='none';})" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 10px;cursor:pointer;font-size:.8rem;" title="Ver lista completa">🔎</button>
+          <button onclick="openArtPickerFor('op-edit-art','op-edit-art-key',function(k,n){document.getElementById('op-edit-art').value=k;document.getElementById('op-edit-art-key').value=k;var d=document.getElementById('op-edit-desc');if(d&&!d.value)d.value=n||'';document.getElementById('op-edit-art-dd').style.display='none';})" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 10px;cursor:pointer;font-size:.8rem;" title="Ver lista completa">🔎</button>
         </div>
         <input type="hidden" id="op-edit-art-key">
         <div id="op-edit-art-desc-info" style="display:none;"></div>
@@ -3834,9 +3834,9 @@ function ftAdmOpArtInput(val){
       var n=this.getAttribute('data-nom');
       document.getElementById('op-edit-art').value=k;
       document.getElementById('op-edit-art-key').value=k;
-      // Auto-rellenar descripción con la del artículo
+      // Auto-rellenar descripción con la del artículo (siempre)
       var descInp=document.getElementById('op-edit-desc');
-      if(descInp && !descInp.value) descInp.value=n||'';
+      if(descInp) descInp.value=n||'';
       dd.style.display='none';
     };
     div.onmouseover=function(){this.style.background='rgba(255,255,255,.07)';};
