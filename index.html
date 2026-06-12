@@ -3643,7 +3643,7 @@ function ftAdmTab(tab) {
 // ══════════════════════════════════════════════════════
 function ftAdmArtRender(){
   var q=(document.getElementById('ft-art-search')||{value:''}).value.trim().toLowerCase();
-  var arts=Object.entries(DB.articles||{}).sort(function(a,b){return a[0].localeCompare(b[0]);});
+  var arts=Object.entries(DB.articulosMaestros||{}).sort(function(a,b){return a[0].localeCompare(b[0]);});
   if(q) arts=arts.filter(function(a){return a[0].toLowerCase().indexOf(q)>=0||a[1].toLowerCase().indexOf(q)>=0;});
   var h='';
   arts.forEach(function(a){
@@ -3690,6 +3690,7 @@ async function ftAdmArtSave(){
     if(existing) await spEscribir('FT_Articulos',fields,existing.id);
     else await spEscribir('FT_Articulos',fields,null);
     DB.articles[num]=desc;
+    DB.articulosMaestros[num]=desc;
     closeCModal('modal-art-edit');
     ftAdmArtRender();
   } catch(e){alert('Error al guardar: '+e.message);}
@@ -3701,6 +3702,7 @@ async function ftAdmArtDelete(num){
     var existing=(existRes.value||[]).find(function(i){return (i.fields.Title||'').toUpperCase()===num.toUpperCase();});
     if(existing) await spEscribir('FT_Articulos',{_delete:true},existing.id);
     delete DB.articles[num];
+    delete DB.articulosMaestros[num];
     ftAdmArtRender();
   }catch(e){alert('Error al eliminar: '+e.message);}
 }
@@ -3751,6 +3753,7 @@ async function ftAdmArtConfirmExcel(){
     try{
       await spEscribir('FT_Articulos',{Title:a.num,Descripcion:a.desc},null);
       DB.articles[a.num]=a.desc;
+      DB.articulosMaestros[a.num]=a.desc;
       ok++;
     }catch(e){err++;}
   }
@@ -3816,7 +3819,7 @@ function ftAdmOpArtInput(val){
   var q=val.toLowerCase().trim();
   var dd=document.getElementById('op-edit-art-dd');
   if(!q){dd.style.display='none';return;}
-  var matches=Object.entries(DB.articles||{}).filter(function(a){
+  var matches=Object.entries(DB.articulosMaestros||{}).filter(function(a){
     return a[0].toLowerCase().indexOf(q)>=0||a[1].toLowerCase().indexOf(q)>=0;
   }).slice(0,20);
   if(!matches.length){dd.style.display='none';return;}
@@ -3960,7 +3963,7 @@ function openArtPickerFor(inputId,keyId,cb){
 }
 function artPickerRender(){
   var q=(document.getElementById('art-picker-search')||{value:''}).value.trim().toLowerCase();
-  var arts=Object.entries(DB.articles||{}).sort(function(a,b){return a[0].localeCompare(b[0]);});
+  var arts=Object.entries(DB.articulosMaestros||{}).sort(function(a,b){return a[0].localeCompare(b[0]);});
   if(q) arts=arts.filter(function(a){return a[0].toLowerCase().indexOf(q)>=0||a[1].toLowerCase().indexOf(q)>=0;});
   var list=document.getElementById('art-picker-list');
   list.innerHTML='';
@@ -5007,6 +5010,7 @@ async function ftLoadDataFromSP() {
 
     // Rebuild DB.articles: primero desde OFs, luego enriquecer con FT_Articulos (lista maestra)
     DB.articles = {};
+    DB.articulosMaestros = {}; // Solo los de FT_Articulos — para pickers de administración
     (ofsRes.value||[]).forEach(function(i){
       var f = i.fields;
       var art = f.Numero_Articulo || '';
@@ -5014,6 +5018,15 @@ async function ftLoadDataFromSP() {
       if (art) DB.articles[art] = desc;
     });
     // Artículos desde lista maestra FT_Articulos (tiene prioridad sobre OFs)
+    (articulosRes.value||[]).forEach(function(i){
+      var f = i.fields;
+      var art = (f.Title || f.Numero_Articulo || '').trim();
+      var desc = (f.Descripcion || f.Descripcion_Articulo || '').trim();
+      if (art) {
+        DB.articles[art] = desc || DB.articles[art] || art;
+        DB.articulosMaestros[art] = desc || art; // Solo los de FT_Articulos
+      }
+    });
     (articulosRes.value||[]).forEach(function(i){
       var f = i.fields;
       var art = (f.Title || f.Numero_Articulo || '').trim(); // SP usa Title como numero de articulo
@@ -8396,7 +8409,7 @@ function getOfArticuloKey(of){
 // ====== COMBOBOX HELPERS FOR PLANTILLA MODAL ======
 // Returns sorted list of articles for dropdowns
 function getTplArtList(excludeKey){
-  return Object.keys(DB.articles).sort().filter(function(k){ return k !== excludeKey; });
+  return Object.keys(DB.articulosMaestros||DB.articles).sort().filter(function(k){ return k !== excludeKey; });
 }
 
 // Render dropdown items
