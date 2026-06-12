@@ -6047,6 +6047,10 @@ function closeCModal(id){document.getElementById(id).classList.remove("show");}
 
 // --- PROGRAMACIÓN ---------------------------------------
 function renderProg(){
+  // Debug: verificar datos en primera OF
+  if(DB.ofs && DB.ofs.length > 0){
+    console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
+  }
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
   var groups = groupByPedido(DB.ofs.filter(function(of){
