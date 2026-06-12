@@ -4951,7 +4951,7 @@ async function ftLoadDataFromSP() {
       status: f.Status || 'Sin programar',
       pedidoCierre:  f.Status === 'En proceso de cierre',
       pedidoCerrado: f.Status === 'Cerrado',
-      fecha_entrega: f.Fecha_Entrega || '',
+      fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
       cantidad: parseInt(f.Cantidad||0)||null,
     }));
     // Log diagnóstico — verificar que columnas SP existen
@@ -4967,7 +4967,10 @@ async function ftLoadDataFromSP() {
           var extraMap = {};
           (gRes.value||[]).forEach(function(i){
             var sap = i.fields.Title||'';
-            if(sap) extraMap[sap] = {fecha_entrega: i.fields.Fecha_Entrega||'', cantidad: parseInt(i.fields.Cantidad||0)||null};
+            var fe = i.fields.Fecha_Entrega||'';
+            // Extraer solo YYYY-MM-DD del formato ISO 2026-06-19T07:00:00Z
+            if(fe && fe.indexOf('T')>=0) fe = fe.split('T')[0];
+            if(sap) extraMap[sap] = {fecha_entrega: fe, cantidad: parseInt(i.fields.Cantidad||0)||null};
           });
           DB.ofs.forEach(function(of){
             if(extraMap[of.of_sap]){
@@ -6136,7 +6139,7 @@ function renderProg(){
         // Siempre mostrar — campos de entrega y cantidad
         h+="<div style='display:flex;gap:10px;margin-top:4px;font-size:.72rem;'>";
         h+=(of.fecha_entrega
-          ?"<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(of.fecha_entrega)+"</strong></span>"
+          ?(function(){var _p=of.fecha_entrega.split('-');var _f=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:of.fecha_entrega;return "<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(_f)+"</strong></span>";})()
           :"<span style='color:var(--dim);opacity:.5;'>📅 Sin fecha de entrega</span>");
         h+=(of.cantidad
           ?"<span style='color:var(--dim);'>📦 <strong style='color:var(--text);'>"+of.cantidad+" pzas</strong></span>"
@@ -7946,9 +7949,10 @@ function renderProg(){
       var total = aof?aof.ops.length:0;
       var pct = total>0?Math.round(done/total*100):0;
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
-      h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
-      if(C.editingMode && !ofCancelada) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
-      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
+      var ofEnCierre = of.pedidoCierre===true||of.status==='En proceso de cierre';
+      h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":ofEnCierre?"opacity:.8;background:rgba(212,160,23,.03);":"")+"'>";
+      if(C.editingMode && !ofCancelada && !ofEnCierre) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">";
+      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":ofEnCierre?"rgba(212,160,23,.4)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":ofEnCierre?"🔒":of.programadoHoy?"✓":"")+"</div>";
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
@@ -7964,7 +7968,7 @@ function renderProg(){
         // Siempre mostrar — campos de entrega y cantidad
         h+="<div style='display:flex;gap:10px;margin-top:4px;font-size:.72rem;'>";
         h+=(of.fecha_entrega
-          ?"<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(of.fecha_entrega)+"</strong></span>"
+          ?(function(){var _p=of.fecha_entrega.split('-');var _f=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:of.fecha_entrega;return "<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(_f)+"</strong></span>";})()
           :"<span style='color:var(--dim);opacity:.5;'>📅 Sin fecha de entrega</span>");
         h+=(of.cantidad
           ?"<span style='color:var(--dim);'>📦 <strong style='color:var(--text);'>"+of.cantidad+" pzas</strong></span>"
@@ -7973,20 +7977,24 @@ function renderProg(){
       }
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:120px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
-      var _stLabel=ofCancelada?"Cancelada":of.programadoHoy?"Programada":"Sin programar";
-      var _stClass=ofCancelada?"c-cancel":of.programadoHoy?"c-ep":"c-plan";
+      h+="</div>";
+      var _stLabel=ofCancelada?"Cancelada":ofEnCierre?"En cierre":of.programadoHoy?"Programada":"Sin programar";
+      var _stClass=ofCancelada?"c-cancel":ofEnCierre?"chip prio-media":of.programadoHoy?"c-ep":"c-plan";
       h+="<div style='display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;'>";
       h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+_stLabel+"</span>";
       h+="<div style='display:flex;gap:3px;'>";
       if(ofCancelada){
         h+="<button onclick=\"restaurarOrden('"+esc(of.of_sap)+"')\" style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.25);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>↩ Restaurar</button>";
+      } else if(ofEnCierre){
+        h+="<span style='font-size:.68rem;color:var(--yellow);padding:2px 6px;'>🔒 En cierre</span>";
       } else {
         h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);white-space:nowrap;'>👷 Ops</button>";
         h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       }
-      h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
+      if(!ofEnCierre) h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
       h+="</div></div>";
       h+="</div>";
+
 
     });
     h+="</div>";
@@ -9477,8 +9485,20 @@ function renderSeg(){
 
     g.ofs.forEach(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      if(!aof) return;
-      var done=aof.ops.filter(function(o){return o.status==='done';}).length;
+      // En pedidos cerrados mostrar info aunque no haya activeOF
+      if(!aof && filterStatus !== 'cerrados') return;
+      var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
+      var totalOps = aof ? aof.ops.length : 0;
+      var pct = totalOps>0 ? Math.round(done/totalOps*100) : (filterStatus==='cerrados'?100:0);
+      // Pedido cerrado sin activeOF — mostrar info básica colapsable
+      if(!aof && filterStatus==='cerrados'){
+        h+='<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">';
+        h+='<span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' <span style="color:var(--dim);">· '+esc(of.articulo)+'</span>':'')+'</span>';
+        h+='<span style="font-size:.78rem;font-weight:500;flex:1;">'+esc(of.descripcion.substring(0,50))+'</span>';
+        h+='<span style="font-size:.68rem;color:var(--green);">✓ Cerrada</span>';
+        h+='</div>';
+        return;
+      }
       var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
