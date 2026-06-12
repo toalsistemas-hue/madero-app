@@ -4965,6 +4965,8 @@ async function ftLoadDataFromSP() {
             }
           });
           console.log('[DB.ofs] Fecha_Entrega/Cantidad cargados vía Graph para '+Object.keys(extraMap).length+' OFs');
+          // Re-renderizar ahora que tenemos los datos
+          if(C && C.currentPage === 'programacion') renderProg();
         } catch(e){ console.warn('[DB.ofs] No se pudieron cargar extras vía Graph:', e.message); }
       }
     }
