@@ -697,6 +697,10 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
 /* Chips coord */
 .chip{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:12px;font-size:.67rem;font-weight:600;white-space:nowrap;}
+.ftab-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer;color:var(--dim);transition:all .15s;white-space:nowrap;}
+.ftab-btn:hover{background:rgba(255,255,255,.1);color:var(--text);}
+.ftab-active{background:rgba(88,166,255,.15)!important;border-color:rgba(88,166,255,.4)!important;color:var(--accent-l)!important;font-weight:600;}
+.ftab-cancel.ftab-active{background:rgba(239,68,68,.15)!important;border-color:rgba(239,68,68,.35)!important;color:var(--red)!important;}
 .c-cancel{background:rgba(239,68,68,.15);color:var(--red);}
 .c-ep{background:rgba(61,155,233,.15);color:var(--accent-l);}
 .c-plan{background:rgba(212,160,23,.15);color:var(--yellow);}
@@ -1012,15 +1016,18 @@ tr:last-child td{border-bottom:none;}
         <div class="kpi-card"><div class="kpi-val" style="color:var(--green)" id="fabp-kpi-hoy">0</div><div class="kpi-lbl">En Producción</div></div>
         <div class="kpi-card"><div class="kpi-val" style="color:var(--red)" id="fabp-kpi-cancelados">0</div><div class="kpi-lbl">Cancelados</div></div>
       </div>
-      <div class="filter-bar">
-        <input class="form-input" id="filter-text" placeholder="Buscar pedido, cliente, OF..." oninput="C.filterText=this.value;renderProg()">
-        <select class="form-select" id="filter-status" onchange="C.filterStatus=this.value;renderProg()">
-          <option value="todos">Todos los pedidos</option>
-          <option value="programados">Solo programados hoy</option>
-          <option value="terminados">Pedidos terminados</option>
-          <option value="cancelados">🚫 Cancelados</option>
-        </select>
+      <div class="filter-bar" style="flex-wrap:wrap;gap:8px;">
+        <input class="form-input" id="filter-text" placeholder="Buscar pedido, cliente, OF..." oninput="C.filterText=this.value;renderProg()" style="flex:1;min-width:180px;">
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+          <button id="ftab-todos"       onclick="setProgTab('todos')"       class="ftab-btn ftab-active">Todos</button>
+          <button id="ftab-sin-prog"    onclick="setProgTab('sin-prog')"    class="ftab-btn">Sin programar</button>
+          <button id="ftab-programados" onclick="setProgTab('programados')" class="ftab-btn">Programados</button>
+          <button id="ftab-terminados"  onclick="setProgTab('terminados')"  class="ftab-btn">Terminados</button>
+        </div>
         <button class="btn btn-ghost btn-sm" onclick="simulateRefresh()">↻ Actualizar</button>
+      </div>
+      <div style="margin-bottom:6px;">
+        <button id="ftab-cancelados" onclick="setProgTab('cancelados')" class="ftab-btn ftab-cancel" style="font-size:.73rem;padding:4px 12px;">🚫 Ver Pedidos Cancelados <span id="ftab-cancelados-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:4px;">0</span></button>
       </div>
       <div id="prog-list"></div>
     </div>
@@ -6048,6 +6055,17 @@ function openCModal(id){document.getElementById(id).classList.add("show");}
 function closeCModal(id){document.getElementById(id).classList.remove("show");}
 
 // --- PROGRAMACIÓN ---------------------------------------
+function setProgTab(tab){
+  // Toggle: si ya está en cancelados y se presiona de nuevo, volver a todos
+  if(tab==='cancelados' && C.filterStatus==='cancelados'){
+    tab='todos';
+  }
+  C.filterStatus = tab;
+  document.querySelectorAll('.ftab-btn').forEach(function(b){ b.classList.remove('ftab-active'); });
+  var btn = document.getElementById('ftab-'+tab);
+  if(btn) btn.classList.add('ftab-active');
+  renderProg();
+}
 function renderProg(){
   // Debug: verificar datos en primera OF
   if(DB.ofs && DB.ofs.length > 0){
@@ -7880,13 +7898,16 @@ function renderProg(){
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
   var groups = groupByPedido(DB.ofs.filter(function(of){
-    if(fStatus==='cancelados') return of.status==='Pedido Cancelado'; // solo cancelados
+    if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
     if(of.status==='Pedido Cancelado') return false; // excluir canceladas de lista principal
     if(fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
-    if(fStatus==="programados" && !of.programadoHoy) return false;
-    if(fStatus==="terminados") {
+    if(fStatus==='sin-prog') return !of.programadoHoy;
+    if(fStatus==='programados') return of.programadoHoy===true;
+    if(fStatus==='terminados'){
+      // Solo OFs programadas donde TODAS las ops están done y hay al menos 1 op
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      if(!aof||!aof.ops.every(function(op){return op.status==="done";})) return false;
+      if(!aof || !aof.ops || aof.ops.length===0) return false;
+      return aof.ops.every(function(op){return op.status==='done';});
     }
     return true;
   }));
@@ -7998,6 +8019,9 @@ function renderProg(){
   document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy&&o.status!=='Pedido Cancelado';}).length;
   var _nCan=DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';}).length;
   var _kc=document.getElementById("fabp-kpi-cancelados"); if(_kc) _kc.textContent=_nCan;
+  // Badge en botón cancelados
+  var _badge=document.getElementById('ftab-cancelados-badge');
+  if(_badge){_badge.textContent=_nCan; _badge.style.display=_nCan>0?'inline':'none';}
   // Ocultar/mostrar sección cancelados separada (solo cuando NO estamos en pestaña cancelados)
   var _canSec2=document.getElementById('prog-cancelados-section');
   if(_canSec2) _canSec2.style.display = fStatus==='cancelados'?'none':'block';
