@@ -7913,13 +7913,17 @@ function renderProg(){
           :"<span style='color:var(--dim);opacity:.5;'>📦 Sin cantidad</span>");
         h+="</div>";
       }
-      if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
+      if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:120px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
-      h+="<span class='chip "+(ofCancelada?"c-cancel":of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(ofCancelada?"Cancelada":of.status||of.statusSAP||'')+"</span>";
-      h+="<span style='font-size:.72rem;color:var(--dim)'>"+(tpl?tpl.ops.length+" ops":"<span style='color:var(--red)'>Sin ops</span>")+"</span>";
-      if(!ofCancelada) h+="<button onclick='cancelarOrden(\""+esc(of.of_sap)+"\",\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:3px 8px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
-      h+="<button class='btn-sm-ghost' onclick='handleConfigClick(\""+of.of_sap+"\")'>⚙</button>";
+      h+="<div style='display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;'>";
+      h+="<span class='chip "+(ofCancelada?"c-cancel":of.programadoHoy?"c-ep":"c-plan")+"' style='font-size:.64rem;'>"+esc(ofCancelada?"Cancelada":of.status||"Sin programar")+"</span>";
+      h+="<div style='display:flex;gap:3px;'>";
+      if(!ofCancelada) h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);'>👷 Ops</button>";
+      if(!ofCancelada) h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" title='Cancelar OF' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;'>✗</button>";
+      h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
+      h+="</div></div>";
       h+="</div>";
+
     });
     h+="</div>";
   });
