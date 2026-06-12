@@ -7910,12 +7910,12 @@ function renderProg(){
   var fStatus = C.filterStatus;
   var groups = groupByPedido(DB.ofs.filter(function(of){
     if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
-    if(of.status==='Pedido Cancelado') return false; // excluir canceladas de lista principal
+    if(of.status==='Pedido Cancelado') return false;
+    if(of.pedidoCerrado || of.status==='Cerrado') return false; // excluir cerradas
     if(fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
     if(fStatus==='sin-prog') return !of.programadoHoy;
     if(fStatus==='programados') return of.programadoHoy===true;
     if(fStatus==='terminados'){
-      // Solo OFs programadas donde TODAS las ops están done y hay al menos 1 op
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof || !aof.ops || aof.ops.length===0) return false;
       return aof.ops.every(function(op){return op.status==='done';});
@@ -9485,17 +9485,20 @@ function renderSeg(){
 
     g.ofs.forEach(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      // En pedidos cerrados mostrar info aunque no haya activeOF
-      if(!aof && filterStatus !== 'cerrados') return;
       var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
       var totalOps = aof ? aof.ops.length : 0;
       var pct = totalOps>0 ? Math.round(done/totalOps*100) : (filterStatus==='cerrados'?100:0);
-      // Pedido cerrado sin activeOF — mostrar info básica colapsable
-      if(!aof && filterStatus==='cerrados'){
-        h+='<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">';
-        h+='<span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' <span style="color:var(--dim);">· '+esc(of.articulo)+'</span>':'')+'</span>';
-        h+='<span style="font-size:.78rem;font-weight:500;flex:1;">'+esc(of.descripcion.substring(0,50))+'</span>';
-        h+='<span style="font-size:.68rem;color:var(--green);">✓ Cerrada</span>';
+      if(!aof && filterStatus !== 'cerrados') return;
+      // Pedido cerrado sin activeOF — mostrar info básica
+      if(!aof){
+        h+='<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">';
+        h+='<div style="width:18px;height:18px;border-radius:4px;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;">✓</div>';
+        h+='<div style="flex:1;min-width:0;">';
+        h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' <span style="color:var(--dim);font-size:.7rem;">· '+esc(of.articulo)+'</span>':'')+'</span></div>';
+        h+='<div style="font-size:.78rem;color:var(--text-dim);">'+esc(of.descripcion.substring(0,60))+'</div>';
+        if(of.fecha_entrega){var _p=of.fecha_entrega.split('-');var _f=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:of.fecha_entrega;h+='<div style="font-size:.7rem;color:var(--dim);">📅 '+_f+(of.cantidad?' · 📦 '+of.cantidad+' pzas':'')+'</div>';}
+        h+='</div>';
+        h+='<span style="font-size:.68rem;color:var(--green);white-space:nowrap;">✓ Cerrada</span>';
         h+='</div>';
         return;
       }
