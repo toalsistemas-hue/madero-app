@@ -1042,8 +1042,7 @@ tr:last-child td{border-bottom:none;}
         <div class="coord-modal-title">⚙ Catálogo de Operaciones</div>
         <p style="font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:12px;">
           Operaciones disponibles para seleccionar al crear plantillas.<br>
-          Al guardar una plantilla, las operaciones nuevas se registran automáticamente.<br>
-          <strong>Formato Excel:</strong> una columna llamada <code>Nombre_Operacion</code> (o <code>Operacion</code>, <code>Nombre</code>) con el listado de operaciones. Sin relación a artículos.
+          <strong>Formato Excel obligatorio:</strong> columnas <code>Operacion</code>, <code>Articulo_Key</code>, <code>Descripcion</code>.
         </p>
         <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('opcat-excel-input').click()">📂 Importar desde Excel (.xlsx / .csv)</button>
@@ -1070,7 +1069,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('art-excel-input').click()">📂 Importar desde Excel (.xlsx / .csv)</button>
           <input type="file" id="art-excel-input" accept=".xlsx,.csv" style="display:none;" onchange="onArtExcelFile(this)">
-          <button class="btn btn-ghost btn-sm" onclick="reloadArticulosFromSP()">↻ Recargar desde SharePoint</button>
+          <button class="btn btn-ghost btn-sm" onclick="reloadArticulosFromSP()">↻ Recargar desde SP</button>
         </div>
         <div id="art-import-status" style="font-size:.76rem;color:var(--green);margin-bottom:8px;min-height:18px;"></div>
         <div style="font-size:.72rem;color:var(--dim);font-weight:700;margin-bottom:6px;">Artículos en catálogo (<span id="art-count">0</span>)</div>
@@ -1291,7 +1290,7 @@ tr:last-child td{border-bottom:none;}
               </div>
               <div id="ft-op-excel-panel" style="display:none;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:16px;">
                 <div style="font-size:.85rem;font-weight:700;margin-bottom:8px;">📊 Cargar operaciones desde Excel</div>
-                <div style="font-size:.73rem;color:var(--dim);margin-bottom:10px;">Columnas requeridas: <strong>Operacion</strong>, <strong>Articulo_Key</strong>. Opcional: <strong>Descripcion</strong></div>
+                <div style="font-size:.73rem;color:var(--dim);margin-bottom:10px;">Columnas obligatorias: <strong>Operacion</strong>, <strong>Articulo_Key</strong>, <strong>Descripcion</strong></div>
                 <div id="ft-op-drop" onclick="document.getElementById('ft-op-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--accent-l)'" ondragleave="this.style.borderColor='rgba(255,255,255,.15)'" ondrop="ftAdmOpHandleDrop(event)" style="border:2px dashed rgba(255,255,255,.15);border-radius:8px;padding:24px;text-align:center;cursor:pointer;">
                   <div style="font-size:1.5rem;margin-bottom:4px;">📁</div>
                   <div style="font-size:.8rem;">Arrastra el Excel aquí o haz clic para seleccionar</div>
@@ -4039,7 +4038,7 @@ function opPickerRender(){
     var div=document.createElement('div');
     div.setAttribute('data-op-nombre',o.nombre);
     div.style.cssText='padding:10px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;cursor:pointer;transition:background .15s;';
-    var artDesc=o.articulo&&DB.articles[o.articulo]?' — <span style="color:var(--dim);">'+esc(DB.articles[o.articulo])+'</span>':'';
+    var artDesc=o.articulo&&(DB.articles[o.articulo]||o.desc)?(' — <span style="color:var(--dim);">'+esc((DB.articles[o.articulo]||o.desc||''))+'</span>'):'';
     div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+'</div>'+
       (o.articulo?'<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;margin-top:2px;">'+esc(o.articulo)+artDesc+'</div>':'');
     div.onmouseover=function(){this.style.background='rgba(255,255,255,.09)';};
@@ -4297,6 +4296,8 @@ async function ftSaveTemplateToSP(art) {
 // ====== GESTION DE ARTICULOS (FT_Articulos SP) ======
 function openGestionArticulosModal(){
   renderArtListPreview();
+  var status=document.getElementById('art-reload-status');
+  if(status) status.textContent='';
   openCModal('modal-gestion-art');
 }
 function renderArtListPreview(){
@@ -4521,13 +4522,25 @@ function renderOpCatPreview(){
     preview.innerHTML = '<div style="padding:16px;text-align:center;color:var(--dim);">Sin operaciones en catálogo.</div>';
     return;
   }
-  // Simple flat list — no article column
   var h = '<table style="width:100%;border-collapse:collapse;">';
-  h += '<thead><tr><th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">#</th>';
-  h += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">Nombre de la Operación</th></tr></thead><tbody>';
-  allOps.forEach(function(op, i){
-    h += '<tr><td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.7rem;color:var(--dim);width:32px;">'+(i+1)+'</td>';
-    h += '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.76rem;">'+esc(op)+'</td></tr>';
+  h += '<thead><tr>';
+  h += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">#</th>';
+  h += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">Nombre de la Operación</th>';
+  h += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">Artículo</th>';
+  h += '<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--dim);font-weight:600;font-size:.72rem;">Descripción</th>';
+  h += '</tr></thead><tbody>';
+  // Usar DB.opCatalogFull para tener artículo y descripción
+  var opsFull = DB.opCatalogFull || allOps.map(function(n){return {nombre:n,articulo:'',desc:''};});
+  opsFull.forEach(function(op, i){
+    var nombre = typeof op === 'string' ? op : (op.nombre||op);
+    var art = typeof op === 'object' ? (op.articulo||'') : '';
+    var desc = typeof op === 'object' ? (op.desc||DB.articles[art]||'') : '';
+    h += '<tr>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.7rem;color:var(--dim);width:32px;">'+(i+1)+'</td>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.76rem;">'+esc(nombre)+'</td>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;">'+esc(art)+'</td>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.7rem;color:var(--dim);">'+esc(desc)+'</td>';
+    h += '</tr>';
   });
   h += '</tbody></table>';
   preview.innerHTML = h;
@@ -4566,8 +4579,10 @@ function onOpCatExcelFile(input){
         var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
         var count = 0; var newOps = [];
         rows.forEach(function(row){
-          var op = (row['Nombre_Operacion']||row['Nombre Operacion']||row['Operacion']||row['Operación']||row['Nombre']||row['OPERACION']||row['nombre']||'').toString().trim();
-          if (op) { newOps.push({op:op}); count++; }
+          var op = (row['Operacion']||row['Operación']||row['Nombre_Operacion']||row['Nombre Operacion']||row['Nombre']||row['OPERACION']||row['nombre']||'').toString().trim();
+          var art = (row['Articulo_Key']||row['Articulo Key']||row['articulo']||row['ARTICULO']||'').toString().trim().toUpperCase();
+          var desc = (row['Descripcion']||row['Descripción']||row['DESCRIPCION']||row['descripcion']||'').toString().trim();
+          if (op) { newOps.push({op:op, art:art, desc:desc}); count++; }
         });
         importOpsToCatalog(newOps, status);
       } catch(err){
@@ -4595,11 +4610,16 @@ async function importOpsToCatalog(newOps, statusEl){
     if (!op) continue;
     if (existingNames.indexOf(op) >= 0) { skipped++; continue; } // ya existe
     try {
-      await spEscribir('FT_Catalogo_Operaciones', { Title: op }, null);
+      var catFields = {Title: op};
+      if (newOps[i].art) catFields.Articulo_Key = newOps[i].art;
+      if (newOps[i].desc) catFields.Descripcion = newOps[i].desc;
+      await spEscribir('FT_Catalogo_Operaciones', catFields, null);
       existingNames.push(op);
       // Update in-memory
       if (!DB.opCatalog) DB.opCatalog = [];
+      if (!DB.opCatalogFull) DB.opCatalogFull = [];
       if (DB.opCatalog.indexOf(op) < 0) { DB.opCatalog.push(op); DB.opCatalog.sort(); }
+      DB.opCatalogFull.push({nombre:op, articulo:newOps[i].art||'', desc:newOps[i].desc||''});
       saved++;
     } catch(e){ errs++; console.warn('Error importando op "'+op+'":', e.message); }
     if (statusEl && i%5===0) statusEl.textContent='⏳ Importando... '+saved+'/'+newOps.length;
