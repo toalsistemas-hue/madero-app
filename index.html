@@ -4947,8 +4947,8 @@ async function ftLoadDataFromSP() {
     if(DB.ofs.length > 0){
       var sample = (ofsRes.value||[])[0];
       var sampleFields = sample ? Object.keys(sample.fields||{}) : [];
-      console.log('[DB.ofs] Columnas SP disponibles:', sampleFields.filter(function(k){return k.indexOf('Fecha')>=0||k.indexOf('Cantidad')>=0||k.indexOf('Status')>=0;}));
-      console.log('[DB.ofs] Primer registro:', {fecha_entrega: DB.ofs[0].fecha_entrega, cantidad: DB.ofs[0].cantidad});
+      console.log('[DB.ofs] Todos los campos SP:', sampleFields.join(', '));
+      console.log('[DB.ofs] Primer registro completo fields:', JSON.stringify(sample ? sample.fields : {}));
     }
 
     // Build DB.activeOFs with their operations
