@@ -7844,91 +7844,103 @@ function cancelEditMode() {
 }
 
 // -- renderProg con PENDING reflejado visualmente ----------
-function renderProg() {
-  var fText = (C.filterText || '').toLowerCase();
-  var fStatus = C.filterStatus || 'todos';
-
-  // -- 5: Pedidos terminados = todas sus OFs en activeOFs con todas ops done --
-  function isPedidoTerminado(pedido) {
-    var ofs = DB.ofs.filter(function(o){return o.pedido===pedido && o.programadoHoy;});
-    if (!ofs.length) return false;
-    return ofs.every(function(of){
-      var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
-    });
+function renderProg(){
+  // Debug: verificar datos en primera OF
+  if(DB.ofs && DB.ofs.length > 0){
+    console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
   }
-
-  var filtered = (DB.ofs||[]).filter(Boolean).filter(function(of){
-    if (fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
-    if (fStatus==='programados') return of.programadoHoy;
-    if (fStatus==='terminados')  return isPedidoTerminado(of.pedido);
+  var fText = C.filterText.toLowerCase();
+  var fStatus = C.filterStatus;
+  var groups = groupByPedido(DB.ofs.filter(function(of){
+    if(fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
+    if(fStatus==="programados" && !of.programadoHoy) return false;
+    if(fStatus==="terminados") {
+      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      if(!aof||!aof.ops.every(function(op){return op.status==="done";})) return false;
+    }
     return true;
-  });
+  }));
 
-  var groups = groupByPedido(filtered);
-  var pC={alta:'chip prio-alta',media:'chip prio-media',normal:'chip prio-normal'};
-  var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
-  var h = '';
+  var pC={alta:"chip prio-alta",media:"chip prio-media",normal:"chip prio-normal"};
+  var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
+  var h="";
 
   groups.forEach(function(g){
-    // Aplicar PENDING al grupo para visualización
-    var gPrio = g.prioridad;
-    g.ofs.forEach(function(of){ if(of && PENDING_PROG && PENDING_PROG[of.of_sap]) gPrio = PENDING_PROG[of.of_sap].prioridad; });
-    var completed = g.ofs.every(function(of){
-      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
-    }) && g.ofs.some(function(of){return of.programadoHoy;});
-    var grpStyle = completed ? 'border-color:var(--green);background:rgba(46,160,67,.04);' : '';
-    h += '<div class="prog-card" style="'+grpStyle+'">';
-    h += '<div class="prog-ped-hdr" style="'+(completed?'background:rgba(46,160,67,.08);':'')+'">'+
-      '<div><div class="prog-ped-num" style="'+(completed?'color:var(--green)':'')+'">Pedido '+esc(g.pedido)+'</div>'+
-      '<div class="prog-ped-cliente">'+esc(g.cliente)+(g.ofv?' <span style="color:var(--dim);font-size:.72rem">· '+esc(g.ofv)+'</span>':'')+(completed?' <span class="chip c-done">✓ Completado</span>':'')+'</div></div>';
-    h += '<div style="display:flex;align-items:center;gap:8px;">';
-    if (C.editingMode) {
-      h += '<select class="form-select-sm" onchange="updatePedidoPrio(\''+g.pedido+'\',this.value)">';
-      ['alta','media','normal'].forEach(function(p){h+='<option value="'+p+'"'+(gPrio===p?' selected':'')+'>'+{alta:'🔴 Alta',media:'🟡 Media',normal:'⬜ Normal'}[p]+'</option>';});
-      h += '</select>';
-    } else {
-      h += '<span class="'+pC[gPrio]+'">'+pL[gPrio]+'</span>';
-    }
-    h += '</div></div>';
+    // Verificar si el pedido tiene alguna OF cancelada
+    var cancelado = g.ofs.every(function(o){return o.status==='Pedido Cancelado';});
+    var completed = pedidoIsComplete(g.pedido);
+    var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
+                 : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
+    h+="<div class='prog-card' style='"+grpStyle+"'>";
+    h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
+    h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
+    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
+    h+="<div style='display:flex;align-items:center;gap:8px'>";
+    h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
+    if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
+    if(!cancelado) h+="<button onclick='cancelarPedido(\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 10px;font-size:.7rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar Pedido</button>";
+    h+="</div></div>";
 
     g.ofs.forEach(function(of){
-      var pending = PENDING_PROG[of.of_sap];
-      var isChecked = pending ? pending.programadoHoy : of.programadoHoy;
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
-      var total = aof ? aof.ops.length : 0;
-      var pct = total>0 ? Math.round(done/total*100) : 0;
-      var borderStyle = pending ? 'border-left:3px solid var(--yellow);' : '';
-      h += '<div class="prog-of-row" style="'+borderStyle+'">';
-      if (C.editingMode) {
-        h += '<input type="checkbox" class="prog-chk" '+(isChecked?'checked':'')+' onchange="toggleProg(\''+of.of_sap+'\',this.checked)">';
+      var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
+      var total = aof?aof.ops.length:0;
+      var pct = total>0?Math.round(done/total*100):0;
+      var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
+      h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
+      if(C.editingMode && !ofCancelada) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
+      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
+      h+="<div style='flex:1;min-width:0;'>";
+      h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
+      h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
+      // Fecha entrega y cantidad — editables en modo edición, visibles siempre
+      if(C.editingMode && !ofCancelada){
+        h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
+        h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
+        h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
+        h+="</div>";
       } else {
-        h += '<div style="width:18px;height:18px;border-radius:4px;background:'+(of.programadoHoy?'var(--accent-l)':'var(--hover)')+';display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;">'+(of.programadoHoy?'✓':'')+'</div>';
+        // Siempre mostrar — campos de entrega y cantidad
+        h+="<div style='display:flex;gap:10px;margin-top:4px;font-size:.72rem;'>";
+        h+=(of.fecha_entrega
+          ?"<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(of.fecha_entrega)+"</strong></span>"
+          :"<span style='color:var(--dim);opacity:.5;'>📅 Sin fecha de entrega</span>");
+        h+=(of.cantidad
+          ?"<span style='color:var(--dim);'>📦 <strong style='color:var(--text);'>"+of.cantidad+" pzas</strong></span>"
+          :"<span style='color:var(--dim);opacity:.5;'>📦 Sin cantidad</span>");
+        h+="</div>";
       }
-      h += '<div style="flex:1;min-width:0;">';
-      h += '<div style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l)">OF '+esc(of.of_sap)+(of.articulo?'<span style="color:var(--muted)"> · '+esc(of.articulo)+'</span>':'')+'</div>';
-      h += '<div style="font-size:.8rem;font-weight:500;">'+esc(of.descripcion.substring(0,55))+'</div>';
-      if (total>0) { h += '<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px"><div style="height:100%;width:'+pct+'%;background:var(--green);border-radius:2px;"></div></div>'; }
-      h += '</div>';
-      h += '<span class="chip '+(of.statusSAP==='EN PROCESO'?'c-ep':'c-plan')+'">'+esc(of.statusSAP)+'</span>';
-      // -- 1: Botón de asignación de técnicos a ops --
-      h += '<button class="btn-sm-ghost" onclick="openOFOpsModal(\''+of.of_sap+'\')">👷 Ops</button>';
-      h += '<button class="btn-sm-ghost" onclick="handleConfigClick(\''+of.of_sap+'\')" title="Configurar plantilla">⚙</button>';
-      h += '</div>';
+      if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
+      h+="</div>";
+      h+="<span class='chip "+(ofCancelada?"c-cancel":of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(ofCancelada?"Cancelada":of.status||of.statusSAP||'')+"</span>";
+      h+="<span style='font-size:.72rem;color:var(--dim)'>"+(tpl?tpl.ops.length+" ops":"<span style='color:var(--red)'>Sin ops</span>")+"</span>";
+      if(!ofCancelada) h+="<button onclick='cancelarOrden(\""+esc(of.of_sap)+"\",\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:3px 8px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
+      h+="<button class='btn-sm-ghost' onclick='handleConfigClick(\""+of.of_sap+"\")'>⚙</button>";
+      h+="</div>";
     });
-    h += '</div>';
+    h+="</div>";
   });
-  if (!h) h = '<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem">Sin resultados.</div>';
-  document.getElementById('prog-list').innerHTML = h;
-  document.getElementById('fabp-kpi-total').textContent = DB.ofs.length;
-  document.getElementById('fabp-kpi-alta').textContent  = DB.ofs.filter(function(o){return o.prioridad==='alta';}).length;
-  document.getElementById('fabp-kpi-media').textContent = DB.ofs.filter(function(o){return o.prioridad==='media';}).length;
-  document.getElementById('fabp-kpi-hoy').textContent   = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
+  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+  document.getElementById("prog-list").innerHTML = h;
+  // KPIs
+  document.getElementById("fabp-kpi-total").textContent = DB.ofs.length;
+  document.getElementById("fabp-kpi-alta").textContent = DB.ofs.filter(function(o){return o.prioridad==="alta";}).length;
+  document.getElementById("fabp-kpi-media").textContent = DB.ofs.filter(function(o){return o.prioridad==="media";}).length;
+  document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
 }
 
+function getProgFields(sap){
+  // Leer Fecha_Entrega y Cantidad del DOM en modo edición
+  var feEl=document.getElementById('fe-'+sap);
+  var cantEl=document.getElementById('cant-'+sap);
+  return {
+    fecha_entrega: feEl?feEl.value:'',
+    cantidad: cantEl?parseInt(cantEl.value)||0:0
+  };
+}
 // -- 1: Modal asignación de técnicos a ops ----------------
 function openOFOpsModal(sap) {
   var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
