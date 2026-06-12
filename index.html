@@ -3714,6 +3714,9 @@ function ftAdmArtOpenExcel(){
 function ftAdmArtCancelExcel(){
   var p=document.getElementById('ft-art-excel-panel');
   if(p) p.style.display='none';
+  _ftArtPendingExcel=null;
+  document.getElementById('ft-art-excel-preview').style.display='none';
+  var fi=document.getElementById('ft-art-file'); if(fi) fi.value='';
 }
 function ftAdmArtHandleDrop(e){
   e.preventDefault();
@@ -3780,7 +3783,7 @@ function ftAdmOpRender(){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05);border-radius:7px;">';
     h+='<div>';
     h+='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+'</div>';
-    if(o.articulo) h+='<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;">'+esc(o.articulo)+(DB.articles[o.articulo]?' — <span style="color:var(--dim);">'+esc(DB.articles[o.articulo].substring(0,40))+'</span>':'')+'</div>';
+    if(o.articulo) h+='<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;">'+esc(o.articulo)+(DB.articles[o.articulo]?' — <span style="color:var(--dim);">'+esc(DB.articles[o.articulo])+'</span>':o.desc?' — <span style="color:var(--dim);">'+esc(o.desc)+'</span>':'')+'</div>';
     h+='</div>';
     h+='<div style="display:flex;gap:6px;">';
     h+='<button onclick="ftAdmOpOpenEdit(\''+esc(o.nombre)+'\',\''+esc(o.articulo||'')+'\',\''+esc(o.desc||'')+'\',\''+esc(o.spId||'')+'\')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 10px;font-size:.7rem;cursor:pointer;">✏️ Editar</button>';
@@ -3893,6 +3896,9 @@ function ftAdmOpOpenExcel(){
 function ftAdmOpCancelExcel(){
   var p=document.getElementById('ft-op-excel-panel');
   if(p) p.style.display='none';
+  _ftOpPendingExcel=null;
+  document.getElementById('ft-op-excel-preview').style.display='none';
+  var fi=document.getElementById('ft-op-file'); if(fi) fi.value='';
 }
 function ftAdmOpHandleDrop(e){
   e.preventDefault();
@@ -4033,7 +4039,7 @@ function opPickerRender(){
     var div=document.createElement('div');
     div.setAttribute('data-op-nombre',o.nombre);
     div.style.cssText='padding:10px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;cursor:pointer;transition:background .15s;';
-    var artDesc=o.articulo&&DB.articles[o.articulo]?' — <span style="color:var(--dim);">'+esc(DB.articles[o.articulo].substring(0,35))+'</span>':'';
+    var artDesc=o.articulo&&DB.articles[o.articulo]?' — <span style="color:var(--dim);">'+esc(DB.articles[o.articulo])+'</span>':'';
     div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+'</div>'+
       (o.articulo?'<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;margin-top:2px;">'+esc(o.articulo)+artDesc+'</div>':'');
     div.onmouseover=function(){this.style.background='rgba(255,255,255,.09)';};
