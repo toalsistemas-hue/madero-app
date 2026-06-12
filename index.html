@@ -4949,6 +4949,8 @@ async function ftLoadDataFromSP() {
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       programadoHoy: f.Programado_Hoy === true,
       status: f.Status || 'Sin programar',
+      pedidoCierre:  f.Status === 'En proceso de cierre',
+      pedidoCerrado: f.Status === 'Cerrado',
       fecha_entrega: f.Fecha_Entrega || '',
       cantidad: parseInt(f.Cantidad||0)||null,
     }));
@@ -9427,7 +9429,7 @@ function renderSeg(){
   h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">';
   ['activos','cierre','cerrados'].forEach(function(f){
     var labels={activos:'🟢 En proceso',cierre:'🟡 En proceso de cierre',cerrados:'✅ Cerrados'};
-    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\'+f+\';renderSeg()">'+labels[f]+'</button>';
+    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+'</button>';
   });
   h+='</div>';
 
@@ -9543,27 +9545,50 @@ function renderSeg(){
 }
 
 // -- 12: Funciones cierre de pedido ---------------------------
-function movePedidoCierre(pedido){
-  DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.pedidoCierre=true;});
+async function movePedidoCierre(pedido){
+  DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
+    o.pedidoCierre=true;
+    o.status='En proceso de cierre';
+  });
   renderSeg();
   fireSync('coord','pedido_cierre',{pedido:pedido});
+  // Persistir en SP
+  try {
+    var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
+    var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+    for(var i=0;i<ofsDelPedido.length;i++){
+      var of = ofsDelPedido[i];
+      var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
+      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre'}, item.id);
+    }
+  } catch(e){ console.warn('SP movePedidoCierre:', e.message); }
 }
-function cerrarPedido(pedido){
+async function cerrarPedido(pedido){
   showInfoModal('Cerrar pedido '+pedido,
     '¿Confirmas el cierre del pedido '+pedido+'? Las OFs dejarán de mostrarse en la app móvil.',
     '✅ Confirmar cierre',
-    function(){
+    async function(){
       closeCModal('modal-info');
       DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
         o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false;
+        o.status='Cerrado';
       });
-      // Retirar de activeOFs
       DB.activeOFs = DB.activeOFs.filter(function(a){
         var of=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
         return !of || !of.pedidoCerrado;
       });
       renderSeg(); renderApp(); renderProg();
       fireSync('coord','pedido_cerrado',{pedido:pedido});
+      // Persistir en SP
+      try {
+        var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
+        var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+        for(var i=0;i<ofsDelPedido.length;i++){
+          var of = ofsDelPedido[i];
+          var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
+          if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false}, item.id);
+        }
+      } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }
   );
 }
