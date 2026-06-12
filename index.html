@@ -4248,6 +4248,12 @@ async function ftSaveProgramacionToSP() {
       var fieldsToSave = { Programado_Hoy: of_.programadoHoy === true, Status: newStatus };
       if(of_.fecha_entrega) fieldsToSave.Fecha_Entrega = of_.fecha_entrega;
       if(of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
+      // Guardar fecha de programación solo cuando se programa por primera vez
+      if(of_.programadoHoy && !of_.fecha_programacion){
+        var hoy = new Date();
+        of_.fecha_programacion = hoy.getFullYear()+'-'+(String(hoy.getMonth()+1).padStart(2,'0'))+'-'+String(hoy.getDate()).padStart(2,'0');
+        fieldsToSave.Fecha_Programacion = of_.fecha_programacion;
+      }
       await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
         .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
@@ -4955,6 +4961,7 @@ async function ftLoadDataFromSP() {
       pedidoCierre:  f.Status === 'En proceso de cierre',
       pedidoCerrado: f.Status === 'Cerrado',
       fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
+      fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseInt(f.Cantidad||0)||null,
     }));
     // Log diagnóstico — verificar que columnas SP existen
@@ -9521,10 +9528,25 @@ function renderSeg(){
         h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
         h+='<span style="color:'+sCol+';font-size:.7rem;">'+sIco+'</span>';
         h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
-        if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">'+esc(op.tecnico)+'</span>';
+        if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">👷 '+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
         if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
+        // Ayudantes
+        if(op.ayudantes && op.ayudantes.length>0){
+          h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;padding-left:14px;">';
+          op.ayudantes.forEach(function(a){
+            h+='<span style="font-size:.66rem;color:var(--dim);background:rgba(255,255,255,.05);border-radius:4px;padding:1px 6px;">🤝 '+esc(a)+'</span>';
+          });
+          h+='</div>';
+        }
+        // Fechas inicio y fin
+        if(op.inicio || op.fin){
+          h+='<div style="display:flex;gap:10px;margin-top:2px;padding-left:14px;font-size:.66rem;color:var(--dim);">';
+          if(op.inicio) h+='<span>🕐 <strong>'+esc(op.inicio)+'</strong></span>';
+          if(op.fin)    h+='<span>🏁 <strong>'+esc(op.fin)+'</strong></span>';
+          h+='</div>';
+        }
         // Comentarios de la operación
         var comments=[];
         if(op.pauseReason) comments.push({ico:'⏸',col:'var(--yellow)',txt:op.pauseReason});
