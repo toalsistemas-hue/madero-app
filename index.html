@@ -1148,7 +1148,7 @@ tr:last-child td{border-bottom:none;}
 
             <!-- Admin sub-tabs -->
             <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
-              <button class="ft-tab-btn active" id="ft-adm-btn-excel" onclick="ftAdmTab('excel')">📂 Cargar Excel</button>
+              <button class="ft-tab-btn active" id="ft-adm-btn-excel" onclick="ftAdmTab('excel')">📂 Ordenes de Fabricación</button>
               <button class="ft-tab-btn" id="ft-adm-btn-articulos" onclick="ftAdmTab('articulos')">📦 Artículos</button>
               <button class="ft-tab-btn" id="ft-adm-btn-operaciones" onclick="ftAdmTab('operaciones')">⚙️ Operaciones</button>
               <button class="ft-tab-btn" id="ft-adm-btn-tecnicos" onclick="ftAdmTab('tecnicos')">👷 Técnicos</button>
@@ -1529,12 +1529,13 @@ tr:last-child td{border-bottom:none;}
 
 <!-- Prioridades Modal -->
       <div class="coord-modal-bg" id="modal-prio">
-        <div class="coord-modal-box" style="max-width:520px;">
+        <div class="coord-modal-box" style="max-width:560px;">
           <div class="coord-modal-title">⚡ Prioridades por Pedido</div>
-          <div style="font-size:.76rem;color:var(--dim);margin-bottom:12px;">
+          <div style="font-size:.76rem;color:var(--dim);margin-bottom:10px;">
             Asigna la prioridad de producción por pedido. Afecta el orden en la tabla de Programación.
           </div>
-          <div id="prio-list-modal" style="max-height:320px;overflow-y:auto;padding-right:4px;"></div>
+          <input type="text" id="prio-filter" placeholder="🔍 Filtrar por pedido, OF o cliente..." oninput="renderPrioList()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;color:var(--text);font-size:.78rem;margin-bottom:10px;">
+          <div id="prio-list-modal" style="max-height:360px;overflow-y:auto;padding-right:4px;"></div>
           <div class="coord-modal-actions" style="margin-top:16px;">
             <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-prio')">Cancelar</button>
             <button class="btn btn-primary btn-sm" onclick="savePrios()">💾 Guardar prioridades</button>
@@ -4169,7 +4170,10 @@ async function ftConfirmExcelLoad() {
         let itemId = existMap[ofSap] || null;
 
         if (isNew) {
-          // -- CREAR: nueva OF con todos los campos en una sola llamada --
+          // -- CREAR: nueva OF con todos los campos + Fecha_Carga actual --
+          var fechaHoy = new Date();
+          var fechaISO = fechaHoy.getFullYear()+'-'+(String(fechaHoy.getMonth()+1).padStart(2,'0'))+'-'+(String(fechaHoy.getDate()).padStart(2,'0'));
+          fields.Fecha_Carga = fechaISO;
           const createRes = await spEscribir('FT_OrdenesFabricacion', fields, null);
           itemId = createRes && createRes.id ? createRes.id : null;
           created++;
@@ -4228,7 +4232,10 @@ async function ftSaveProgramacionToSP() {
       const spId = itemMap[of_.of_sap];
       if (!spId) continue;
       const newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
-      await spEscribir('FT_OrdenesFabricacion', { Programado_Hoy: of_.programadoHoy === true, Status: newStatus }, spId)
+      var fieldsToSave = { Programado_Hoy: of_.programadoHoy === true, Status: newStatus };
+      if(of_.fecha_entrega) fieldsToSave.Fecha_Entrega = of_.fecha_entrega;
+      if(of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
+      await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
         .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
@@ -4932,6 +4939,8 @@ async function ftLoadDataFromSP() {
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       programadoHoy: f.Programado_Hoy === true,
       status: f.Status || 'Sin programar',
+      fecha_entrega: f.Fecha_Entrega || '',
+      cantidad: parseInt(f.Cantidad||0)||null,
     }));
 
     // Build DB.activeOFs with their operations
@@ -6050,6 +6059,19 @@ function renderProg(){
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
+      if(C.editingMode){
+        h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
+        h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
+        h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
+        h+="</div>";
+      } else if(of.fecha_entrega||of.cantidad){
+        h+="<div style='display:flex;gap:10px;margin-top:2px;font-size:.7rem;color:var(--dim);'>";
+        if(of.fecha_entrega) h+="<span>📅 "+esc(of.fecha_entrega)+"</span>";
+        if(of.cantidad) h+="<span>📦 "+of.cantidad+" pzas</span>";
+        h+="</div>";
+      }
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
       h+="<span class='chip "+(of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(of.statusSAP)+"</span>";
@@ -6068,6 +6090,15 @@ function renderProg(){
   document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
 }
 
+function getProgFields(sap){
+  // Leer Fecha_Entrega y Cantidad del DOM en modo edición
+  var feEl=document.getElementById('fe-'+sap);
+  var cantEl=document.getElementById('cant-'+sap);
+  return {
+    fecha_entrega: feEl?feEl.value:'',
+    cantidad: cantEl?parseInt(cantEl.value)||0:0
+  };
+}
 function toggleProg(sap,val){
   var of=DB.ofs.find(function(o){return o.of_sap===sap;});
   if(!of)return;
@@ -6118,19 +6149,41 @@ function cancelEditMode(){
 }
 // confirmProgMain defined below (SP save included)
 function openPrioModal(){
+  document.getElementById('prio-filter').value='';
+  renderPrioList();
+  openCModal("modal-prio");
+}
+function renderPrioList(){
+  var q=(document.getElementById('prio-filter')||{value:''}).value.trim().toLowerCase();
   var groups=groupByPedido(DB.ofs);
+  // Filtrar por pedido, OF o cliente
+  if(q){
+    groups=groups.filter(function(g){
+      if((g.pedido||'').toLowerCase().indexOf(q)>=0) return true;
+      if((g.cliente||'').toLowerCase().indexOf(q)>=0) return true;
+      if(g.ofs.some(function(o){return (o.of_sap||'').toLowerCase().indexOf(q)>=0;})) return true;
+      return false;
+    });
+  }
   var h="";
   groups.forEach(function(g){
-    h+="<div style='display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)'>";
-    h+="<div><div style='font-size:.82rem;font-weight:600'>Pedido "+esc(g.pedido)+"</div><div style='font-size:.72rem;color:var(--dim)'>"+esc(g.cliente)+" · "+g.ofs.length+" OFs</div></div>";
-    h+="<select class='form-select' style='width:150px;font-size:.76rem;padding:5px 8px;' id='prio-sel-"+g.pedido+"'>";
+    var pC={alta:"color:var(--red)",media:"color:var(--yellow)",normal:"color:var(--dim)"};
+    h+="<div style='padding:10px 0;border-bottom:1px solid var(--border)'>";
+    h+="<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;'>";
+    h+="<div>";
+    h+="<div style='font-size:.82rem;font-weight:600'>Pedido "+esc(g.pedido)+"</div>";
+    h+="<div style='font-size:.72rem;color:var(--dim)'>"+esc(g.cliente)+" · "+g.ofs.length+" OFs</div>";
+    h+="<div style='font-size:.7rem;color:var(--dim);margin-top:2px;'>"+g.ofs.map(function(o){return "OF "+esc(o.of_sap);}).join(', ')+"</div>";
+    h+="</div>";
+    h+="<select class='form-select' style='width:150px;font-size:.76rem;padding:5px 8px;' id='prio-sel-"+esc(g.pedido)+"'>";
     h+="<option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option>";
     h+="<option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option>";
     h+="<option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option>";
-    h+="</select></div>";
+    h+="</select>";
+    h+="</div></div>";
   });
+  if(!h) h="<div style='text-align:center;padding:20px;color:var(--dim);font-size:.8rem;'>"+(q?'Sin resultados para "'+esc(q)+'"':'Sin órdenes')+"</div>";
   document.getElementById("prio-list-modal").innerHTML=h;
-  openCModal("modal-prio");
 }
 function savePrios(){
   var groups=groupByPedido(DB.ofs);
@@ -7523,6 +7576,26 @@ function updatePedidoPrio(pedido, val) {
 
 // -- 1 & 2: confirmProgMain aplica PENDING a DB ------------
 function confirmProgMain() {
+  // Capturar Fecha_Entrega y Cantidad de los inputs del DOM antes de salir del modo edición
+  // Validar que OFs programadas tengan los campos obligatorios
+  var errores = [];
+  DB.ofs.forEach(function(of){
+    var feEl = document.getElementById('fe-'+of.of_sap);
+    var cantEl = document.getElementById('cant-'+of.of_sap);
+    if(feEl) of.fecha_entrega = feEl.value || of.fecha_entrega || '';
+    if(cantEl) of.cantidad = parseInt(cantEl.value)||of.cantidad||null;
+    // Validar obligatoriedad si está marcada para producción
+    var pendProg = PENDING_PROG[of.of_sap];
+    var vaProgramada = pendProg ? pendProg.programadoHoy : of.programadoHoy;
+    if(vaProgramada){
+      if(!of.fecha_entrega) errores.push('OF '+of.of_sap+': falta Fecha de Entrega');
+      if(!of.cantidad) errores.push('OF '+of.of_sap+': falta Cantidad');
+    }
+  });
+  if(errores.length > 0){
+    alert('Los siguientes campos son obligatorios para OFs programadas:\n\n'+errores.slice(0,5).join('\n')+(errores.length>5?'\n... y '+(errores.length-5)+' más':''));
+    return;
+  }
   // Track which OFs are newly added to programacion (for SP create)
   var nuevasOfs = [];
   // Aplicar cambios pendientes a DB
