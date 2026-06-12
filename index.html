@@ -9464,12 +9464,12 @@ function renderSeg(){
     // -- 12: Botones de cierre --
     if(filterStatus==='activos' && allDone){
       h+='<div style="display:flex;gap:5px;">';
-      h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\'+g.pedido+\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
-      h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\'+g.pedido+\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
+      h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\''+g.pedido+'\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
+      h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
       h+='</div>';
     }
     if(filterStatus==='cierre'){
-      h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\'+g.pedido+\')" title="Cerrar pedido">✅ Cerrar pedido</button>';
+      h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido">✅ Cerrar pedido</button>';
     }
     h+='</div></div>';
 
