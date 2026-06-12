@@ -6169,6 +6169,21 @@ function toggleProg(sap,val){
     }
   }
 }
+async function restaurarPedido(pedido){
+  var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+  if(!ofsDelPedido.length) return;
+  if(!confirm('¿Restaurar el Pedido '+pedido+' a "Sin programar"?\n'+ofsDelPedido.length+' OF(s) serán restauradas.')) return;
+  for(var i=0;i<ofsDelPedido.length;i++){
+    var of=ofsDelPedido[i];
+    of.status='Sin programar'; of.programadoHoy=false;
+    try{
+      var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
+      var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
+      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
+    }catch(e){console.warn('SP restaurar:',e.message);}
+  }
+  renderProg();
+}
 function cancelarOrden(sap, pedido){
   var of = DB.ofs.find(function(o){return o.of_sap===sap;});
   if(!of) return;
@@ -7852,6 +7867,7 @@ function renderProg(){
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
   var groups = groupByPedido(DB.ofs.filter(function(of){
+    if(of.status==='Pedido Cancelado') return false; // excluir canceladas de lista principal
     if(fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
     if(fStatus==="programados" && !of.programadoHoy) return false;
     if(fStatus==="terminados") {
@@ -7866,8 +7882,7 @@ function renderProg(){
   var h="";
 
   groups.forEach(function(g){
-    // Verificar si el pedido tiene alguna OF cancelada
-    var cancelado = g.ofs.every(function(o){return o.status==='Pedido Cancelado';});
+    var cancelado = false; // todos activos en lista principal
     var completed = pedidoIsComplete(g.pedido);
     var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
                  : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
@@ -7915,11 +7930,13 @@ function renderProg(){
       }
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:120px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
+      var _stLabel=ofCancelada?"Cancelada":of.programadoHoy?"Programada":"Sin programar";
+      var _stClass=ofCancelada?"c-cancel":of.programadoHoy?"c-ep":"c-plan";
       h+="<div style='display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;'>";
-      h+="<span class='chip "+(ofCancelada?"c-cancel":of.programadoHoy?"c-ep":"c-plan")+"' style='font-size:.64rem;'>"+esc(ofCancelada?"Cancelada":of.status||"Sin programar")+"</span>";
+      h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+_stLabel+"</span>";
       h+="<div style='display:flex;gap:3px;'>";
-      if(!ofCancelada) h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);'>👷 Ops</button>";
-      if(!ofCancelada) h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" title='Cancelar OF' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;'>✗</button>";
+      if(!ofCancelada) h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);white-space:nowrap;'>👷 Ops</button>";
+      if(!ofCancelada) h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
       h+="</div></div>";
       h+="</div>";
@@ -7929,6 +7946,33 @@ function renderProg(){
   });
   if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
+
+  // ── Sección pedidos cancelados ──
+  var _cancelados = DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';});
+  var _pedsCan = {};
+  _cancelados.forEach(function(o){
+    if(!_pedsCan[o.pedido]) _pedsCan[o.pedido]={pedido:o.pedido,cliente:o.cliente,ofs:[]};
+    _pedsCan[o.pedido].ofs.push(o);
+  });
+  var _hc='';
+  Object.values(_pedsCan).forEach(function(pg){
+    _hc+="<div style='background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.15);border-radius:10px;padding:12px 14px;margin-bottom:8px;'>";
+    _hc+="<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;'>";
+    _hc+="<div><div style='font-size:.8rem;font-weight:700;color:var(--red);'>Pedido "+esc(pg.pedido)+"</div>";
+    _hc+="<div style='font-size:.72rem;color:var(--dim);'>"+esc(pg.cliente)+" · "+pg.ofs.length+" OF(s) cancelada(s)</div></div>";
+    _hc+="<button onclick=\"restaurarPedido('"+esc(pg.pedido)+"')\" style='background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.3);border-radius:6px;padding:4px 12px;font-size:.72rem;color:var(--green);cursor:pointer;white-space:nowrap;'>↩ Restaurar Pedido</button>";
+    _hc+="</div>";
+    pg.ofs.forEach(function(of){
+      _hc+="<div style='font-size:.72rem;color:var(--dim);padding:2px 0 2px 8px;border-left:2px solid rgba(239,68,68,.2);margin-bottom:2px;'>";
+      _hc+="<span style='font-family:\"DM Mono\",monospace;color:rgba(239,68,68,.7);'>OF "+esc(of.of_sap)+"</span> — "+esc(of.descripcion.substring(0,50));
+      _hc+="</div>";
+    });
+    _hc+="</div>";
+  });
+  var _canSec=document.getElementById('prog-cancelados-section');
+  if(!_canSec){var _s=document.createElement('div');_s.id='prog-cancelados-section';document.getElementById('prog-list').parentNode.appendChild(_s);_canSec=_s;}
+  _canSec.innerHTML=_hc?"<div style='margin-top:20px;'><div style='font-size:.75rem;font-weight:700;color:var(--dim);margin-bottom:8px;letter-spacing:.05em;'>🚫 PEDIDOS CANCELADOS</div>"+_hc+"</div>":'';
+
   // KPIs
   document.getElementById("fabp-kpi-total").textContent = DB.ofs.length;
   document.getElementById("fabp-kpi-alta").textContent = DB.ofs.filter(function(o){return o.prioridad==="alta";}).length;
