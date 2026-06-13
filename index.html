@@ -5037,6 +5037,8 @@ async function ftLoadDataFromSP() {
               status: o.Status || 'pending',
               inicio: o.Inicio || '',
               fin: o.Fin || '',
+              fecha_inicio: o.Fecha_Inicio || '',
+              fecha_fin: o.Fecha_Fin || '',
               mins: parseInt(o.Mins||0),
               qty_total: parseInt(o.Qty_Total||10),
               qty_ok: parseInt(o.Qty_OK||0),
@@ -5301,6 +5303,7 @@ async function ftLoadDataFromSP() {
                 estacion:o.Estacion||'',tipo:o.Tip||o.Tipo||o.tipo||'Secuencial',
                 tecnico:o.Tecnico||'',ayudantes:(o.Ayudantes_JSON||'').split(',').filter(Boolean),
                 status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
+                fecha_inicio:o.Fecha_Inicio||'',fecha_fin:o.Fecha_Fin||'',
                 mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
                 qty_rej:parseInt(o.Qty_Rej||0),
@@ -9542,8 +9545,8 @@ function renderSeg(){
         // Fechas inicio y fin
         if(op.inicio || op.fin){
           h+='<div style="display:flex;gap:10px;margin-top:2px;padding-left:14px;font-size:.66rem;color:var(--dim);">';
-          if(op.inicio) h+='<span>🕐 <strong>'+esc(op.inicio)+'</strong></span>';
-          if(op.fin)    h+='<span>🏁 <strong>'+esc(op.fin)+'</strong></span>';
+          if(op.inicio) h+='<span>🕐 <strong>'+(op.fecha_inicio||esc(op.inicio))+'</strong></span>';
+          if(op.fin)    h+='<span>🏁 <strong>'+(op.fecha_fin||esc(op.fin))+'</strong></span>';
           h+='</div>';
         }
         // Comentarios de la operación

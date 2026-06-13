@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.23</title>
+<title>FabTracker App v2.24</title>
 
 <!-- MSAL Browser -->
 
@@ -6090,8 +6090,8 @@ async function appSaveOpToSP(of_sap, opId) {
       Status:         op.status || 'pending',
       Inicio:         op.inicio || '',
       Fin:            op.fin    || '',
-      Fecha_Inicio:   op.inicio || '',
-      Fecha_Fin:      op.fin    || '',
+      Fecha_Inicio:   op.inicio ? (function(){ var d=new Date(); return String(d.getDate()).padStart(2,'0')+'/'+(String(d.getMonth()+1).padStart(2,'0'))+'/'+d.getFullYear()+' '+op.inicio; })() : '',
+      Fecha_Fin:      op.fin    ? (function(){ var d=new Date(); return String(d.getDate()).padStart(2,'0')+'/'+(String(d.getMonth()+1).padStart(2,'0'))+'/'+d.getFullYear()+' '+op.fin; })() : '',
       Mins:           op.mins || 0,
       Qty_Total:      op.qty_total || 10,
       Qty_OK:         op.qty_ok || 0,
