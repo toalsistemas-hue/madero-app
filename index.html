@@ -4250,9 +4250,8 @@ async function ftSaveProgramacionToSP() {
       if(of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
       // Guardar fecha de programación solo cuando se programa por primera vez
       if(of_.programadoHoy && !of_.fecha_programacion){
-        var hoy = new Date();
-        of_.fecha_programacion = hoy.getFullYear()+'-'+(String(hoy.getMonth()+1).padStart(2,'0'))+'-'+String(hoy.getDate()).padStart(2,'0');
-        fieldsToSave.Fecha_Programacion = of_.fecha_programacion;
+        of_.fecha_programacion = new Date().toISOString().split('T')[0];
+        fieldsToSave.Fecha_Programacion = of_.fecha_programacion + 'T00:00:00Z';
       }
       await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
         .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
