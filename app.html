@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.24</title>
+<title>FabTracker App v2.25</title>
 
 <!-- MSAL Browser -->
 
@@ -2395,7 +2395,7 @@ function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
-  op.status="running";op.inicio=nowT();op.calResult=null;op.needsCal=false;
+  op.status="running";op.inicio=nowT();op.fecha_inicio_real=nowDT();op.calResult=null;op.needsCal=false;
   DB.timers[sap+"_"+opId]={start:Date.now(),elapsed:0,running:true};
   renderApp();
   // Save to SP immediately
@@ -3561,7 +3561,7 @@ function doFinish(ctx, el, ok, def, rej) {
   if (!op) return;
   var key = ctx.of_sap+'_'+ctx.op_id;
   var obs = document.getElementById('app-finish-obs').value;
-  op.status='done'; op.fin=nowT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
+  op.status='done'; op.fin=nowT(); op.fecha_fin_real=nowDT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
   if(obs) op.obs=obs;
   if (DB.timers[key]) DB.timers[key].running=false;
   // Auto-cerrar timers de ayudantes que sigan corriendo → heredan el tiempo total de la op
@@ -3704,7 +3704,7 @@ function appConfirmFinish(){
 
   function doFinishLocal(){
     var elFinal = getEl(key); // recalculate at actual confirm moment
-    op.status="done";op.fin=nowT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -4113,7 +4113,7 @@ function _doStartOp(sap, opId){
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op = of ? of.ops.find(function(o){return o.id===opId;}) : null;
   if(!op) return;
-  op.status='running'; op.inicio=nowT(); op.calResult=null; op.needsCal=false;
+  op.status='running'; op.inicio=nowT(); op.fecha_inicio_real=nowDT(); op.calResult=null; op.needsCal=false;
   DB.timers[sap+'_'+opId]={start:Date.now(),elapsed:0,running:true};
   // Iniciar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){
@@ -5895,7 +5895,9 @@ async function appLoadDataFromSP() {
         ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
                  : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
         status: o.Status||'pending',
-        inicio: o.Inicio||'', fin: o.Fin||'', mins: parseInt(o.Mins||0),
+        inicio: o.Inicio||'', fin: o.Fin||'',
+        fecha_inicio_real: o.Fecha_Inicio||'',
+        fecha_fin_real: o.Fecha_Fin||'', mins: parseInt(o.Mins||0),
         qty_total: parseInt(o.Qty_Total||10), qty_ok: parseInt(o.Qty_OK||0),
         qty_def: parseInt(o.Qty_Def||0), qty_rej: parseInt(o.Qty_Rej||0),
         qty_chat: parseInt(o.Qty_Chat||0),
@@ -6090,8 +6092,8 @@ async function appSaveOpToSP(of_sap, opId) {
       Status:         op.status || 'pending',
       Inicio:         op.inicio || '',
       Fin:            op.fin    || '',
-      Fecha_Inicio:   op.inicio ? (function(){ var d=new Date(); return String(d.getDate()).padStart(2,'0')+'/'+(String(d.getMonth()+1).padStart(2,'0'))+'/'+d.getFullYear()+' '+op.inicio; })() : '',
-      Fecha_Fin:      op.fin    ? (function(){ var d=new Date(); return String(d.getDate()).padStart(2,'0')+'/'+(String(d.getMonth()+1).padStart(2,'0'))+'/'+d.getFullYear()+' '+op.fin; })() : '',
+      Fecha_Inicio:   op.fecha_inicio_real || (op.inicio ? nowDate()+' '+op.inicio : ''),
+      Fecha_Fin:      op.fecha_fin_real    || (op.fin    ? nowDate()+' '+op.fin    : ''),
       Mins:           op.mins || 0,
       Qty_Total:      op.qty_total || 10,
       Qty_OK:         op.qty_ok || 0,
@@ -6817,6 +6819,8 @@ var OP_NAMES=["Corte láser de cuerpo","Corte láser de tapa","Maquinado de manc
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):""}
 function fmtM(m){var h=Math.floor(m/60),mn=m%60;return h>0?h+"h "+mn+"m":mn+"min";}
 function nowT(){var n=new Date();return n.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});}
+function nowDate(){var n=new Date();return String(n.getDate()).padStart(2,'0')+"/"+(String(n.getMonth()+1).padStart(2,'0'))+"/"+n.getFullYear();}
+function nowDT(){return nowDate()+' '+nowT();}
 function nowISO(){return new Date().toISOString();}
 function getEl(key){
   var t=DB.timers[key];
@@ -7886,7 +7890,7 @@ function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
-  op.status="running";op.inicio=nowT();op.calResult=null;op.needsCal=false;
+  op.status="running";op.inicio=nowT();op.fecha_inicio_real=nowDT();op.calResult=null;op.needsCal=false;
   DB.timers[sap+"_"+opId]={start:Date.now(),elapsed:0,running:true};
   renderApp();fireSync("app","op_started",{of_sap:sap});
 }
@@ -9097,7 +9101,7 @@ function doFinish(ctx, el, ok, def, rej) {
   if (!op) return;
   var key = ctx.of_sap+'_'+ctx.op_id;
   var obs = document.getElementById('app-finish-obs').value;
-  op.status='done'; op.fin=nowT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
+  op.status='done'; op.fin=nowT(); op.fecha_fin_real=nowDT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
   if(obs) op.obs=obs;
   if (DB.timers[key]) DB.timers[key].running=false;
   // Auto-cerrar timers de ayudantes que sigan corriendo → heredan el tiempo total de la op
@@ -9242,7 +9246,7 @@ function appConfirmFinish(){
 
   function doFinishLocal(){
     var elFinal = getEl(key); // recalculate at actual confirm moment
-    op.status="done";op.fin=nowT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -9688,7 +9692,7 @@ function _doStartOp(sap, opId){
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op = of ? of.ops.find(function(o){return o.id===opId;}) : null;
   if(!op) return;
-  op.status='running'; op.inicio=nowT(); op.calResult=null; op.needsCal=false;
+  op.status='running'; op.inicio=nowT(); op.fecha_inicio_real=nowDT(); op.calResult=null; op.needsCal=false;
   DB.timers[sap+'_'+opId]={start:Date.now(),elapsed:0,running:true};
   // Iniciar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){

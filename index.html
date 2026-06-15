@@ -9807,6 +9807,9 @@ function renderHist(){
         techOps[t].push({
           op:op.nombre, estacion:op.estacion, rol:rol,
           isRetrabajo:!!op.isRetrabajo,
+          hasPause: !!(op.pauseReason && op.pauseReason.indexOf('🌙')<0 && op.turnos && op.turnos.length===0),
+          numTurnos: (op.turnos||[]).length > 0 ? (op.turnos||[]).length + 1 : 0,
+          pauseReason: op.pauseReason||'',
           of_sap:aof.of_sap, pedido:ofRec.pedido||'—',
           mins:ayudMinsForRow,
           qty_ok:rol==='principal'?(op.qty_ok||0):0,
@@ -9829,7 +9832,9 @@ function renderHist(){
           qty_def_retrabajo:0,qty_def_chatarra:0,
           inicio:seg.inicio,fin:seg.fin,
           fecha:seg.fecha||'',
-          nombre:op.nombre+' ('+turnoLabel+')'
+          nombre:op.nombre+' ('+turnoLabel+')',
+          pauseReason:'🌙 '+turnoLabel, // para que el tipoBadge lo detecte
+          turnos:[] // segmento individual no tiene sub-turnos
         });
         var savedOp=op;op=segOp;
         registerTech(seg.tecnico,'principal');
@@ -9960,9 +9965,19 @@ function renderHist(){
           var rolBadge=r.rol==='principal'
             ?'<span style="background:rgba(0,180,216,.15);color:var(--accent-l);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">Principal</span>'
             :'<span style="background:rgba(245,158,11,.12);color:var(--yellow);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">Ayudante</span>';
-          var tipoBadge=r.isRetrabajo
-            ?'<span style="background:rgba(239,68,68,.12);color:var(--red);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🔄 Retrabajo</span>'
-            :'<span style="font-size:.62rem;color:var(--dim);">Normal</span>';
+          var tipoBadge;
+          if(r.isRetrabajo){
+            tipoBadge='<span style="background:rgba(239,68,68,.12);color:var(--red);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🔄 Retrabajo</span>';
+          } else if(r.numTurnos > 0){
+            tipoBadge='<span style="background:rgba(88,166,255,.12);color:var(--accent-l);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🌙 '+r.numTurnos+' Turnos</span>';
+          } else if(r.pauseReason && r.pauseReason.indexOf('🌙')>=0){
+            // pauseReason de fin de turno sin historial previo (turno en progreso)
+            tipoBadge='<span style="background:rgba(88,166,255,.12);color:var(--accent-l);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🌙 Fin de turno</span>';
+          } else if(r.pauseReason){
+            tipoBadge='<span style="background:rgba(212,160,23,.12);color:var(--yellow);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">⏸ Pausada</span>';
+          } else {
+            tipoBadge='<span style="font-size:.62rem;color:var(--dim);">Normal</span>';
+          }
 
           // T.Ref.Cal por operación individual
           var opRefCell='—';
