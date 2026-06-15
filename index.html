@@ -4963,6 +4963,17 @@ async function ftLoadDataFromSP() {
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseInt(f.Cantidad||0)||null,
     }));
+    // Restaurar pedidos cerrados desde localStorage (persistencia entre recargas)
+    var _pedidosCerrados = JSON.parse(localStorage.getItem('madero_pedidos_cerrados')||'[]');
+    if(_pedidosCerrados.length > 0){
+      DB.ofs.forEach(function(of){
+        if(_pedidosCerrados.indexOf(of.pedido) >= 0){
+          of.pedidoCerrado = true;
+          of.status = 'Cerrado';
+        }
+      });
+      console.log('[DB.ofs] Pedidos cerrados restaurados desde localStorage:', _pedidosCerrados);
+    }
     // Log diagnóstico — verificar que columnas SP existen
     if(DB.ofs.length > 0){
       var sample = (ofsRes.value||[])[0];
@@ -9640,6 +9651,9 @@ async function cerrarPedido(pedido){
     '✅ Confirmar cierre',
     async function(){
       closeCModal('modal-info');
+      var _pedidosCerradosKey = 'madero_pedidos_cerrados';
+      var _cerrados = JSON.parse(localStorage.getItem(_pedidosCerradosKey)||'[]');
+      if(_cerrados.indexOf(pedido)<0){ _cerrados.push(pedido); localStorage.setItem(_pedidosCerradosKey, JSON.stringify(_cerrados)); }
       DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
         o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false;
         o.status='Cerrado';
