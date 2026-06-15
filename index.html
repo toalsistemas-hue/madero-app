@@ -6172,11 +6172,16 @@ function renderProg(){
   });
   if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
-  // KPIs
-  document.getElementById("fabp-kpi-total").textContent = DB.ofs.length;
-  document.getElementById("fabp-kpi-alta").textContent = DB.ofs.filter(function(o){return o.prioridad==="alta";}).length;
-  document.getElementById("fabp-kpi-media").textContent = DB.ofs.filter(function(o){return o.prioridad==="media";}).length;
-  document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy;}).length;
+  // KPIs — excluir cerrados y cancelados
+  var _ofsActivas = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
+  document.getElementById("fabp-kpi-total").textContent = _ofsActivas.length;
+  document.getElementById("fabp-kpi-alta").textContent = _ofsActivas.filter(function(o){return o.prioridad==="alta";}).length;
+  document.getElementById("fabp-kpi-media").textContent = _ofsActivas.filter(function(o){return o.prioridad==="media";}).length;
+  document.getElementById("fabp-kpi-hoy").textContent = _ofsActivas.filter(function(o){return o.programadoHoy;}).length;
+  var _nCan=DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';}).length;
+  var _kc=document.getElementById("fabp-kpi-cancelados"); if(_kc) _kc.textContent=_nCan;
+  var _badge=document.getElementById('ftab-cancelados-badge');
+  if(_badge){_badge.textContent=_nCan; _badge.style.display=_nCan>0?'inline':'none';}
 }
 
 function getProgFields(sap){
@@ -9588,9 +9593,13 @@ function renderSeg(){
       (filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
-  // KPIs
-  var allOps=[]; DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
-  document.getElementById('seg-kpi-ofs').textContent=DB.activeOFs.length;
+  // KPIs — excluir OFs de pedidos cerrados
+  var _aofActivas = DB.activeOFs.filter(function(a){
+    var of = DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
+    return !of || (!of.pedidoCerrado && of.status!=='Cerrado');
+  });
+  var allOps=[]; _aofActivas.forEach(function(o){allOps=allOps.concat(o.ops);});
+  document.getElementById('seg-kpi-ofs').textContent=_aofActivas.length;
   document.getElementById('seg-kpi-done').textContent=allOps.filter(function(o){return o.status==='done';}).length;
   document.getElementById('seg-kpi-run').textContent=allOps.filter(function(o){return o.status==='running';}).length;
   document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
@@ -9779,6 +9788,8 @@ function renderHist(){
   var techStats={}, techOps={};
   DB.activeOFs.forEach(function(aof){
     var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
+    // Excluir OFs de pedidos cerrados del KPI de técnicos
+    if(ofRec.pedidoCerrado || ofRec.status==='Cerrado') return;
     // Filtros de OF y Pedido
     if(filtOf  && aof.of_sap.toLowerCase().indexOf(filtOf)===-1)  return;
     if(filtPedT && (ofRec.pedido||'').toLowerCase().indexOf(filtPedT)===-1) return;
