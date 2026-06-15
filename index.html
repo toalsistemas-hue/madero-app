@@ -5037,8 +5037,8 @@ async function ftLoadDataFromSP() {
               status: o.Status || 'pending',
               inicio: o.Inicio || '',
               fin: o.Fin || '',
-              fecha_inicio: o.Fecha_Inicio || '',
-              fecha_fin: o.Fecha_Fin || '',
+              fecha_inicio_real: o.Fecha_Inicio || '',
+              fecha_fin_real: o.Fecha_Fin || '',
               mins: parseInt(o.Mins||0),
               qty_total: parseInt(o.Qty_Total||10),
               qty_ok: parseInt(o.Qty_OK||0),
@@ -5304,7 +5304,7 @@ async function ftLoadDataFromSP() {
                 estacion:o.Estacion||'',tipo:o.Tip||o.Tipo||o.tipo||'Secuencial',
                 tecnico:o.Tecnico||'',ayudantes:(o.Ayudantes_JSON||'').split(',').filter(Boolean),
                 status:newStatus,inicio:o.Inicio||'',fin:o.Fin||'',
-                fecha_inicio:o.Fecha_Inicio||'',fecha_fin:o.Fecha_Fin||'',
+                fecha_inicio_real:o.Fecha_Inicio||'',fecha_fin_real:o.Fecha_Fin||'',
                 mins:parseInt(o.Mins||0),qty_total:parseInt(o.Qty_Total||10),
                 qty_ok:parseInt(o.Qty_OK||0),qty_def:parseInt(o.Qty_Def||0),
                 qty_rej:parseInt(o.Qty_Rej||0),
@@ -9760,14 +9760,16 @@ function renderHist(){
   var filtOf   = (document.getElementById('hist-tech-of')||{value:''}).value.trim().toLowerCase();
   var filtPedT = (document.getElementById('hist-tech-ped')||{value:''}).value.trim().toLowerCase();
 
-  // -- Helper: parsear fecha de inicio de operación (formato "HH:MM p.m. · Día DD Mes") -
-  // Las ops no guardan fecha completa, solo hora. Usamos fecha de hoy como demo.
-  // En producción real cada op tendría op.fecha en formato ISO.
-  // Para el filtro de fecha comparamos op.fechaISO si existe.
+  // -- Helper: parsear fecha de inicio usando fecha_inicio_real o fecha_fin_real
   function opPassDateFilter(op){
     if(!filtFrom && !filtTo) return true;
-    var iso = op.fechaISO || null;
-    if(!iso) return true; // sin fecha exacta: pasa (no excluir)
+    // Usar fecha_inicio_real (formato DD/MM/YYYY HH:MM) o extraer fecha de Inicio
+    var fechaStr = op.fecha_inicio_real || '';
+    if(!fechaStr) return true; // sin fecha: pasa
+    // Convertir DD/MM/YYYY a YYYY-MM-DD para comparar con input date
+    var parts = fechaStr.split('/');
+    var iso = parts.length >= 3 ? parts[2].substring(0,4)+'-'+parts[1]+'-'+parts[0] : '';
+    if(!iso) return true;
     if(filtFrom && iso < filtFrom) return false;
     if(filtTo   && iso > filtTo)   return false;
     return true;
@@ -10130,6 +10132,41 @@ function renderHist(){
     if(fins.length) pedidoMap[ped].fecha=fins[fins.length-1];
   });
   var histData=Object.values(pedidoMap).sort(function(a,b){return b.ok-a.ok;});
+
+  // -- Actualizar KPIs del historial --
+  var now = new Date();
+  var mesActual = now.getFullYear()+'-'+(String(now.getMonth()+1).padStart(2,'0'));
+  var ofsCompletadasMes = 0;
+  var totalMins = 0, totalOps = 0, totalOk = 0, totalDef = 0;
+  DB.activeOFs.forEach(function(aof){
+    var allDone = aof.ops.length>0 && aof.ops.every(function(o){return o.status==='done';});
+    if(!allDone) return;
+    // Verificar si alguna op termina en el mes actual
+    var enMes = aof.ops.some(function(op){
+      var fr = op.fecha_fin_real || op.fecha_inicio_real || '';
+      if(!fr) return true; // sin fecha: incluir
+      var parts = fr.split('/');
+      if(parts.length < 3) return true;
+      var iso = parts[2].substring(0,4)+'-'+parts[1];
+      return iso === mesActual;
+    });
+    if(enMes) ofsCompletadasMes++;
+    aof.ops.forEach(function(op){
+      if(op.status!=='done') return;
+      totalMins += (op.mins||0);
+      totalOps++;
+      totalOk  += (op.qty_ok||0);
+      totalDef += (op.qty_def||0);
+    });
+  });
+  var kpiOfs = document.getElementById('hist-kpi-ofs');
+  var kpiTime = document.getElementById('hist-kpi-time');
+  var kpiOk  = document.getElementById('hist-kpi-ok');
+  var kpiDef = document.getElementById('hist-kpi-def');
+  if(kpiOfs)  kpiOfs.textContent  = ofsCompletadasMes;
+  if(kpiTime) kpiTime.textContent = totalOps>0 ? fmtM(Math.round(totalMins/totalOps)) : '—';
+  if(kpiOk)   kpiOk.textContent   = totalOk  > 0 ? totalOk  : '—';
+  if(kpiDef)  kpiDef.textContent  = totalDef > 0 ? totalDef : '—';
   var filteredHist=histData.filter(function(d){
     if(filtPed&&d.pedido.toLowerCase().indexOf(filtPed)===-1)return false;
     return true;
