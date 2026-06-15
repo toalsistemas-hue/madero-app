@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.25</title>
+<title>FabTracker App v2.26</title>
 
 <!-- MSAL Browser -->
 
@@ -11338,6 +11338,9 @@ async function appReloadOpsFromSP() {
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,
           calComment:  o.CalComment || null,
+          // Preservar fechas reales desde memoria si SP no las tiene aún
+          fecha_inicio_real: o.Fecha_Inicio || (existing ? existing.fecha_inicio_real||'' : ''),
+          fecha_fin_real:    o.Fecha_Fin    || (existing ? existing.fecha_fin_real||''    : ''),
           _spId:       o.ID || o._itemId || null,
         };
       });

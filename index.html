@@ -5050,6 +5050,7 @@ async function ftLoadDataFromSP() {
               cola: 0, // se asigna desde FT_Cola_Estacion después, no desde el campo Cola de SP
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
+              turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}return [];})(),
               needsCal: o.NeedsCal === true,
               valcalNote: o.ValCalNote || '',
               calResult: o.CalResult || '',
@@ -9807,8 +9808,8 @@ function renderHist(){
         techOps[t].push({
           op:op.nombre, estacion:op.estacion, rol:rol,
           isRetrabajo:!!op.isRetrabajo,
-          hasPause: !!(op.pauseReason && op.pauseReason.indexOf('🌙')<0 && op.turnos && op.turnos.length===0),
-          numTurnos: (op.turnos||[]).length > 0 ? (op.turnos||[]).length + 1 : 0,
+          // numTurnos: turnos previos + 1 (el actual) si hay historial de turnos
+          numTurnos: (op.turnos&&op.turnos.length>0) ? (op.turnos.length + 1) : 0,
           pauseReason: op.pauseReason||'',
           of_sap:aof.of_sap, pedido:ofRec.pedido||'—',
           mins:ayudMinsForRow,
