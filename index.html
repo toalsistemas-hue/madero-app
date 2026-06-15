@@ -5313,6 +5313,7 @@ async function ftLoadDataFromSP() {
                 qty_def_chatarra:parseInt(o.Qty_Def_Chatarra||0),
                 cola:0,
                 isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
+                turnos:(function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}return [];})(),
                 needsCal:o.NeedsCal===true,valcalNote:o.ValCalNote||null,
                 calResult:o.CalResult||'',calComment:o.CalComment||'',
                 _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
