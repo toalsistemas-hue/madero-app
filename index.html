@@ -6092,10 +6092,8 @@ function setProgTab(tab){
   renderProg();
 }
 function renderProg(){
-  // Debug: verificar datos en primera OF
-  if(DB.ofs && DB.ofs.length > 0){
-    console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
-  }
+  // Stub — lógica completa en segunda definición (JS usa la última)
+  return;
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
   var groups = groupByPedido(DB.ofs.filter(function(of){
@@ -6533,6 +6531,8 @@ function renumberTplOps(){
 
 // --- SEGUIMIENTO ------------------------------------------
 function renderSeg(){
+  // Stub — ver segunda definición
+  return;
   var h="";
   var today=DB.ofs.filter(function(o){return o.programadoHoy;});
   var groups=groupByPedido((today||[]).filter(Boolean));
@@ -6590,6 +6590,8 @@ function renderSeg(){
 // --- HISTORIAL -------------------------------------------
 var histFilter={from:"",to:""};
 function renderHist(){
+  // Stub — ver definición final
+  return;
   var now=new Date();
   if(!histFilter.to){var d=new Date();histFilter.to=d.toISOString().split("T")[0];}
   if(!histFilter.from){var d2=new Date(now-7*86400000);histFilter.from=d2.toISOString().split("T")[0];}
@@ -8048,10 +8050,11 @@ function renderProg(){
   _canSec.innerHTML=_hc?"<div style='margin-top:20px;'><div style='font-size:.75rem;font-weight:700;color:var(--dim);margin-bottom:8px;letter-spacing:.05em;'>🚫 PEDIDOS CANCELADOS</div>"+_hc+"</div>":'';
 
   // KPIs
-  document.getElementById("fabp-kpi-total").textContent = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado';}).length;
-  document.getElementById("fabp-kpi-alta").textContent = DB.ofs.filter(function(o){return o.prioridad==="alta"&&o.status!=='Pedido Cancelado';}).length;
-  document.getElementById("fabp-kpi-media").textContent = DB.ofs.filter(function(o){return o.prioridad==="media"&&o.status!=='Pedido Cancelado';}).length;
-  document.getElementById("fabp-kpi-hoy").textContent = DB.ofs.filter(function(o){return o.programadoHoy&&o.status!=='Pedido Cancelado';}).length;
+  var _ofsA=DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
+  document.getElementById("fabp-kpi-total").textContent = _ofsA.length;
+  document.getElementById("fabp-kpi-alta").textContent = _ofsA.filter(function(o){return o.prioridad==="alta";}).length;
+  document.getElementById("fabp-kpi-media").textContent = _ofsA.filter(function(o){return o.prioridad==="media";}).length;
+  document.getElementById("fabp-kpi-hoy").textContent = _ofsA.filter(function(o){return o.programadoHoy;}).length;
   var _nCan=DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';}).length;
   var _kc=document.getElementById("fabp-kpi-cancelados"); if(_kc) _kc.textContent=_nCan;
   var _badge=document.getElementById('ftab-cancelados-badge');
@@ -8693,6 +8696,8 @@ function appConfirmFinish(){
 
 // -- 10 & 11: renderHist mejorado -------------------------
 function renderHist() {
+  // Stub — ver definición final
+  return;
   var now = new Date();
   if (!histFilter.to) { var d=new Date(); histFilter.to=d.toISOString().split('T')[0]; }
   if (!histFilter.from) { var d2=new Date(now-7*86400000); histFilter.from=d2.toISOString().split('T')[0]; }
