@@ -9547,8 +9547,8 @@ function renderSeg(){
         // Fechas inicio y fin
         if(op.inicio || op.fin){
           h+='<div style="display:flex;gap:10px;margin-top:2px;padding-left:14px;font-size:.66rem;color:var(--dim);">';
-          if(op.inicio) h+='<span>🕐 <strong>'+(op.fecha_inicio||esc(op.inicio))+'</strong></span>';
-          if(op.fin)    h+='<span>🏁 <strong>'+(op.fecha_fin||esc(op.fin))+'</strong></span>';
+          if(op.inicio) h+='<span>🕐 <strong>'+(op.fecha_inicio_real||esc(op.inicio))+'</strong></span>';
+          if(op.fin)    h+='<span>🏁 <strong>'+(op.fecha_fin_real||esc(op.fin))+'</strong></span>';
           h+='</div>';
         }
         // Comentarios de la operación
