@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.32</title>
+<title>FabTracker App v2.33</title>
 
 <!-- MSAL Browser -->
 
@@ -6080,19 +6080,22 @@ async function appLoadDataFromSP() {
       var tpl = DB.templates && DB.templates[aof.articulo];
       // Padre viene de la plantilla
       aof.padre = (tpl && tpl.padre) ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
-      // Subartículos vienen de la OF (sub_articulos cargados desde SP), NO de la plantilla
+      // Subartículos — pueden venir como strings (sub_articulos de la OF) u objetos {articulo,nombre} (tpl.subarts)
       var subartKeys = (aof.sub_articulos||[]).filter(Boolean);
       if(!subartKeys.length && tpl && tpl.subarts && tpl.subarts.length) {
-        subartKeys = tpl.subarts.filter(Boolean); // fallback a plantilla
+        // tpl.subarts puede ser array de strings o de objetos {articulo,nombre}
+        subartKeys = tpl.subarts.map(function(s){ return typeof s==='object' ? s.articulo : s; }).filter(Boolean);
       }
       aof.subarts = subartKeys.map(function(sa){
-        var saAof = DB.activeOFs.find(function(a){return a.articulo===sa;});
+        var saKey = typeof sa==='object' ? sa.articulo : sa;
+        var saNombre = typeof sa==='object' ? sa.nombre : (DB.articles[sa]||sa);
+        var saAof = DB.activeOFs.find(function(a){return a.articulo===saKey;});
         var saOps = saAof ? saAof.ops : [];
         var saDone = saOps.filter(function(o){return o.status==='done';}).length;
         var saStatus = !saAof ? 'missing'
           : (saAof.ops.length>0 && saAof.ops.every(function(o){return o.status==='done';}) ? 'done'
           : saAof.ops.some(function(o){return o.status==='running';}) ? 'running' : 'planeacion');
-        return {articulo:sa, nombre:DB.articles[sa]||sa, of_sap:saAof?saAof.of_sap:null,
+        return {articulo:saKey, nombre:saNombre, of_sap:saAof?saAof.of_sap:null,
           pedido:saAof?saAof.pedido:'', status:saStatus,
           ops_done:saDone, ops_total:saOps.length,
           pct:saOps.length>0?Math.round(saDone/saOps.length*100):0};
