@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.41</title>
+<title>FabTracker App v2.42</title>
 
 <!-- MSAL Browser -->
 
@@ -5387,7 +5387,8 @@ function calTiemGetData(key){
   var d = DB.calTiemposGuardados[key];
   if(!d) return {samples:[], avg:0, count:0, saved:false};
   if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true}; // legado mins→secs
-  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0};
+  // _editing=true significa en edición pero ya guardado — mostrar como guardado
+  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0||!!d._editing};
 }
 
 function renderCalTiemInputs(of, inFlujo){
@@ -5490,7 +5491,8 @@ function calTiemEdit(key){
   var d = calTiemGetData(key);
   if(!APP._ctSamples) APP._ctSamples = {};
   APP._ctSamples[key] = d.samples.map(fmtMSS);
-  delete DB.calTiemposGuardados[key];
+  // Preservar _spId para poder actualizar el registro existente
+  if(DB.calTiemposGuardados[key]) DB.calTiemposGuardados[key]._editing = true;
   renderApp();
 }
 
@@ -11070,7 +11072,8 @@ function calTiemGetData(key){
   var d = DB.calTiemposGuardados[key];
   if(!d) return {samples:[], avg:0, count:0, saved:false};
   if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true}; // legado mins→secs
-  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0};
+  // _editing=true significa en edición pero ya guardado — mostrar como guardado
+  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0||!!d._editing};
 }
 
 function renderCalTiemInputs(of, inFlujo){
@@ -11174,7 +11177,8 @@ function calTiemEdit(key){
   var d = calTiemGetData(key);
   if(!APP._ctSamples) APP._ctSamples = {};
   APP._ctSamples[key] = d.samples.map(fmtMSS);
-  delete DB.calTiemposGuardados[key];
+  // Preservar _spId para poder actualizar el registro existente
+  if(DB.calTiemposGuardados[key]) DB.calTiemposGuardados[key]._editing = true;
   renderApp();
 }
 
