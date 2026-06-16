@@ -10944,15 +10944,14 @@ function calTiemEdit(key){
 
 
 // ═══ FABTRACKER — REPORTES POR ESTACIÓN ═══════════════════════════
-// Datos en memoria para el módulo de reportes
 var _rptData = { ofs: [], ops: [], loaded: false, loading: false };
 
 async function ftRptLoad() {
   if (_rptData.loading) return;
   _rptData.loading = true;
-  var loading = document.getElementById('rpt-loading');
+  var loading  = document.getElementById('rpt-loading');
   var contenido = document.getElementById('rpt-contenido');
-  if (loading) { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
+  if (loading)  { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
   if (contenido) contenido.style.display = 'none';
 
   try {
@@ -10962,48 +10961,48 @@ async function ftRptLoad() {
       flowGet('FT_Operaciones', '', 5000).catch(empty)
     ]);
 
-    // Mapear OFs — excluir status Cerrado / Pedido Cancelado
+    // OFs — excluir Cerrado / Pedido Cancelado
     _rptData.ofs = (res[0].value || []).map(function(i) {
       var f = i.fields || {};
       return {
-        id:           i.id,
-        of_sap:       f.OF_SAP || f.Title || '',
-        pedido:       f.Numero_Pedido || f.Pedido || '',
-        cliente:      f.Cliente || '',
-        descripcion:  f.Descripcion_Articulo || '',
-        cantidad:     parseInt(f.Cantidad || 0) || 0,
-        status:       f.Status || 'Sin programar',
-        fecha_prog:   (f.Fecha_Programacion || '').split('T')[0],
-        fecha_entrega:(f.Fecha_Entrega || '').split('T')[0],
-        prioridad:    f.Prioridad || 'Normal'
+        id:            i.id,
+        of_sap:        f.OF_SAP || f.Title || '',
+        pedido:        f.Numero_Pedido || f.Pedido || '',
+        cliente:       f.Cliente || '',
+        descripcion:   f.Descripcion_Articulo || '',
+        cantidad:      parseInt(f.Cantidad || 0) || 0,
+        status:        f.Status || 'Sin programar',
+        fecha_prog:    (f.Fecha_Programacion || '').split('T')[0],
+        fecha_entrega: (f.Fecha_Entrega || '').split('T')[0],
+        prioridad:     f.Prioridad || 'Normal'
       };
     }).filter(function(of) {
       var s = (of.status || '').toLowerCase();
       return s !== 'cerrado' && s !== 'pedido cancelado' && s !== 'cerrada';
     });
 
-    // Mapear Operaciones — incluyendo ayudantes
+    // Operaciones — incluyendo ayudantes
     _rptData.ops = (res[1].value || []).map(function(i) {
       var f = i.fields || {};
       var ayRaw = f.Ayudantes_JSON || f.Ayudantes || '';
       var ayudantes = ayRaw ? ayRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
       return {
-        of_sap:      f.OF_SAP || '',
-        op_id:       f.Op_ID || '',
-        nombre:      f.Nombre || f.Title || '',
-        estacion:    f.Estacion || '',
-        tecnico:     f.Tecnico || '',
-        ayudantes:   ayudantes,
-        status:      f.Status || 'pending',
-        qty_total:   parseInt(f.Qty_Total || 0) || 0,
-        qty_ok:      parseInt(f.Qty_OK || 0) || 0,
-        secuencia:   parseInt(f.Secuencia || 0) || 0
+        of_sap:    f.OF_SAP || '',
+        op_id:     f.Op_ID || '',
+        nombre:    f.Nombre || f.Title || '',
+        estacion:  f.Estacion || '',       // puede ser '' para ops sin estación asignada
+        tecnico:   f.Tecnico || '',
+        ayudantes: ayudantes,
+        status:    f.Status || 'pending',
+        qty_total: parseInt(f.Qty_Total || 0) || 0,
+        qty_ok:    parseInt(f.Qty_OK || 0) || 0,
+        secuencia: parseInt(f.Secuencia || 0) || 0
       };
     });
 
     _rptData.loaded = true;
 
-    // Poblar selector de estaciones con valores reales de SP
+    // Poblar selector de estaciones (sólo estaciones con nombre real)
     var estacionesUnicas = {};
     _rptData.ops.forEach(function(op) {
       if (op.estacion) estacionesUnicas[op.estacion] = true;
@@ -11015,6 +11014,8 @@ async function ftRptLoad() {
       Object.keys(estacionesUnicas).sort().forEach(function(e) {
         sel.innerHTML += '<option value="' + e + '"' + (prev === e ? ' selected' : '') + '>' + e + '</option>';
       });
+      // Agregar opción "Sin estación" al final
+      sel.innerHTML += '<option value="Sin estación"' + (prev === 'Sin estación' ? ' selected' : '') + '>📭 Sin estación</option>';
     }
 
     ftRptRender();
@@ -11033,6 +11034,15 @@ function ftRptFmtFecha(s) {
   return p[2] + '/' + p[1] + '/' + p[0].slice(2);
 }
 
+// Devuelve true si la fecha (YYYY-MM-DD) es urgente (dentro de 7 días o vencida) con avance < 100%
+function ftRptEsUrgente(fEntrega, pct) {
+  if (!fEntrega || pct >= 100) return false;
+  var hoy    = new Date(); hoy.setHours(0,0,0,0);
+  var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
+  var fecha  = new Date(fEntrega + 'T00:00:00');
+  return fecha <= limite;   // vencida (< hoy) o próxima (hoy..hoy+7)
+}
+
 function ftRptAvanceColor(pct) {
   if (pct >= 100) return '#4ade80';
   if (pct >= 60)  return '#60a5fa';
@@ -11046,6 +11056,92 @@ function ftRptStatusPill(opStatus) {
   return '<span class="rpt-pill rpt-pill-plan">Planeación</span>';
 }
 
+// ─── Construir estructura de datos unificada para render y exports ──
+function ftRptBuildData() {
+  var ofMap = {};
+  _rptData.ofs.forEach(function(of) { ofMap[of.of_sap] = of; });
+
+  // Agrupar ops por (of_sap × estacion)
+  // IMPORTANTE: ops con estacion=='' se redirigen a 'Sin estación'
+  var opsPorOfEst = {};
+  _rptData.ops.forEach(function(op) {
+    var k = op.of_sap;
+    if (!k || !ofMap[k]) return;
+    var est = op.estacion || 'Sin estación';   // <-- redirigir vacíos
+    if (!opsPorOfEst[k]) opsPorOfEst[k] = {};
+    if (!opsPorOfEst[k][est]) opsPorOfEst[k][est] = [];
+    opsPorOfEst[k][est].push(op);
+  });
+
+  var porEstacion = {};
+
+  // 1. OFs con ops → una fila por (OF × estacion)
+  Object.keys(opsPorOfEst).forEach(function(ofSap) {
+    var of = ofMap[ofSap];
+    if (!of) return;
+
+    Object.keys(opsPorOfEst[ofSap]).forEach(function(est) {
+      var ops   = opsPorOfEst[ofSap][est];
+      var total = ops.length;
+      var term  = ops.filter(function(o) {
+        var s = (o.status || '').toLowerCase();
+        return s === 'done' || s === 'terminada' || s === 'terminado';
+      }).length;
+      var enProc = ops.some(function(o) {
+        var s = (o.status || '').toLowerCase();
+        return s === 'running' || s === 'paused' || s === 'validating';
+      });
+      var pct = total > 0 ? Math.round(term / total * 100) : 0;
+      var opStatus = (pct === 100 && total > 0) ? 'Terminada'
+                   : ((enProc || term > 0)      ? 'En Proceso'
+                                                 : 'Planeación');
+
+      // Operador: técnicos + ayudantes únicos de esta estación
+      var personasSet = {};
+      ops.forEach(function(o) {
+        if (o.tecnico) personasSet[o.tecnico] = true;
+        (o.ayudantes || []).forEach(function(a) { if (a) personasSet[a] = true; });
+      });
+      var operador = Object.keys(personasSet).join(' / ') || '—';
+
+      if (!porEstacion[est]) porEstacion[est] = [];
+      porEstacion[est].push({
+        of: of, pct: pct, opStatus: opStatus, operador: operador,
+        fProg: of.fecha_prog || '', fEntrega: of.fecha_entrega || '',
+        totalOps: total, termOps: term,
+        ops: ops   // guardar para Excel detalle
+      });
+    });
+  });
+
+  // 2. OFs sin ninguna op → 'Sin estación'
+  _rptData.ofs.forEach(function(of) {
+    if (opsPorOfEst[of.of_sap]) return;
+    if (!porEstacion['Sin estación']) porEstacion['Sin estación'] = [];
+    porEstacion['Sin estación'].push({
+      of: of, pct: 0, opStatus: 'Planeación', operador: '—',
+      fProg: of.fecha_prog || '', fEntrega: of.fecha_entrega || '',
+      totalOps: 0, termOps: 0, ops: []
+    });
+  });
+
+  // Ordenar filas de cada estación por F.Entrega descendente (vacías al final)
+  Object.keys(porEstacion).forEach(function(est) {
+    porEstacion[est].sort(function(a, b) {
+      if (!a.fEntrega && !b.fEntrega) return 0;
+      if (!a.fEntrega) return 1;
+      if (!b.fEntrega) return -1;
+      // Descendente: mayor fecha primero — pero aquí queremos ASCENDENTE
+      // (las próximas a vencer van PRIMERO para que sean más visibles)
+      if (a.fEntrega < b.fEntrega) return -1;
+      if (a.fEntrega > b.fEntrega) return 1;
+      return 0;
+    });
+  });
+
+  return { porEstacion: porEstacion };
+}
+
 function ftRptRender() {
   var loading   = document.getElementById('rpt-loading');
   var contenido = document.getElementById('rpt-contenido');
@@ -11057,106 +11153,39 @@ function ftRptRender() {
   if (!contenido) return;
   contenido.style.display = 'block';
 
-  // ── Filtros ──────────────────────────────────────────────────────
+  // Filtros
   var filtEst    = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
   var filtStatus = (document.getElementById('rpt-filtro-status')   || {}).value || '';
   var filtDesde  = (document.getElementById('rpt-desde')           || {}).value || '';
   var filtHasta  = (document.getElementById('rpt-hasta')           || {}).value || '';
   var filtQ      = ((document.getElementById('rpt-buscar')         || {}).value || '').toLowerCase().trim();
 
-  // ── Índice de OFs (excluye cerradas, ya filtradas en load) ───────
-  var ofMap = {};
-  _rptData.ofs.forEach(function(of) { ofMap[of.of_sap] = of; });
+  var built      = ftRptBuildData();
+  var porEstacion = built.porEstacion;
 
-  // ── Agrupar ops por (of_sap × estacion) ──────────────────────────
-  var opsPorOfEst = {};
-  _rptData.ops.forEach(function(op) {
-    var k = op.of_sap;
-    if (!k || !ofMap[k]) return;
-    var est = op.estacion || '';
-    if (!opsPorOfEst[k]) opsPorOfEst[k] = {};
-    if (!opsPorOfEst[k][est]) opsPorOfEst[k][est] = [];
-    opsPorOfEst[k][est].push(op);
-  });
-
-  // ── Construir filas: una por (OF × estacion) ─────────────────────
-  var porEstacion = {};
-
-  // 1. OFs con ops → aparecen en cada estación que tengan
-  Object.keys(opsPorOfEst).forEach(function(ofSap) {
-    var of = ofMap[ofSap];
-    if (!of) return;
-    var estaciones = Object.keys(opsPorOfEst[ofSap]);
-
-    estaciones.forEach(function(est) {
-      if (filtEst && est !== filtEst) return;
-      var ops = opsPorOfEst[ofSap][est];
-
-      // Avance = ops terminadas de ESTA estación / total ops de ESTA estación
-      var total  = ops.length;
-      var term   = ops.filter(function(o) {
-        var s = (o.status || '').toLowerCase();
-        return s === 'done' || s === 'terminada' || s === 'terminado';
-      }).length;
-      var enProc = ops.some(function(o) {
-        var s = (o.status || '').toLowerCase();
-        return s === 'running' || s === 'paused' || s === 'validating';
-      });
-      var pct = total > 0 ? Math.round(term / total * 100) : 0;
-      var opStatus = (pct === 100 && total > 0) ? 'Terminada' : ((enProc || term > 0) ? 'En Proceso' : 'Planeación');
-
-      // Operador: técnico + ayudantes de las ops de ESTA estación (únicos, sep /)
-      var personasSet = {};
-      ops.forEach(function(o) {
-        if (o.tecnico) personasSet[o.tecnico] = true;
-        (o.ayudantes || []).forEach(function(a) { if (a) personasSet[a] = true; });
-      });
-      var operador = Object.keys(personasSet).join(' / ') || '—';
-
-      // Fechas desde FT_OrdenesFabricacion
-      var fProg    = of.fecha_prog    || '';
-      var fEntrega = of.fecha_entrega || '';
-      if (filtDesde && fProg && fProg < filtDesde) return;
-      if (filtHasta && fProg && fProg > filtHasta) return;
-
+  // Aplicar filtros sobre los datos ya construidos
+  var porEstacionFiltrado = {};
+  Object.keys(porEstacion).forEach(function(est) {
+    if (filtEst && est !== filtEst) return;
+    var filas = porEstacion[est].filter(function(r) {
+      if (filtDesde && r.fProg && r.fProg < filtDesde) return false;
+      if (filtHasta && r.fProg && r.fProg > filtHasta) return false;
       if (filtStatus) {
         var fs = filtStatus.toLowerCase();
-        if (fs === 'en proceso' && opStatus !== 'En Proceso')  return;
-        if (fs === 'planeacion' && opStatus !== 'Planeación')  return;
-        if (fs === 'terminada'  && opStatus !== 'Terminada')   return;
+        if (fs === 'en proceso' && r.opStatus !== 'En Proceso')  return false;
+        if (fs === 'planeacion' && r.opStatus !== 'Planeación')  return false;
+        if (fs === 'terminada'  && r.opStatus !== 'Terminada')   return false;
       }
-
       if (filtQ) {
-        var hay = (ofSap + ' ' + of.pedido + ' ' + of.cliente + ' ' + of.descripcion + ' ' + operador).toLowerCase();
-        if (hay.indexOf(filtQ) < 0) return;
+        var hay = (r.of.of_sap + ' ' + r.of.pedido + ' ' + r.of.cliente + ' ' + r.of.descripcion + ' ' + r.operador).toLowerCase();
+        if (hay.indexOf(filtQ) < 0) return false;
       }
-
-      if (!porEstacion[est]) porEstacion[est] = [];
-      porEstacion[est].push({ of: of, pct: pct, opStatus: opStatus, operador: operador, fProg: fProg, fEntrega: fEntrega, totalOps: total, termOps: term });
+      return true;
     });
+    if (filas.length) porEstacionFiltrado[est] = filas;
   });
 
-  // 2. OFs sin ninguna op → "Sin estación"
-  _rptData.ofs.forEach(function(of) {
-    if (opsPorOfEst[of.of_sap]) return;
-    var est = 'Sin estación';
-    if (filtEst && filtEst !== est) return;
-    if (filtStatus && filtStatus.toLowerCase() !== 'planeacion') return;
-    var fProg    = of.fecha_prog    || '';
-    var fEntrega = of.fecha_entrega || '';
-    if (filtDesde && fProg && fProg < filtDesde) return;
-    if (filtHasta && fProg && fProg > filtHasta) return;
-    if (filtQ) {
-      var hay = (of.of_sap + ' ' + of.pedido + ' ' + of.cliente + ' ' + of.descripcion).toLowerCase();
-      if (hay.indexOf(filtQ) < 0) return;
-    }
-    if (!porEstacion[est]) porEstacion[est] = [];
-    porEstacion[est].push({ of: of, pct: 0, opStatus: 'Planeación', operador: '—', fProg: fProg, fEntrega: fEntrega, totalOps: 0, termOps: 0 });
-  });
-
-  // ── Render HTML ───────────────────────────────────────────────────
-  var html = '';
-  var estaciones = Object.keys(porEstacion).sort(function(a, b) {
+  var estaciones = Object.keys(porEstacionFiltrado).sort(function(a, b) {
     if (a === 'Sin estación') return 1;
     if (b === 'Sin estación') return -1;
     return a.localeCompare(b);
@@ -11169,20 +11198,21 @@ function ftRptRender() {
 
   var iconos = { 'Lavado':'💧','Pintura':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electronico':'⚡','Electronica':'⚡','Sierra':'🪚','Equipo':'🔌' };
   function iconoEst(e) {
-    if (e === 'Sin estación') return '📭';
+    if (!e || e === 'Sin estación') return '📭';
     var k = Object.keys(iconos).find(function(k){ return e.indexOf(k) >= 0; });
     return k ? iconos[k] : '🏗️';
   }
 
+  var html = '';
   estaciones.forEach(function(est) {
-    var rows = porEstacion[est];
+    var rows = porEstacionFiltrado[est];
     var enProceso  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
     var terminadas = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-    var avgPct = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
+    var avgPct     = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
 
     html += '<div class="rpt-section" data-estacion="' + est + '">';
     html += '<div class="rpt-section-hdr">';
-    html += '<div class="rpt-section-title">' + iconoEst(est) + ' ' + est;
+    html += '<div class="rpt-section-title">' + iconoEst(est) + ' ' + (est || 'Sin estación');
     html += ' <span style="background:rgba(255,255,255,.07);border-radius:20px;padding:1px 8px;font-size:.65rem;font-weight:400;">' + rows.length + ' OFs</span>';
     if (enProceso)  html += ' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + enProceso + ' en proceso</span>';
     if (terminadas) html += ' <span style="background:rgba(34,197,94,.12);color:#4ade80;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + terminadas + ' term.</span>';
@@ -11191,16 +11221,19 @@ function ftRptRender() {
     html += '</div>';
 
     html += '<div style="overflow-x:auto;"><table class="rpt-table">';
-    html += '<thead><tr>' +
-      '<th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th>' +
+    html += '<thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th>' +
       '<th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th>' +
-      '<th>F.Prog</th><th>F.Entrega</th><th>Avance</th>' +
-      '</tr></thead><tbody>';
+      '<th>F.Prog</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
 
     rows.forEach(function(r) {
-      var color = ftRptAvanceColor(r.pct);
+      var color   = ftRptAvanceColor(r.pct);
+      var urgente = ftRptEsUrgente(r.fEntrega, r.pct);
+      var fEntregaHtml = urgente
+        ? '<span style="color:#f87171;font-weight:600;">' + ftRptFmtFecha(r.fEntrega) + '</span>'
+        : ftRptFmtFecha(r.fEntrega);
+
       html += '<tr>';
-      html += '<td class="rpt-of-sap">' + (r.of.of_sap || '—') + '</td>';
+      html += '<td class="rpt-of-sap">'  + (r.of.of_sap || '—') + '</td>';
       html += '<td style="font-size:.68rem;color:var(--dim);">' + (r.of.pedido || 'N/A') + '</td>';
       html += '<td style="font-size:.7rem;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (r.of.cliente || '') + '">' + (r.of.cliente || '—') + '</td>';
       html += '<td class="rpt-desc" style="max-width:180px;" title="' + (r.of.descripcion || '') + '">' + (r.of.descripcion || '—') + '</td>';
@@ -11208,7 +11241,7 @@ function ftRptRender() {
       html += '<td>' + ftRptStatusPill(r.opStatus) + '</td>';
       html += '<td style="font-size:.67rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + r.operador + '">' + r.operador + '</td>';
       html += '<td style="font-size:.68rem;white-space:nowrap;">' + ftRptFmtFecha(r.fProg) + '</td>';
-      html += '<td style="font-size:.68rem;white-space:nowrap;">' + ftRptFmtFecha(r.fEntrega) + '</td>';
+      html += '<td style="font-size:.68rem;white-space:nowrap;">' + fEntregaHtml + '</td>';
       html += '<td><div class="rpt-avance-wrap">' +
         '<div class="rpt-avance-bar"><div class="rpt-avance-fill" style="width:' + r.pct + '%;background:' + color + ';"></div></div>' +
         '<span class="rpt-avance-pct" style="color:' + color + ';">' + r.pct + '%</span>' +
@@ -11232,14 +11265,13 @@ function ftRptLimpiarFiltros() {
 
 // ─── Exportar PDF ──────────────────────────────────────────────────
 function ftRptExportPDF() {
-  // Usamos jsPDF + jspdf-autotable (cargados on-demand)
   function doExport() {
     var { jsPDF } = window.jspdf;
     var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
     var filtEst = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
-    var now = new Date().toLocaleDateString('es-MX');
-    var titulo = 'Programa de Producción — Ordenes de Fabricación';
+    var now     = new Date().toLocaleDateString('es-MX');
+    var titulo  = 'Programa de Producción — Ordenes de Fabricación';
     if (filtEst) titulo += ' (' + filtEst + ')';
 
     doc.setFontSize(12);
@@ -11249,15 +11281,31 @@ function ftRptExportPDF() {
     doc.setFont('helvetica', 'normal');
     doc.text('Generado: ' + now, 14, 20);
 
-    var sections = document.querySelectorAll('#rpt-contenido .rpt-section');
-    var yOffset = 26;
+    // Usar los mismos datos construidos por ftRptBuildData()
+    var built = ftRptBuildData();
+    var porEstacion = built.porEstacion;
 
-    sections.forEach(function(sec) {
-      var est = sec.dataset.estacion || '';
-      var hdrEl = sec.querySelector('.rpt-section-title');
-      var hdrText = hdrEl ? hdrEl.textContent.trim().replace(/[^\w\s\-áéíóúÁÉÍÓÚüÜñÑ\.]/g, '').trim() : est;
-      var metaEl = sec.querySelector('.rpt-section-meta');
-      var meta = metaEl ? metaEl.textContent.trim() : '';
+    var estaciones = Object.keys(porEstacion).sort(function(a, b) {
+      if (a === 'Sin estación') return 1;
+      if (b === 'Sin estación') return -1;
+      return a.localeCompare(b);
+    });
+
+    if (filtEst) estaciones = estaciones.filter(function(e){ return e === filtEst; });
+
+    var yOffset = 26;
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
+
+    estaciones.forEach(function(est) {
+      var rows    = porEstacion[est];
+      var avgPct  = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
+      var enProc  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
+      var term    = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
+      var hdrText = (est || 'Sin estación') + '  ' + rows.length + ' OFs' +
+        (enProc ? '  ' + enProc + ' en proceso' : '') +
+        (term   ? '  ' + term + ' terminadas'   : '');
+      var meta    = 'Avance prom: ' + avgPct + '%';
 
       if (yOffset > 175) { doc.addPage(); yOffset = 14; }
 
@@ -11266,37 +11314,51 @@ function ftRptExportPDF() {
       doc.text(hdrText + '  |  ' + meta, 14, yOffset);
       yOffset += 4;
 
-      var rows = [];
-      sec.querySelectorAll('.rpt-table tbody tr').forEach(function(tr) {
-        var cells = tr.querySelectorAll('td');
-        var pctEl = tr.querySelector('.rpt-avance-pct');
-        rows.push([
-          cells[0] ? cells[0].textContent.trim() : '',
-          cells[1] ? cells[1].textContent.trim() : '',
-          cells[2] ? cells[2].textContent.trim() : '',
-          cells[3] ? (cells[3].textContent.trim().substring(0, 40)) : '',
-          cells[4] ? cells[4].textContent.trim() : '',
-          cells[5] ? cells[5].textContent.trim() : '',
-          cells[6] ? cells[6].textContent.trim() : '',
-          cells[7] ? cells[7].textContent.trim() : '',
-          pctEl ? pctEl.textContent.trim() : '0%'
-        ]);
+      var pdfRows = [];
+      rows.forEach(function(r) {
+        var urgente = ftRptEsUrgente(r.fEntrega, r.pct);
+        pdfRows.push({
+          data: [
+            r.of.of_sap || '',
+            r.of.pedido || 'N/A',
+            (r.of.cliente || '').substring(0, 22),
+            (r.of.descripcion || '').substring(0, 40),
+            r.of.cantidad || '—',
+            r.opStatus,
+            r.operador.substring(0, 20),
+            ftRptFmtFecha(r.fProg),
+            ftRptFmtFecha(r.fEntrega),
+            r.pct + '%'
+          ],
+          urgente: urgente
+        });
       });
 
       doc.autoTable({
         startY: yOffset,
-        head: [['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','F.Inicio','F.Term','Avance']],
-        body: rows,
-        styles: { fontSize: 6.5, cellPadding: 1.5 },
+        head: [['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Entrega','Avance']],
+        body: pdfRows.map(function(r){ return r.data; }),
+        styles:     { fontSize: 6.5, cellPadding: 1.5 },
         headStyles: { fillColor: [26, 52, 85], textColor: [180, 200, 230], fontStyle: 'bold', fontSize: 6 },
         columnStyles: {
-          0: { cellWidth: 18 }, 1: { cellWidth: 20 }, 2: { cellWidth: 30 },
-          3: { cellWidth: 60 }, 4: { cellWidth: 12, halign: 'center' },
-          5: { cellWidth: 20 }, 6: { cellWidth: 18 }, 7: { cellWidth: 18 }, 8: { cellWidth: 14, halign: 'right' }
+          0: { cellWidth: 16 }, 1: { cellWidth: 18 }, 2: { cellWidth: 28 },
+          3: { cellWidth: 54 }, 4: { cellWidth: 10, halign: 'center' },
+          5: { cellWidth: 18 }, 6: { cellWidth: 26 },
+          7: { cellWidth: 14 }, 8: { cellWidth: 14 }, 9: { cellWidth: 12, halign: 'right' }
         },
         alternateRowStyles: { fillColor: [240, 244, 250] },
         margin: { left: 14, right: 14 },
-        theme: 'grid'
+        theme: 'grid',
+        didParseCell: function(data) {
+          // Colorear F.Entrega en rojo si urgente
+          if (data.column.index === 8 && data.section === 'body') {
+            var rowIdx = data.row.index;
+            if (pdfRows[rowIdx] && pdfRows[rowIdx].urgente) {
+              data.cell.styles.textColor = [239, 68, 68];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
       });
 
       yOffset = doc.lastAutoTable.finalY + 6;
@@ -11323,139 +11385,99 @@ function ftRptExportPDF() {
 // ─── Exportar Excel con detalle colapsable ─────────────────────────
 function ftRptExportExcel() {
   function doExcel() {
-    var XLSX = window.XLSX;
-    var wb = XLSX.utils.book_new();
-
-    // Agrupar igual que ftRptRender
+    var XLSX    = window.XLSX;
+    var wb      = XLSX.utils.book_new();
     var filtEst = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
 
-    var avanceMap = {};
-    _rptData.ops.forEach(function(op) {
-      var k = op.of_sap;
-      if (!k) return;
-      if (!avanceMap[k]) avanceMap[k] = { total: 0, terminadas: 0, ops: [] };
-      avanceMap[k].total++;
-      var s = (op.status || '').toLowerCase();
-      if (s === 'done' || s === 'terminada' || s === 'terminado') avanceMap[k].terminadas++;
-      avanceMap[k].ops.push(op);
+    var built = ftRptBuildData();
+    var porEstacion = built.porEstacion;
+
+    var estaciones = Object.keys(porEstacion).sort(function(a, b) {
+      if (a === 'Sin estación') return 1;
+      if (b === 'Sin estación') return -1;
+      return a.localeCompare(b);
     });
 
-    var ofEstacion = {}, ofTecnico = {}, ofFechaI = {}, ofFechaF = {};
-    _rptData.ops.forEach(function(op) {
-      var k = op.of_sap;
-      if (!k) return;
-      if (!ofEstacion[k] && op.estacion) ofEstacion[k] = op.estacion;
-      if (!ofTecnico[k] && op.tecnico) ofTecnico[k] = op.tecnico;
-      if (op.fecha_inicio && (!ofFechaI[k] || op.fecha_inicio < ofFechaI[k])) ofFechaI[k] = op.fecha_inicio;
-      if (op.fecha_fin && (!ofFechaF[k] || op.fecha_fin > ofFechaF[k])) ofFechaF[k] = op.fecha_fin;
-    });
+    if (filtEst) estaciones = estaciones.filter(function(e){ return e === filtEst; });
 
-    var porEstacion = {};
-    _rptData.ofs.forEach(function(of) {
-      var est = ofEstacion[of.of_sap] || 'Sin estación';
-      if (filtEst && est !== filtEst) return;
-      if (!porEstacion[est]) porEstacion[est] = [];
-      var av = avanceMap[of.of_sap] || { total: 0, terminadas: 0, ops: [] };
-      var pct = av.total > 0 ? Math.round(av.terminadas / av.total * 100) : 0;
-      var opStatus = pct === 100 && av.total > 0 ? 'Terminada' : (pct > 0 ? 'En Proceso' : 'Planeación');
-      porEstacion[est].push({
-        of: of, av: av, pct: pct, opStatus: opStatus,
-        tecnico: ofTecnico[of.of_sap] || '', fi: ofFechaI[of.of_sap] || '', ff: ofFechaF[of.of_sap] || ''
-      });
-    });
-
-    var estaciones = Object.keys(porEstacion).sort();
+    var hoy    = new Date(); hoy.setHours(0,0,0,0);
+    var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
 
     estaciones.forEach(function(est) {
-      var rows = porEstacion[est];
+      var rows   = porEstacion[est];
       var wsData = [];
-      // Encabezado de sección
-      wsData.push(['ESTACIÓN: ' + est]);
-      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','F.Inicio','F.Term','Avance %']);
+      var rowMeta = [];
 
-      var rowMeta = []; // para guardar outlineLevel por fila
-      rowMeta.push({ outline: 0 }); // título estación
-      rowMeta.push({ outline: 0 }); // encabezados columna
+      wsData.push(['ESTACIÓN: ' + (est || 'Sin estación')]);
+      rowMeta.push({ outline: 0 });
+      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Entrega','Avance %']);
+      rowMeta.push({ outline: 0 });
 
       rows.forEach(function(r) {
-        // Fila principal OF
         wsData.push([
-          r.of.of_sap || '',
-          r.of.pedido || '',
-          r.of.cliente || '',
+          r.of.of_sap   || '',
+          r.of.pedido   || 'N/A',
+          r.of.cliente  || '',
           r.of.descripcion || '',
           r.of.cantidad || 0,
           r.opStatus,
-          r.fi || '',
-          r.ff || '',
-          r.pct / 100  // porcentaje como decimal para formato %
+          r.operador,
+          r.fProg    || '',
+          r.fEntrega || '',
+          r.pct / 100
         ]);
-        rowMeta.push({ outline: 0, isOf: true });
+        rowMeta.push({ outline: 0, isOf: true, urgente: ftRptEsUrgente(r.fEntrega, r.pct) });
 
-        // Filas detalle de operaciones (nivel 1 — colapsables)
-        var ops = (r.av.ops || []).sort(function(a,b){ return a.secuencia - b.secuencia; });
+        // Detalle de operaciones colapsable
+        var ops = (r.ops || []).slice().sort(function(a,b){ return a.secuencia - b.secuencia; });
         ops.forEach(function(op) {
-          var opS = (op.status || '').toLowerCase();
-          var opLabel = opS === 'done' || opS === 'terminada' ? 'Terminada' : opS === 'running' ? 'En Proceso' : 'Pendiente';
+          var opS    = (op.status || '').toLowerCase();
+          var opLabel = (opS === 'done' || opS === 'terminada') ? 'Terminada' : opS === 'running' ? 'En Proceso' : 'Pendiente';
+          var opOper  = [op.tecnico].concat(op.ayudantes || []).filter(Boolean).join(' / ') || '—';
           wsData.push([
-            '  → ' + op.op_id,
+            '  → ' + (op.op_id || ''),
             '',
-            op.tecnico || '',
             op.nombre || '',
-            op.qty_total || '',
             opLabel,
-            op.fecha_inicio || '',
-            op.fecha_fin || '',
-            op.qty_ok && op.qty_total ? (op.qty_ok / op.qty_total) : ''
+            op.qty_total || '',
+            opOper,
+            '', '', '',
+            (op.qty_ok && op.qty_total) ? (op.qty_ok / op.qty_total) : ''
           ]);
           rowMeta.push({ outline: 1 });
         });
 
-        // Separador
         wsData.push(['']);
         rowMeta.push({ outline: 0 });
       });
 
-      // Crear worksheet
       var ws = XLSX.utils.aoa_to_sheet(wsData);
 
-      // Formato columna Avance (col I = índice 8)
+      // Formato % columna J (índice 9)
       var range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
       for (var R = 2; R <= range.e.r; R++) {
-        var cellAddr = XLSX.utils.encode_cell({ r: R, c: 8 });
-        if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') {
-          ws[cellAddr].t = 'n';
-          ws[cellAddr].z = '0%';
-        }
+        var ca = XLSX.utils.encode_cell({ r: R, c: 9 });
+        if (ws[ca] && typeof ws[ca].v === 'number') { ws[ca].t = 'n'; ws[ca].z = '0%'; }
       }
 
-      // Anchos de columna
-      ws['!cols'] = [
-        {wch:12},{wch:14},{wch:28},{wch:45},{wch:10},{wch:14},{wch:12},{wch:12},{wch:10}
-      ];
+      ws['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:10}];
+      ws['!rows'] = rowMeta.map(function(m) { return m.outline === 1 ? { level: 1 } : {}; });
 
-      // Row outline levels para grupos colapsables
-      ws['!rows'] = rowMeta.map(function(m) {
-        return m.outline === 1 ? { level: 1 } : {};
-      });
-
-      // Nombre hoja — máx 31 chars, sin chars especiales
-      var shName = est.replace(/[:\\/\[\]\*\?]/g, '-').substring(0, 31);
+      var shName = (est || 'Sin estacion').replace(/[:\\/\[\]\*\?]/g, '-').substring(0, 31);
       XLSX.utils.book_append_sheet(wb, ws, shName);
     });
 
-    // Hoja resumen general
+    // Hoja Resumen
     var sumData = [['Estación','Total OFs','En Proceso','Terminadas','Avance Prom %']];
     estaciones.forEach(function(est) {
       var rows = porEstacion[est] || [];
-      var enP = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
+      var enP  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
       var term = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-      var avg = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; },0)/rows.length) : 0;
-      sumData.push([est, rows.length, enP, term, avg/100]);
+      var avg  = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; },0)/rows.length) : 0;
+      sumData.push([est || 'Sin estación', rows.length, enP, term, avg/100]);
     });
     var wsSum = XLSX.utils.aoa_to_sheet(sumData);
-    wsSum['!cols'] = [{wch:25},{wch:12},{wch:14},{wch:14},{wch:16}];
-    // Formato % en col E
+    wsSum['!cols'] = [{wch:28},{wch:12},{wch:14},{wch:14},{wch:16}];
     for (var R = 1; R < sumData.length; R++) {
       var c = XLSX.utils.encode_cell({r:R, c:4});
       if (wsSum[c]) { wsSum[c].t = 'n'; wsSum[c].z = '0%'; }
