@@ -5454,19 +5454,20 @@ async function ftLoadDataFromSP() {
           // Polling de CalTiempos — recargar si hay cambios
           try {
             var calPollRes = await flowGet('FT_CalTiempos', '', 500);
-            var calPollItems = (calPollRes.value||[]);
-            var calPollCount = calPollItems.length;
-            if(calPollCount !== window._calTiemCount) {
-              window._calTiemCount = calPollCount;
+            var calPollItems = calPollRes.value||[];
+            // Comparar firma: cantidad + suma de promedios
+            var calSig = calPollItems.length + '|' + calPollItems.reduce(function(s,i){return s+(parseFloat((i.fields||i).Promedio_Seg||0));},0);
+            if(calSig !== window._calTiemSig) {
+              window._calTiemSig = calSig;
               DB.calTiemposGuardados = {};
               calPollItems.forEach(function(i){
-                var f=i.fields; var key=f.Title||''; if(!key) return;
+                var f=i.fields||i; var key=f.Title||''; if(!key) return;
                 var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
                 var avg=parseFloat(f.Promedio_Seg||0);
-                DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:i.id};
+                DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:i.id||f.ID};
               });
               if(C&&C.currentPage==='historial') renderHist();
-              console.log('[CalTiempos] Actualizados desde polling:', calPollCount);
+              console.log('[CalTiempos] Actualizados:', Object.keys(DB.calTiemposGuardados).length);
             }
           } catch(e){ /* silencioso */ }
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();

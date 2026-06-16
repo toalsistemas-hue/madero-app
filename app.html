@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.47</title>
+<title>FabTracker App v2.48</title>
 
 <!-- MSAL Browser -->
 
@@ -6078,13 +6078,7 @@ async function appLoadDataFromSP() {
     });
     // Asignar padre y subarts DESPUÉS de cargar templates
     // Log diagnóstico
-    if(DB.activeOFs.length > 0){
-      var _aof0 = DB.activeOFs[0];
-      var _tpl0 = DB.templates && DB.templates[_aof0.articulo];
-      console.log('[subarts] OF:', _aof0.of_sap, '| sub_articulos:', JSON.stringify(_aof0.sub_articulos));
-      console.log('[subarts] tpl:', _tpl0 ? JSON.stringify({padre:_tpl0.padre, subarts:_tpl0.subarts}) : 'null');
-      console.log('[subarts] DB.articles sample:', JSON.stringify(Object.keys(DB.articles||{}).slice(0,5).reduce(function(o,k){o[k]=(DB.articles||{})[k];return o;},{})));
-    }
+
     DB.activeOFs.forEach(function(aof){
       var tpl = DB.templates && DB.templates[aof.articulo];
       // Padre: nombre desde DB.articles o desde plantilla del padre
@@ -6150,11 +6144,6 @@ async function appLoadDataFromSP() {
         }).join(', '));
       }
     });
-    // TEST: verificar si Flow acepta FT_CalTiempos
-    try {
-      var testRes = await appFlowGet('FT_CalTiempos', 5);
-      console.log('[TEST CalTiempos] Flow responde:', JSON.stringify(testRes).slice(0,200));
-    } catch(e){ console.warn('[TEST CalTiempos] Flow error:', e.message); }
     // Cargar CalTiempos existentes para obtener _spId y poder actualizar
     try {
       var calFlowRes = await appFlowGet('FT_CalTiempos', 500);
