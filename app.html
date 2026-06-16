@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.33</title>
+<title>FabTracker App v2.34</title>
 
 <!-- MSAL Browser -->
 
@@ -6064,22 +6064,29 @@ async function appLoadDataFromSP() {
       } catch(e){}
       DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
         subarts:subarts, ops:ops};
+      // Poblar DB.articles para que padre y subarts muestren nombres
+      if(!DB.articles) DB.articles = {};
+      if(f.Nombre_Articulo) DB.articles[key] = f.Nombre_Articulo;
+      if(f.Padre_Articulo && f.Nombre_Padre) DB.articles[f.Padre_Articulo] = f.Nombre_Padre;
+      subarts.forEach(function(sa){
+        if(sa && typeof sa==='object' && sa.articulo && sa.nombre) DB.articles[sa.articulo] = sa.nombre;
+      });
     });
     // Asignar padre y subarts DESPUÉS de cargar templates
     // Log diagnóstico
     if(DB.activeOFs.length > 0){
       var _aof0 = DB.activeOFs[0];
-      console.log('[subarts] OF:', _aof0.of_sap, '| articulo:', _aof0.articulo, '| sub_articulos:', JSON.stringify(_aof0.sub_articulos));
       var _tpl0 = DB.templates && DB.templates[_aof0.articulo];
+      console.log('[subarts] OF:', _aof0.of_sap, '| sub_articulos:', JSON.stringify(_aof0.sub_articulos));
       console.log('[subarts] tpl:', _tpl0 ? JSON.stringify({padre:_tpl0.padre, subarts:_tpl0.subarts}) : 'null');
-      // Ver raw fields de plantilla para diagnóstico
-      var _rawTpl = (tplRes.value||[]).find(function(i){return (i.fields.Articulo_Key||i.fields.Title||'')=== _aof0.articulo;});
-      if(_rawTpl) console.log('[subarts] raw SP fields:', JSON.stringify({Subarts_JSON:_rawTpl.fields.Subarts_JSON, Sub_Articulos:_rawTpl.fields.Sub_Articulos, Padre:_rawTpl.fields.Padre_Articulo}));
+      console.log('[subarts] DB.articles sample:', JSON.stringify(Object.keys(DB.articles||{}).slice(0,5).reduce(function(o,k){o[k]=(DB.articles||{})[k];return o;},{})));
     }
     DB.activeOFs.forEach(function(aof){
       var tpl = DB.templates && DB.templates[aof.articulo];
-      // Padre viene de la plantilla
-      aof.padre = (tpl && tpl.padre) ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
+      // Padre: nombre desde DB.articles o desde plantilla del padre
+      var padreClave = tpl && tpl.padre;
+      var padreNombre = padreClave ? (DB.articles[padreClave] || (DB.templates[padreClave] ? DB.templates[padreClave].nombre : padreClave)) : null;
+      aof.padre = padreClave ? {articulo:padreClave, nombre:padreNombre||padreClave} : null;
       // Subartículos — pueden venir como strings (sub_articulos de la OF) u objetos {articulo,nombre} (tpl.subarts)
       var subartKeys = (aof.sub_articulos||[]).filter(Boolean);
       if(!subartKeys.length && tpl && tpl.subarts && tpl.subarts.length) {
