@@ -5453,20 +5453,20 @@ async function ftLoadDataFromSP() {
           if(C&&C.currentPage==='programacion') renderProg();
           // Polling de CalTiempos — recargar si hay cambios
           try {
-            var calChk = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
-            var calLastMod = (calChk.value&&calChk.value.length) ? calChk.value[0].lastModifiedDateTime : '';
-            if(calLastMod && calLastMod !== window._calTiemLastMod) {
-              window._calTiemLastMod = calLastMod;
-              var calRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items?$expand=fields&$top=500');
+            var calPollRes = await flowGet('FT_CalTiempos', '', 500);
+            var calPollItems = (calPollRes.value||[]);
+            var calPollCount = calPollItems.length;
+            if(calPollCount !== window._calTiemCount) {
+              window._calTiemCount = calPollCount;
               DB.calTiemposGuardados = {};
-              (calRes.value||[]).forEach(function(i){
+              calPollItems.forEach(function(i){
                 var f=i.fields; var key=f.Title||''; if(!key) return;
                 var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
                 var avg=parseFloat(f.Promedio_Seg||0);
                 DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:i.id};
               });
               if(C&&C.currentPage==='historial') renderHist();
-              console.log('[CalTiempos] Actualizados desde polling:', Object.keys(DB.calTiemposGuardados).length);
+              console.log('[CalTiempos] Actualizados desde polling:', calPollCount);
             }
           } catch(e){ /* silencioso */ }
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
