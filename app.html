@@ -1239,6 +1239,68 @@ function showSyncToast(source, event) {
   setTimeout(function(){el.style.opacity="0"; el.style.transform="translateY(10px)";},2500);
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+// ── SISTEMA DE NOTIFICACIÓN DE ERRORES SP (App Móvil) ─────────────
+// ══════════════════════════════════════════════════════════════════
+window._appErrQueue = [];
+var _appErrListaLabel = {
+  'FT_Operaciones':           'Operación de fabricación',
+  'FT_OrdenesFabricacion':    'Orden de fabricación',
+  'FT_Cola_Estacion':         'Cola de estación',
+  'FT_Timers':                'Temporizador',
+  'FT_Status_Estacion':       'Estado de estación',
+  'FT_CalTiempos':            'Calibración de tiempos',
+  'FT_Pedidos':               'Pedido',
+  'FT_Plantillas_Operaciones':'Plantilla de operaciones',
+};
+function appErrNotify(contexto, err, lista) {
+  try {
+    var msg   = err && err.message ? err.message : String(err || 'Error desconocido');
+    var label = (lista && _appErrListaLabel[lista]) ? _appErrListaLabel[lista] : (lista || contexto);
+    var ts    = new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    window._appErrQueue.unshift({ ts:ts, contexto:contexto, lista:lista||'', label:label, msg:msg });
+    if (window._appErrQueue.length > 20) window._appErrQueue.pop();
+    console.error('[SP Error App] ' + contexto + (lista ? ' [' + lista + ']' : '') + ':', msg);
+    // ── Toast ─────────────────────────────────────────────────────
+    var toastA = document.getElementById('toast-app');
+    if (toastA) {
+      toastA.style.background  = 'rgba(239,68,68,.18)';
+      toastA.style.borderColor = 'rgba(239,68,68,.35)';
+      toastA.style.color       = '#fca5a5';
+      toastA.textContent = '\u26a0\ufe0f No se guardó: ' + label;
+      toastA.style.opacity = '1'; toastA.style.transform = 'translateY(0)';
+      clearTimeout(toastA._errTimeout);
+      toastA._errTimeout = setTimeout(function() {
+        toastA.style.opacity = '0'; toastA.style.transform = 'translateY(10px)';
+        setTimeout(function(){ toastA.style.background=''; toastA.style.borderColor=''; toastA.style.color=''; }, 500);
+      }, 6000);
+    }
+    // ── Banner persistente ────────────────────────────────────────
+    var appContent = document.getElementById('app-content');
+    if (!appContent) return;
+    var banner = document.getElementById('app-err-sp-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'app-err-sp-banner';
+      banner.style.cssText = 'position:sticky;top:0;z-index:300;background:rgba(239,68,68,.16);border:1px solid rgba(239,68,68,.32);border-radius:8px;padding:9px 11px;margin-bottom:9px;font-size:.74rem;color:#fca5a5;line-height:1.45;display:none;';
+      appContent.insertBefore(banner, appContent.firstChild);
+    }
+    var count = parseInt(banner.dataset.count || '0') + 1;
+    banner.dataset.count = count;
+    banner.style.display = 'block';
+    var sL = label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var sM = msg.substring(0,90).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+      + '<div><strong>\u26a0\ufe0f Error al guardar' + (count > 1 ? ' (' + count + ')' : '') + '</strong><br>'
+      + '<span style="font-size:.69rem;color:rgba(252,165,165,.8);">' + sL + ': ' + sM + '</span><br>'
+      + '<span style="font-size:.66rem;color:rgba(252,165,165,.55);">' + ts + ' · Los datos están en memoria pero no en SharePoint.</span></div>'
+      + '<button onclick="this.closest(\'#app-err-sp-banner\').style.display=\'none\';this.closest(\'#app-err-sp-banner\').dataset.count=\'0\';" '
+      + 'style="background:none;border:none;color:rgba(252,165,165,.6);font-size:1.1rem;cursor:pointer;flex-shrink:0;padding:2px 4px;line-height:1;">\u2715</button>'
+      + '</div>';
+  } catch(ignore) {}
+}
+
 // ── Helpers globales ─────────────────────────────────
 var STATIONS=["Sierra Cinta","Laser SS","Laser AC","Laser T160","Corte Laser Tubo","Doblez Planos","Centro de Maquinado","Fresadora CNC","Torno CNC","Torno Convencional","Torno LEO","MIG-A","MIG-B","MIG-C","MIG-D","TIG-A","TIG-B","TIG-C","TIG-D","TIG-E","Equipo Electrónico","Grabado","Rolado","Ensamble","PINTURA","Lavado","Ayudantes"];
 // Station status — persists across session
@@ -2380,7 +2442,7 @@ function appMoveOp(sap,idx,dir){
   of.ops.forEach(function(op,i){
     if(!op._spId) return;
     appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Secuencia: i+1})
-      .catch(function(e){ console.warn('MoveOp SP error:', e.message); });
+      .catch(function(e){ appErrNotify('Reordenar operaciones', e, 'FT_Operaciones'); });
   });
   // Notify coordinator and show notification to supervisor too
   // Notify supervisor locally that reorder was saved
@@ -2404,7 +2466,7 @@ function appStartOp(sap,opId){
   DB.timers[sap+"_"+opId]={start:Date.now(),elapsed:0,running:true};
   renderApp();
   // Save to SP immediately
-  if(typeof appSaveOpToSP==='function') appSaveOpToSP(sap, opId).catch(function(e){console.warn('SP save error:',e);});
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(sap, opId).catch(function(e){ appErrNotify('Guardar operación', e, 'FT_Operaciones'); });
   fireSync("app","op_started",{of_sap:sap, op_id:opId, op_name:op.nombre, tecnico:op.tecnico||''});
 }
 // ── Helpers tipo pausa ────────────────────────────────────
@@ -2530,7 +2592,7 @@ function appConfirmPause(){
         await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
       }
     } catch(e) {
-      console.warn('❌ Pausa SP error:', e.message||e);
+      appErrNotify('Pausar operación', e, 'FT_Operaciones');
     }
   })();
   // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
@@ -2692,14 +2754,14 @@ function appConfirmReanudar(){
             };
             appFlowEscribir('FT_Cola_Estacion', 'crear', 0, colFields2)
               .then(function(r2){ if(r2&&r2.id) newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
-              .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
+              .catch(function(e){ appErrNotify('Cola turno B', e, 'FT_Cola_Estacion'); });
           }
         }
         // 3. Guardar timer de turno A como finalizado
         if(typeof appSaveTimerToSP==='function'){
           await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
         }
-      } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
+      } catch(e){ appErrNotify('Traspaso de turno', e, 'FT_Operaciones'); }
     })();
     // Ensure newOp enters the station queue correctly
     if(newOp.estacion){
@@ -2757,7 +2819,7 @@ function appConfirmValCal(){
   if(typeof appSaveOpToSP==='function'){
     appSaveOpToSP(ctx.of_sap, ctx.op_id)
       .then(function(){ console.log('[ValCal] SP save OK'); })
-      .catch(function(e){ console.warn('[ValCal] SP save error:', e.message||e); });
+      .catch(function(e){ appErrNotify('Solicitud validación calidad', e, 'FT_Operaciones'); });
   }
   // Detener timer al entrar en validación
   var key = ctx.of_sap+'_'+ctx.op_id;
@@ -3582,7 +3644,7 @@ function doFinish(ctx, el, ok, def, rej) {
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
   closeAppModal('app-modal-finish'); renderApp();
-  if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){console.warn('SP finish save:',e);});
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ appErrNotify('Terminar operación', e, 'FT_Operaciones'); });
   fireSync('app','op_finished',{of_sap:ctx.of_sap, op_id:op.id, op_name:op.nombre, obs:obs, tecnico:op.tecnico||''});
 }
 
@@ -3763,8 +3825,8 @@ function appConfirmFinish(){
     });
     renderApp();
     // Persistir en SP
-    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
-    appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
+    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ appErrNotify('Terminar operación', e, 'FT_Operaciones'); });
+    appSaveTimerToSP(key).catch(function(e){ appErrNotify('Finalizar temporizador', e, 'FT_Timers'); });
     fireSync("app","op_finished",{of_sap:ctx.of_sap});
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
@@ -4136,11 +4198,11 @@ function _doStartOp(sap, opId){
   renderApp();
   // Persistir en SP directamente (fireSync override puede haber sido pisado por patches)
   if (typeof appSaveOpToSP === 'function' && appSiteId) {
-    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('appSaveOpToSP (start):', e.message); });
+    appSaveOpToSP(sap, opId).catch(function(e){ appErrNotify('Iniciar operación (SP)', e, 'FT_Operaciones'); });
   }
   if (typeof appSaveTimerToSP === 'function' && appSiteId) {
     var _timerKey = sap + '_' + opId;
-    appSaveTimerToSP(_timerKey).catch(function(e){ console.warn('appSaveTimerToSP (start):', e.message); });
+    appSaveTimerToSP(_timerKey).catch(function(e){ appErrNotify('Iniciar temporizador (SP)', e, 'FT_Timers'); });
   }
   fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
@@ -5246,7 +5308,7 @@ async function appQueueSave(){
           if(!op._spId) continue;
           try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
                 console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
-          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          } catch(e){ appErrNotify('Actualizar cola de estación', e, 'FT_Cola_Estacion'); }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
         }
       }
@@ -6163,7 +6225,7 @@ async function appLoadDataFromSP() {
       console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds:', Object.values(DB.calTiemposGuardados).filter(function(v){return v._spId;}).length);
     } catch(e){ console.warn('[CalTiempos] No se pudieron cargar:', e.message); }
     console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
-  } catch(e) { console.warn('appLoadDataFromSP error:', e); }
+  } catch(e) { appErrNotify('Carga inicial de datos SP', e, 'FT_Operaciones'); }
 }
 
 // Persist op changes to SP from app
@@ -6246,7 +6308,7 @@ async function appSaveOpToSP(of_sap, opId) {
       op.isTemplate = false;
       console.log('✅ Flow POST OK: '+op.nombre);
     }
-  } catch(e) { console.log('❌ appSaveOpToSP crash: '+e.message); console.warn('appSaveOpToSP:', e.message); }
+  } catch(e) { appErrNotify('Guardar operación', e, 'FT_Operaciones'); }
 }
 
 async function appSaveTimerToSP(key) {
@@ -6275,7 +6337,7 @@ async function appSaveTimerToSP(key) {
       var res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
       if (res && res.id) t._spId = res.id;
     }
-  } catch(e) { console.warn('appSaveTimerToSP:', e.message||e); }
+  } catch(e) { appErrNotify('Guardar temporizador', e, 'FT_Timers'); }
 }
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
@@ -6310,9 +6372,9 @@ async function appSaveQueueToSP(of_sap) {
           if (res && res.id) op._queueSpId = res.id;
           console.log('✅ FT_Cola POST: '+op.id);
         }
-      } catch(e) { console.warn('appSaveQueueToSP op '+op.id+':', e.message); }
+      } catch(e) { appErrNotify('Guardar cola (operación)', e, 'FT_Cola_Estacion'); }
     }
-  } catch(e) { console.warn('appSaveQueueToSP:', e.message); }
+  } catch(e) { appErrNotify('Guardar cola de estación', e, 'FT_Cola_Estacion'); }
 }
 
 // ── Save FT_Status_Estacion from app ──────────────────────
@@ -6342,7 +6404,7 @@ async function appSaveStationStatusToSP(estacion) {
         }
       }
     }
-  } catch(e) { console.warn('appSaveStationStatusToSP:', e.message); }
+  } catch(e) { appErrNotify('Guardar estado de estación', e, 'FT_Status_Estacion'); }
 }
 
 // ── Save FT_CalTiempos from app ───────────────────────────
@@ -6415,8 +6477,8 @@ async function appSavePedidoStatusToSP(pedido) {
       } else {
         await appFlowEscribir('FT_Pedidos', 'crear', 0, fields);
       }
-    } catch(e) { console.warn('appSavePedidoStatusToSP:', e.message); }
-  } catch(e) { console.warn('appSavePedidoStatusToSP outer:', e.message); }
+    } catch(e) { appErrNotify('Guardar estado de pedido', e, 'FT_Pedidos'); }
+  } catch(e) { appErrNotify('Guardar estado de pedido', e, 'FT_Pedidos'); }
 }
 
 // ── Override fireSync — persist ALL relevant events to SP ──
@@ -7988,7 +8050,7 @@ async function appSaveMoveToSP(of_sap, of){
       } catch(pe){ console.warn('  ❌ PATCH error '+op.id+':', pe.message||pe); }
     }
     console.log('✅ Secuencia guardada: '+savedCount+'/'+of.ops.length+' — OF '+of_sap);
-  } catch(e){ console.warn('❌ appSaveMoveToSP error:', e.message||e); }
+  } catch(e){ appErrNotify('Guardar reordenamiento de operaciones', e, 'FT_Operaciones'); }
 }
 function appStartOp(sap,opId){
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
@@ -8129,7 +8191,7 @@ function appConfirmPause(){
       await appSaveOpToSP(ctx.of_sap, ctx.op_id);
       console.log('✅ Pausa SP OK _spId:'+_pOp._spId);
       if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
-    } catch(e){ console.warn('❌ Pausa SP error:',e.message||e); }
+    } catch(e){ appErrNotify('Pausar operación', e, 'FT_Operaciones'); }
   })();
   // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
   var _pauseCtxOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
@@ -8290,14 +8352,14 @@ function appConfirmReanudar(){
             };
             appFlowEscribir('FT_Cola_Estacion', 'crear', 0, colFields2)
               .then(function(r2){ if(r2&&r2.id) newOp._queueSpId=r2.id; console.log('✅ Turno B en FT_Cola_Estacion'); })
-              .catch(function(e){ console.warn('⚠ Cola turno B:', e.message); });
+              .catch(function(e){ appErrNotify('Cola turno B', e, 'FT_Cola_Estacion'); });
           }
         }
         // 3. Guardar timer de turno A como finalizado
         if(typeof appSaveTimerToSP==='function'){
           await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
         }
-      } catch(e){ console.warn('❌ Traspaso SP error:', e.message||e); }
+      } catch(e){ appErrNotify('Traspaso de turno', e, 'FT_Operaciones'); }
     })();
     // Ensure newOp enters the station queue correctly
     if(newOp.estacion){
@@ -8339,7 +8401,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
       await appSaveOpToSP(sap, opId);
       console.log('✅ Reanudar SP OK');
       if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(sap+'_'+opId);
-    } catch(e){ console.warn('❌ Reanudar SP error:', e.message||e); }
+    } catch(e){ appErrNotify('Reanudar operación', e, 'FT_Operaciones'); }
   })();
   var _rOf2 = DB.activeOFs.find(function(a){return a.of_sap===sap;});
   var _rOp2 = _rOf2 ? _rOf2.ops.find(function(o){return o.id===opId;}) : null;
@@ -8369,7 +8431,7 @@ function appConfirmValCal(){
   console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' note='+note);
   appSaveOpToSP(ctx.of_sap, ctx.op_id)
     .then(function(){ console.log('[ValCal] SP save OK'); })
-    .catch(function(e){ console.warn('[ValCal] SP save error:', e.message||e); });
+    .catch(function(e){ appErrNotify('Solicitud validación calidad', e, 'FT_Operaciones'); });
   var key=ctx.of_sap+'_'+ctx.op_id;
   if(DB.timers[key]){
     if(DB.timers[key].running&&DB.timers[key].start){
@@ -8476,7 +8538,7 @@ function appCalRespond(result){
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
   closeAppModal("app-modal-cal-resp");renderApp();
-  appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
+  appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ appErrNotify('Respuesta calidad', e, 'FT_Operaciones'); });
   _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
 }
 function appOpenFinish(sap,opId){
@@ -8619,15 +8681,15 @@ function appConfirmAddOp(){
       };
       if(existing){
         appFlowEscribir('FT_Plantillas_Operaciones','actualizar',parseInt(existing.id),tplFields)
-          .catch(function(e){ console.warn('SP tpl update:', e.message); });
+          .catch(function(e){ appErrNotify('Actualizar plantilla', e, 'FT_Plantillas_Operaciones'); });
       } else {
         appFlowEscribir('FT_Plantillas_Operaciones','crear',0,tplFields)
-          .catch(function(e){ console.warn('SP tpl create:', e.message); });
+          .catch(function(e){ appErrNotify('Crear plantilla', e, 'FT_Plantillas_Operaciones'); });
       }
-    }).catch(function(e){ console.warn('SP tpl fetch:', e.message); });
+    }).catch(function(e){ appErrNotify('Cargar plantilla', e, 'FT_Plantillas_Operaciones'); });
   }
   // Persistir op en SP
-  appSaveOpToSP(ctx.of_sap, newOp.id).catch(function(e){ console.warn('SP addOp:', e.message); });
+  appSaveOpToSP(ctx.of_sap, newOp.id).catch(function(e){ appErrNotify('Agregar operación', e, 'FT_Operaciones'); });
   closeAppModal("app-modal-op"); APP.expanded[ctx.of_sap]=true; renderApp();
   fireSync("app","op_added",{of_sap:ctx.of_sap});
   if(newOp.estacion){
@@ -9222,8 +9284,8 @@ function doFinish(ctx, el, ok, def, rej) {
   sqPurge(); sqSyncColaNumbers();
   closeAppModal('app-modal-finish'); renderApp();
   // Persistir en SP
-  appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
-  appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
+  appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ appErrNotify('Terminar operación', e, 'FT_Operaciones'); });
+  appSaveTimerToSP(key).catch(function(e){ appErrNotify('Finalizar temporizador', e, 'FT_Timers'); });
   fireSync('app','op_finished',{of_sap:ctx.of_sap, op_name:op.nombre, obs:obs});
 }
 
@@ -9401,7 +9463,7 @@ function appConfirmFinish(){
       // Add retrabajo op to queue immediately with correct number
       sqAddOF(ctx.of_sap);
       // Persistir op retrabajo en SP
-      appSaveOpToSP(ctx.of_sap, retrOp.id).catch(function(e){ console.warn('SP retrOp save:', e.message); });
+      appSaveOpToSP(ctx.of_sap, retrOp.id).catch(function(e){ appErrNotify('Guardar retrabajo', e, 'FT_Operaciones'); });
       appSaveQueueToSP(ctx.of_sap).catch(function(e){});
     }
     // Purge done op and renumber queue
@@ -9413,8 +9475,8 @@ function appConfirmFinish(){
     });
     renderApp();
     // Persistir en SP
-    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
-    appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
+    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ appErrNotify('Terminar operación', e, 'FT_Operaciones'); });
+    appSaveTimerToSP(key).catch(function(e){ appErrNotify('Finalizar temporizador', e, 'FT_Timers'); });
     fireSync("app","op_finished",{of_sap:ctx.of_sap});
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
@@ -9814,11 +9876,11 @@ function _doStartOp(sap, opId){
   renderApp();
   // Persistir en SP directamente (fireSync override puede haber sido pisado por patches)
   if (typeof appSaveOpToSP === 'function' && appSiteId) {
-    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('appSaveOpToSP (start):', e.message); });
+    appSaveOpToSP(sap, opId).catch(function(e){ appErrNotify('Iniciar operación (SP)', e, 'FT_Operaciones'); });
   }
   if (typeof appSaveTimerToSP === 'function' && appSiteId) {
     var _timerKey = sap + '_' + opId;
-    appSaveTimerToSP(_timerKey).catch(function(e){ console.warn('appSaveTimerToSP (start):', e.message); });
+    appSaveTimerToSP(_timerKey).catch(function(e){ appErrNotify('Iniciar temporizador (SP)', e, 'FT_Timers'); });
   }
   fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre});
 }
@@ -9917,7 +9979,7 @@ appConfirmValCal = function(){
   console.log('[ValCal] _spId='+op._spId+' status='+op.status);
   appSaveOpToSP(ctx.of_sap, ctx.op_id)
     .then(function(){ console.log('[ValCal] SP OK'); })
-    .catch(function(e){ console.warn('[ValCal] SP error:', e.message||e); });
+    .catch(function(e){ appErrNotify('Solicitud validación calidad', e, 'FT_Operaciones'); });
   var key=ctx.of_sap+'_'+ctx.op_id;
   if(DB.timers[key]){
     if(DB.timers[key].running&&DB.timers[key].start){
@@ -10934,7 +10996,7 @@ async function appQueueSave(){
           if(!op._spId) continue;
           try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
                 console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
-          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          } catch(e){ appErrNotify('Actualizar cola de estación', e, 'FT_Cola_Estacion'); }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
         }
       }
@@ -11319,7 +11381,7 @@ function startSPPolling() {
     if (!appSiteId || !appToken) return;
     try {
       await spPollCheck();
-    } catch(e) { if(e.message && !e.message.includes('fetch')) console.warn('SP poll error:', e.message); }
+    } catch(e) { if(e.message && !e.message.includes('fetch')) appErrNotify('Actualización automática SP', e, 'FT_Operaciones'); }
   }, 15000); // cada 15 segundos para seguimiento en tiempo real
 }
 
@@ -11347,7 +11409,7 @@ async function spPollCheck() {
         console.log('✅ Ops reload completo — actualizando UI');
         renderApp();
         _refreshStationViews();
-      } catch(pe){ console.warn('❌ Poll ops reload error:', pe.message||pe); }
+      } catch(pe){ if(!pe.message||!pe.message.includes('fetch')) appErrNotify('Actualización automática operaciones', pe, 'FT_Operaciones'); }
     }
     if (!_spLastOpsHash && latestOpMod) {
       _spLastOpsHash = latestOpMod;
@@ -11370,7 +11432,7 @@ async function spPollCheck() {
         renderApp();
         _refreshStationViews();
         console.log('✅ UI actualizada por poll cola');
-      } catch(pe){ console.warn('❌ Poll cola reload error:', pe.message||pe); }
+      } catch(pe){ if(!pe.message||!pe.message.includes('fetch')) appErrNotify('Actualización automática cola', pe, 'FT_Cola_Estacion'); }
     }
   } catch(e){ /* silencioso */ }
 
@@ -11511,7 +11573,7 @@ async function appReloadOpsFromSP() {
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
-    } catch(e){ if(!e.message||!e.message.includes('fetch')) console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
+    } catch(e){ if(!e.message||!e.message.includes('fetch')) appErrNotify('Recargar cola de estación', e, 'FT_Cola_Estacion'); }
 
     // Sort station queues by Cola from FT_Cola_Estacion
     // Step 1: Clear and rebuild queues fresh
@@ -11569,7 +11631,7 @@ async function appReloadOpsFromSP() {
         }
       });
     });
-  } catch(e) { console.warn('appReloadOpsFromSP error:', e.message); }
+  } catch(e) { appErrNotify('Recargar operaciones SP', e, 'FT_Operaciones'); }
 }
 </script>
 </body>

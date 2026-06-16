@@ -4309,10 +4309,10 @@ async function ftSaveProgramacionToSP() {
         fieldsToSave.Fecha_Programacion = of_.fecha_programacion + 'T00:00:00Z';
       }
       await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
-        .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
+        .catch(e => { console.warn('SP save Programado_Hoy error:', of_.of_sap, e); ftErrNotify('Guardar programación del día', e, 'FT_OrdenesFabricacion'); });
     }
     console.log('✅ Programación guardada en SharePoint');
-  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
+  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); ftErrNotify('Guardar programación', e, 'FT_OrdenesFabricacion'); }
 }
 
 // -- SP Persistence: Save Prioridad changes --------------------------------
@@ -4339,7 +4339,7 @@ async function ftSavePrioridadToSP() {
     });
     await Promise.all(patches);
     if(errors) console.warn('Prioridades SP: '+saved+' OK, '+errors+' errores');
-  } catch(e) { console.warn('ftSavePrioridadToSP error:', e); }
+  } catch(e) { console.warn('ftSavePrioridadToSP error:', e); ftErrNotify('Guardar prioridad de OF', e, 'FT_OrdenesFabricacion'); }
 }
 
 
@@ -4370,7 +4370,7 @@ async function ftSaveTemplateToSP(art) {
       await spEscribir('FT_Plantillas_Operaciones', fields, null);
     }
     console.log('Template saved to SP:', art);
-  } catch(e) { console.warn('ftSaveTemplateToSP error:', e); }
+  } catch(e) { console.warn('ftSaveTemplateToSP error:', e); ftErrNotify('Guardar plantilla de operaciones', e, 'FT_Plantillas_Operaciones'); }
 }
 
 // ====== GESTION DE ARTICULOS (FT_Articulos SP) ======
@@ -5558,6 +5558,7 @@ async function ftLoadDataFromSP() {
   }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
+    ftErrNotify('Carga inicial de datos SharePoint', e, 'FT_Operaciones');
   }
 }
 
@@ -5587,7 +5588,7 @@ async function ftSaveOpToSP(of_sap, opId) {
       if (found) { op._spId=found.id; await spEscribir('FT_Operaciones', fields, op._spId); }
       else await ftCreateOpInSP(of_sap, op, aof);
     }
-  } catch(e) { console.warn('ftSaveOpToSP:', e.message); }
+  } catch(e) { ftErrNotify('ftSaveOpToSP', e, 'FT_Operaciones'); }
 }
 async function ftCreateOpInSP(of_sap, op, aof) {
   if (!op) return;
@@ -5638,6 +5639,7 @@ async function ftCreateOpInSP(of_sap, op, aof) {
         console.log('✅ Op creada en SP (solo Title):', op.id);
       } catch(e3) {
         console.error('ftCreateOpInSP FATAL:', e3.message);
+        ftErrNotify('ftCreateOpInSP (registro de operación)', e3, 'FT_Operaciones');
         throw e3;
       }
     }
@@ -5682,7 +5684,7 @@ async function ftSaveTimerToSP(key) {
       const res = await spEscribir('FT_Timers', fields, null);
       if (res&&res.id) t._spId=res.id;
     }
-  } catch(e) { console.warn('ftSaveTimerToSP error:', e); }
+  } catch(e) { ftErrNotify('ftSaveTimerToSP', e, 'FT_Timers'); }
 }
 
 // ====== FT_Cola_Estacion — save queue for a given OF's ops ======
@@ -5702,7 +5704,7 @@ async function ftSaveQueueToSP(of_sap) {
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
       });
-    } catch(e){ console.warn('ftSaveQueueToSP: error loading existing items:', e.message); }
+    } catch(e){ ftErrNotify('ftSaveQueueToSP (carga existente)', e, 'FT_Cola_Estacion'); }
 
     // ── Step 2: Restore _queueSpId on all ops from cache ──────────────────
     DB.activeOFs.forEach(function(a){
@@ -5734,9 +5736,9 @@ async function ftSaveQueueToSP(of_sap) {
           var res = await spEscribir('FT_Cola_Estacion', fields, null);
           if(res&&res.id){ op._queueSpId=res.id; window._queueSpIdCache[op.id]=res.id; }
         }
-      } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
+      } catch(e) { ftErrNotify('ftSaveQueueToSP (operación)', e, 'FT_Cola_Estacion'); }
     }
-  } catch(e) { console.warn('ftSaveQueueToSP error:', e.message); }
+  } catch(e) { ftErrNotify('ftSaveQueueToSP', e, 'FT_Cola_Estacion'); }
 }
 
 // ====== FT_Status_Estacion — save station status ======
@@ -5765,7 +5767,7 @@ async function ftSaveStationStatusToSP(estacion) {
         if (found) { ss._spId=found.id; await spEscribir('FT_Status_Estacion', fields, ss._spId); }
       }
     }
-  } catch(e) { console.warn('ftSaveStationStatusToSP error:', e.message); }
+  } catch(e) { ftErrNotify('ftSaveStationStatusToSP', e, 'FT_Status_Estacion'); }
 }
 
 // ====== FT_CalTiempos — save a calibration time record ======
@@ -5788,7 +5790,7 @@ async function ftSaveCalTiempoToSP(key, calData) {
       var res = await spEscribir('FT_CalTiempos', fields, null);
       if (res&&res.id) calData._spId=res.id;
     }
-  } catch(e) { console.warn('ftSaveCalTiempoToSP error:', e.message); }
+  } catch(e) { ftErrNotify('ftSaveCalTiempoToSP', e, 'FT_CalTiempos'); }
 }
 
 // ====== FT_Pedidos — sync pedido status when ops change ======
@@ -5821,8 +5823,8 @@ async function ftSavePedidoStatusToSP(pedido) {
       var found = (existRes.value||[]).find(function(i){ return (i.fields.Title||i.fields.Pedido)===pedido; });
       if (found) { await spEscribir('FT_Pedidos', fields, found.id); }
       else { await spEscribir('FT_Pedidos', fields, null); }
-    } catch(e) { console.warn('ftSavePedidoStatusToSP error:', e.message); }
-  } catch(e) { console.warn('ftSavePedidoStatusToSP outer error:', e.message); }
+    } catch(e) { ftErrNotify('ftSavePedidoStatusToSP', e, 'FT_Pedidos'); }
+  } catch(e) { ftErrNotify('ftSavePedidoStatusToSP', e, 'FT_Pedidos'); }
 }
 
 // -- Load data when page-Fabricaciones is shown --------
@@ -5993,6 +5995,140 @@ function showSyncToast(source, event) {
   setTimeout(function(){el.style.opacity="0"; el.style.transform="translateY(10px)";},2500);
 }
 
+// ══════════════════════════════════════════════════════════════════
+// ── SISTEMA DE NOTIFICACIÓN DE ERRORES SP ─────────────────────────
+// Intercepción no destructiva: sólo notifica, nunca bloquea flujos.
+// ══════════════════════════════════════════════════════════════════
+window._ftErrQueue = [];   // cola de errores pendientes de revisión
+
+// Etiquetas amigables por lista SP
+var _ftErrListaLabel = {
+  'FT_Operaciones':          'Operación de fabricación',
+  'FT_OrdenesFabricacion':   'Orden de fabricación',
+  'FT_Cola_Estacion':        'Cola de estación',
+  'FT_Timers':               'Temporizador',
+  'FT_Status_Estacion':      'Estado de estación',
+  'FT_CalTiempos':           'Calibración de tiempos',
+  'FT_Pedidos':              'Pedido',
+  'FT_Plantillas_Operaciones':'Plantilla de operaciones',
+};
+
+/**
+ * ftErrNotify(contexto, error, lista)
+ * Llama a esta función desde cualquier catch que hoy solo hace console.warn/error.
+ * No lanza excepciones — está diseñada para ser siempre segura.
+ *
+ * @param {string} contexto  Nombre de la función / acción que falló
+ * @param {Error|string} err El error capturado
+ * @param {string} [lista]   Nombre de la lista SP afectada (opcional)
+ */
+function ftErrNotify(contexto, err, lista) {
+  try {
+    var msg   = err && err.message ? err.message : String(err || 'Error desconocido');
+    var label = (lista && _ftErrListaLabel[lista]) ? _ftErrListaLabel[lista] : (lista || contexto);
+    var ts    = new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    var entry = { ts: ts, contexto: contexto, lista: lista || '', label: label, msg: msg };
+
+    // Guardar en cola (máx 20)
+    window._ftErrQueue.unshift(entry);
+    if (window._ftErrQueue.length > 20) window._ftErrQueue.pop();
+
+    // Consola siempre (no silenciar — útil para debug)
+    console.error('[SP Error] ' + contexto + (lista ? ' [' + lista + ']' : '') + ':', msg);
+
+    // ── Portal web ───────────────────────────────────────────────
+    // 1. Toast rojo en la zona del coordinador
+    var toastC = document.getElementById('toast-coord');
+    if (toastC) {
+      toastC.style.background  = 'rgba(239,68,68,.18)';
+      toastC.style.borderColor = 'rgba(239,68,68,.35)';
+      toastC.style.color       = '#fca5a5';
+      toastC.textContent = '⚠️ No se guardó: ' + label + ' — ' + msg.substring(0, 70);
+      toastC.style.opacity = '1'; toastC.style.transform = 'translateY(0)';
+      // Mantener visible más tiempo para errores (6s)
+      clearTimeout(toastC._errTimeout);
+      toastC._errTimeout = setTimeout(function() {
+        toastC.style.opacity = '0'; toastC.style.transform = 'translateY(10px)';
+        // Restaurar colores originales después de ocultarse
+        setTimeout(function() {
+          toastC.style.background  = '';
+          toastC.style.borderColor = '';
+          toastC.style.color       = '';
+        }, 500);
+      }, 6000);
+    }
+
+    // 2. Badge rojo en el botón de notificaciones del coordinador
+    var badge = document.getElementById('notif-badge');
+    if (badge) {
+      badge.style.display = 'inline-block';
+      badge.style.background = '#ef4444';
+      var curr = parseInt(badge.textContent) || 0;
+      badge.textContent = curr + 1;
+    }
+    var label2 = document.getElementById('notif-btn-label');
+    if (label2) label2.textContent = '⚠️ Error SP';
+
+    // 3. Agregar al panel de notificaciones del coordinador
+    var container = document.getElementById('coord-notifs');
+    if (container) {
+      var notif = document.createElement('div');
+      notif.style.cssText = 'background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:6px 10px;font-size:.71rem;color:#fca5a5;margin-bottom:5px;line-height:1.4;';
+      notif.innerHTML = '<strong>⚠️ ' + ts + ' — ' + esc(label) + '</strong><br>'
+        + '<span style="color:rgba(252,165,165,.7);font-size:.67rem;">' + esc(msg.substring(0, 120)) + '</span>';
+      // Botón para descartar
+      var btn = document.createElement('button');
+      btn.textContent = '✕';
+      btn.style.cssText = 'float:right;background:none;border:none;color:rgba(252,165,165,.6);cursor:pointer;font-size:.75rem;margin-top:-2px;padding:0 2px;';
+      btn.onclick = function() { notif.remove(); ftErrNotifyUpdateBadge(); };
+      notif.insertBefore(btn, notif.firstChild);
+      container.prepend(notif);
+      if (container.children.length > 10) container.removeChild(container.lastChild);
+    }
+
+    // ── App móvil ─────────────────────────────────────────────────
+    // Banner rojo persistente en la app (se descarta manualmente)
+    _ftErrShowAppBanner(label, msg);
+
+  } catch(ignore) { /* ftErrNotify nunca debe lanzar */ }
+}
+
+function ftErrNotifyUpdateBadge() {
+  var container = document.getElementById('coord-notifs');
+  var errCount  = container ? container.querySelectorAll('div[style*="rgba(239,68,68"]').length : 0;
+  var badge     = document.getElementById('notif-badge');
+  var label2    = document.getElementById('notif-btn-label');
+  if (badge)  { badge.textContent = errCount > 0 ? String(errCount) : '0'; badge.style.display = errCount > 0 ? 'inline-block' : 'none'; }
+  if (label2) { label2.textContent = errCount > 0 ? '⚠️ ' + errCount + ' error(es) SP' : 'Sin notificaciones'; }
+}
+
+function _ftErrShowAppBanner(label, msg) {
+  // El banner vive en #app-content o en un div fijo sobre la app
+  var appContent = document.getElementById('app-content');
+  if (!appContent) return;
+
+  // Crear o reusar el banner de error
+  var banner = document.getElementById('ft-err-app-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'ft-err-app-banner';
+    banner.style.cssText = 'position:sticky;top:0;z-index:200;background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.35);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.72rem;color:#fca5a5;line-height:1.4;display:none;';
+    appContent.insertBefore(banner, appContent.firstChild);
+  }
+
+  // Acumular mensajes (mostrar el último + contador)
+  var count = parseInt(banner.dataset.count || '0') + 1;
+  banner.dataset.count = count;
+  banner.style.display = 'block';
+  banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">'
+    + '<div><strong>⚠️ Error al guardar' + (count > 1 ? ' (' + count + ')' : '') + '</strong><br>'
+    + '<span style="font-size:.68rem;color:rgba(252,165,165,.8);">' + esc(label) + ': ' + esc(msg.substring(0, 80)) + '</span></div>'
+    + '<button onclick="this.closest(\'#ft-err-app-banner\').style.display=\'none\';this.closest(\'#ft-err-app-banner\').dataset.count=\'0\';" '
+    + 'style="background:none;border:none;color:rgba(252,165,165,.7);font-size:1rem;cursor:pointer;flex-shrink:0;padding:0;">✕</button>'
+    + '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════
 // -- Helpers globales ---------------------------------
 var STATIONS=["Sierra Cinta","Laser SS","Laser AC","Laser T160","Corte Laser Tubo","Doblez Planos","Centro de Maquinado","Fresadora CNC","Torno CNC","Torno Convencional","Torno LEO","MIG-A","MIG-B","MIG-C","MIG-D","TIG-A","TIG-B","TIG-C","TIG-D","TIG-E","Equipo Electrónico","Grabado","Rolado","Ensamble","PINTURA","Lavado","Ayudantes"];
 // Station status — persists across session
@@ -6336,7 +6472,7 @@ async function restaurarOrden(sap){
     var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
     var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
     if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
-  }catch(e){console.warn('SP restaurarOrden:',e.message);}
+  }catch(e){ftErrNotify('restaurarOrden', e, 'FT_OrdenesFabricacion');}
   renderProg();
 }
 async function restaurarPedido(pedido){
@@ -6350,7 +6486,7 @@ async function restaurarPedido(pedido){
       var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
       var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
-    }catch(e){console.warn('SP restaurar:',e.message);}
+    }catch(e){ftErrNotify('restaurarProgramacion', e, 'FT_OrdenesFabricacion');}
   }
   renderProg();
 }
@@ -6383,7 +6519,7 @@ async function _ejecutarCancelacionOF(of, aof){
     var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
     var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
     if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
-  } catch(e){ console.warn('SP cancel OF:', e.message); }
+  } catch(e){ ftErrNotify('cancelarOF', e, 'FT_OrdenesFabricacion'); }
   // Persistir en SP — Operaciones
   if(aof && aof.ops){
     for(var i=0;i<aof.ops.length;i++){
@@ -8342,6 +8478,7 @@ function saveOFOps() {
         console.log('✅ saveOFOps: ops guardadas en SP');
       } catch(e) {
         console.error('saveOFOps SP error:', e);
+        ftErrNotify('Guardar operaciones asignadas', e, 'FT_Operaciones');
       }
     })();
   }
@@ -8662,7 +8799,7 @@ appMoveOp = function(sap, idx, dir) {
     of.ops.forEach(function(op,i){
       if(!op._spId) return;
       spEscribir('FT_Operaciones', {Secuencia: i+1}, op._spId)
-        .catch(function(e){ console.warn('MoveOp portal SP:', e.message); });
+        .catch(function(e){ console.warn('MoveOp portal SP:', e.message); ftErrNotify('Reordenar operaciones', e, 'FT_Operaciones'); });
     });
   }
   // Coordinator notification (to supervisor via fireSync)
@@ -9166,7 +9303,7 @@ function saveTplModal(){
               var matched = aof.ops.filter(function(o){return !!o._spId;}).length;
               console.log('🔄 SP ops cargadas para OF '+aof.of_sap+': '+freshRes.value.length+' items, '+matched+'/'+aof.ops.length+' ops con _spId');
             }
-          } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); }
+          } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); ftErrNotify('Recargar operaciones SP', reloadErr, 'FT_Operaciones'); }
 
           // ── Reorder: match tpl ops to existing SP ops, only PATCH Secuencia ──
           // Use a consumed-copy to handle duplicate names correctly
@@ -9246,6 +9383,7 @@ function saveTplModal(){
         if (typeof renderSeg === 'function') renderSeg();
       } catch(e) {
         console.error('Error sincronizando plantilla a SP:', e.message);
+        ftErrNotify('Sincronizar plantilla de operaciones', e, 'FT_Plantillas_Operaciones');
       }
     }, 500);
   }
@@ -9741,7 +9879,7 @@ async function movePedidoCierre(pedido){
       var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre'}, item.id);
     }
-  } catch(e){ console.warn('SP movePedidoCierre:', e.message); }
+  } catch(e){ ftErrNotify('moverPedidoCierre', e, 'FT_Pedidos'); }
 }
 async function cerrarPedido(pedido){
   showInfoModal('Cerrar pedido '+pedido,
@@ -9771,7 +9909,7 @@ async function cerrarPedido(pedido){
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
           if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false}, item.id);
         }
-      } catch(e){ console.warn('SP cerrarPedido:', e.message); }
+      } catch(e){ ftErrNotify('cerrarPedido', e, 'FT_Pedidos'); }
     }
   );
 }
@@ -10569,7 +10707,7 @@ async function portalSaveColaToSP(estacion){
       try {
         await spEscribir('FT_Operaciones', {Cola: colaNum}, op._spId);
         savedOps++;
-      } catch(e){ console.warn('Cola PATCH FT_Op error:', e.message); }
+      } catch(e){ ftErrNotify('Cola reordenar (operación)', e, 'FT_Operaciones'); }
     }
 
     // PATCH FT_Cola_Estacion.Posicion (never POST — avoid duplicates)
@@ -10577,7 +10715,7 @@ async function portalSaveColaToSP(estacion){
       try {
         await spEscribir('FT_Cola_Estacion', {Posicion: colaNum, Activo: op.status!=='done'}, op._queueSpId);
         savedQueue++;
-      } catch(e){ console.warn('Cola PATCH FT_Cola error:', e.message); }
+      } catch(e){ ftErrNotify('Cola reordenar (posición)', e, 'FT_Cola_Estacion'); }
     }
   }
   console.log('✅ Cola SP — FT_Op: '+savedOps+', FT_Cola: '+savedQueue+'/'+q.length+' ops');
