@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.39</title>
+<title>FabTracker App v2.40</title>
 
 <!-- MSAL Browser -->
 
@@ -6148,6 +6148,19 @@ async function appLoadDataFromSP() {
         }).join(', '));
       }
     });
+    // Cargar CalTiempos existentes para obtener _spId y poder actualizar
+    if(appSiteId){
+      try {
+        var calExRes = await appGraphGet('sites/'+appSiteId+'/lists/FT_CalTiempos/items?$expand=fields&$top=500');
+        (calExRes.value||[]).forEach(function(i){
+          var key=i.fields.Title||''; if(!key) return;
+          var muestras=[]; try{muestras=JSON.parse(i.fields.Muestras_JSON||'[]');}catch(e){}
+          var avg=parseFloat(i.fields.Promedio_Seg||0);
+          DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(i.fields.Count||muestras.length||0),_spId:i.id};
+        });
+        console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length);
+      } catch(e){ console.warn('[CalTiempos] No se pudieron cargar:', e.message); }
+    }
     console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
   } catch(e) { console.warn('appLoadDataFromSP error:', e); }
 }
@@ -6336,7 +6349,6 @@ async function appSaveCalTiempoToSP(key, calData) {
   if (!key) return;
   console.log('[CalTiempos] Guardando:', key, '| _spId:', calData._spId||'(nuevo)', '| appSiteId:', appSiteId?'ok':'NULL');
   try {
-    // Extraer OF_SAP y Op_ID desde el key (formato: "sap_opId" o "sap_opId_extra")
     var keyParts = key.split('_');
     var of_sap = calData.of_sap || keyParts[0] || '';
     var op_id  = calData.op_id  || keyParts.slice(1).join('_') || '';
@@ -6350,6 +6362,16 @@ async function appSaveCalTiempoToSP(key, calData) {
       Tecnico_Cal:   appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
       Fecha_Registro: new Date().toISOString(),
     };
+    // Si no tenemos _spId, buscar por Title en SP via Graph
+    if (!calData._spId && appSiteId) {
+      try {
+        var searchRes = await appGraphGet('sites/'+appSiteId+'/lists/FT_CalTiempos/items?$filter=fields/Title eq \''+encodeURIComponent(key)+'\'&$expand=fields&$top=1');
+        if (searchRes && searchRes.value && searchRes.value.length > 0) {
+          calData._spId = searchRes.value[0].id;
+          console.log('[CalTiempos] Registro existente encontrado, id:', calData._spId);
+        }
+      } catch(se){ console.warn('[CalTiempos] Búsqueda existente falló:', se.message); }
+    }
     if (calData._spId) {
       await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
       console.log('[CalTiempos] Actualizado OK:', key);

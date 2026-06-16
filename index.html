@@ -5451,6 +5451,22 @@ async function ftLoadDataFromSP() {
           }
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') renderProg();
+          // Polling de CalTiempos — recargar si hay cambios
+          try {
+            var calRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items?$expand=fields&$top=500');
+            var calItems = calRes.value||[];
+            if(calItems.length !== Object.keys(DB.calTiemposGuardados).length){
+              DB.calTiemposGuardados = {};
+              calItems.forEach(function(i){
+                var f=i.fields; var key=f.Title||'';
+                if(!key) return;
+                var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
+                var avg=parseFloat(f.Promedio_Seg||0);
+                DB.calTiemposGuardados[key]={of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:i.id};
+              });
+              if(C&&C.currentPage==='historial') renderHist();
+            }
+          } catch(e){ /* silencioso */ }
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
           var ind=document.getElementById('auto-refresh-indicator');
           if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
