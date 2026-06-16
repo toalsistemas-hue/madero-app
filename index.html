@@ -9555,12 +9555,15 @@ function renderSeg(){
         var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)'}[op.status]||'var(--muted)';
         var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑'}[op.status]||'○';
         h+='<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:4px;padding:5px 9px;">';
-        h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
-        h+='<span style="color:'+sCol+';font-size:.7rem;">'+sIco+'</span>';
-        h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
-        if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">👷 '+esc(op.tecnico)+'</span>';
-        if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        h+='<div style="display:flex;align-items:flex-start;gap:6px;">';
+        h+='<span style="color:'+sCol+';font-size:.7rem;margin-top:2px;flex-shrink:0;">'+sIco+'</span>';
+        h+='<div style="flex:1;min-width:0;">';
+        h+='<div style="font-size:.76rem;font-weight:500;line-height:1.3;">'+esc(op.nombre)+'</div>';
+        if(op.estacion) h+='<div style="font-size:.66rem;color:var(--accent-l);margin-top:1px;">📍 '+esc(op.estacion)+'</div>';
+        h+='</div>';
+        if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);white-space:nowrap;">👷 '+esc(op.tecnico)+'</span>';
+        if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
+        if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
         // Ayudantes
         if(op.ayudantes && op.ayudantes.length>0){

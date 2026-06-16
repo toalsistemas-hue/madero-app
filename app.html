@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.26</title>
+<title>FabTracker App v2.27</title>
 
 <!-- MSAL Browser -->
 
@@ -2392,6 +2392,11 @@ function appMoveOp(sap,idx,dir){
   fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
 }
 function appStartOp(sap,opId){
+  var _ofRec2=DB.ofs.find(function(o){return o.of_sap===sap;});
+  if(_ofRec2&&(_ofRec2.pedidoCierre||_ofRec2.status==='En proceso de cierre')){
+    alert('🔒 Pedido en proceso de cierre.\nNo se pueden iniciar nuevas operaciones.');
+    return;
+  }
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
@@ -4051,6 +4056,12 @@ function appOpenAddOp(sap){
 
 // ── 6: appStartOp con candado de técnico y piezas ────────────
 function appStartOp(sap, opId){
+  // Bloquear si el pedido está en proceso de cierre
+  var _ofRec=DB.ofs.find(function(o){return o.of_sap===sap;});
+  if(_ofRec&&(_ofRec.pedidoCierre||_ofRec.status==='En proceso de cierre')){
+    alert('🔒 Pedido en proceso de cierre.\nNo se pueden iniciar nuevas operaciones.');
+    return;
+  }
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op = of ? of.ops.find(function(o){return o.id===opId;}) : null;
   if(!op) return;
@@ -4141,7 +4152,17 @@ function ayudStopTimer(sap, opId, ayud){
   if(!op) return;
   var ayudKey=sap+'_'+opId+'_ayud_'+ayud.replace(/[^a-z0-9]/gi,'_');
   var t=DB.timers[ayudKey];
-  var mins=t&&t.running?Math.floor((Date.now()-t.start)/60000):0;
+  var mins=0;
+  if(t){
+    var elapsed=t.elapsed||0;
+    if(t.running) elapsed+=Math.floor((Date.now()-t.start)/60000);
+    mins=elapsed;
+  } else {
+    // Si no hay timer, usar los minutos de la op como referencia
+    var of2=DB.activeOFs.find(function(o){return o.of_sap===sap;});
+    var op2=of2?of2.ops.find(function(o){return o.id===opId;}):null;
+    mins=op2?getEl(sap+'_'+opId):0;
+  }
   if(!op.ayudTimes) op.ayudTimes={};
   op.ayudTimes[ayud]=mins;
   if(DB.timers[ayudKey]) DB.timers[ayudKey].running=false;
@@ -11303,6 +11324,8 @@ async function appReloadOpsFromSP() {
     if(doneOps.length>0) console.log('[Poll] Sample done op:', JSON.stringify({Qty_OK:doneOps[0].Qty_OK, Qty_Chat:doneOps[0].Qty_Chat, Qty_Def:doneOps[0].Qty_Def}));
     // Update ops on existing activeOFs — don't replace the whole array
     DB.activeOFs.forEach(function(aof) {
+      var existing_aof_padre  = aof.padre;
+      var existing_aof_subarts = aof.subarts;
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
                         .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
       if (!spOps.length) return; // keep existing ops if SP has none
@@ -11342,8 +11365,12 @@ async function appReloadOpsFromSP() {
           fecha_inicio_real: o.Fecha_Inicio || (existing ? existing.fecha_inicio_real||'' : ''),
           fecha_fin_real:    o.Fecha_Fin    || (existing ? existing.fecha_fin_real||''    : ''),
           _spId:       o.ID || o._itemId || null,
+          ayudTimes:   existing ? (existing.ayudTimes||{}) : {},
         };
       });
+      // Preservar padre y subarts que no vienen de SP
+      if(existing_aof_padre !== undefined) aof.padre = existing_aof_padre;
+      if(existing_aof_subarts !== undefined) aof.subarts = existing_aof_subarts;
     });
     console.log('Poll: ops recargadas OK');
     // Load FT_Cola_Estacion to get authoritative queue positions
