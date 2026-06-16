@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.45</title>
+<title>FabTracker App v2.47</title>
 
 <!-- MSAL Browser -->
 
@@ -6150,28 +6150,26 @@ async function appLoadDataFromSP() {
         }).join(', '));
       }
     });
+    // TEST: verificar si Flow acepta FT_CalTiempos
+    try {
+      var testRes = await appFlowGet('FT_CalTiempos', 5);
+      console.log('[TEST CalTiempos] Flow responde:', JSON.stringify(testRes).slice(0,200));
+    } catch(e){ console.warn('[TEST CalTiempos] Flow error:', e.message); }
     // Cargar CalTiempos existentes para obtener _spId y poder actualizar
     try {
-      // Usar SP REST API directamente con token MSAL
-      var calToken = await appGetToken();
-      var calUrl = 'https://maderoequipos.sharepoint.com/sites/AutomatizacionMadero/_api/web/lists/getbytitle(\'FT_CalTiempos\')/items?$select=ID,Title,Muestras_JSON,Promedio_Seg,Count&$top=500';
-      var calResp = await fetch(calUrl, {
-        headers: { 'Authorization': 'Bearer ' + calToken, 'Accept': 'application/json;odata=nometadata' }
+      var calFlowRes = await appFlowGet('FT_CalTiempos', 500);
+      var seenCalKeys = {};
+      (calFlowRes.value||[]).forEach(function(i){
+        var f=i.fields||i;
+        var key=f.Title||f.Cal_Key||'';
+        if(!key||seenCalKeys[key]) return;
+        seenCalKeys[key]=true;
+        var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
+        var avg=parseFloat(f.Promedio_Seg||0);
+        var spId=i.id||f.ID||f.id;
+        DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:spId};
       });
-      if(calResp.ok){
-        var calJson = await calResp.json();
-        var seenKeys3 = {};
-        (calJson.value||[]).forEach(function(item){
-          var key = item.Title||''; if(!key || seenKeys3[key]) return;
-          seenKeys3[key] = true;
-          var muestras=[]; try{muestras=JSON.parse(item.Muestras_JSON||'[]');}catch(e){}
-          var avg=parseFloat(item.Promedio_Seg||0);
-          DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(item.Count||muestras.length||0),_spId:item.ID};
-        });
-        console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds cargados');
-      } else {
-        console.warn('[CalTiempos] REST error:', calResp.status);
-      }
+      console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds:', Object.values(DB.calTiemposGuardados).filter(function(v){return v._spId;}).length);
     } catch(e){ console.warn('[CalTiempos] No se pudieron cargar:', e.message); }
     console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
   } catch(e) { console.warn('appLoadDataFromSP error:', e); }
@@ -6378,8 +6376,23 @@ async function appSaveCalTiempoToSP(key, calData) {
       await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
       console.log('[CalTiempos] Actualizado OK:', key, '| id:', calData._spId);
     } else {
-      var res = await appFlowEscribir('FT_CalTiempos', 'crear', 0, fields);
-      console.log('[CalTiempos] Creado OK:', key);
+      await appFlowEscribir('FT_CalTiempos', 'crear', 0, fields);
+      // Recargar para obtener el ID del registro recién creado
+      try {
+        var reloadRes = await appFlowGet('FT_CalTiempos', 500);
+        (reloadRes.value||[]).forEach(function(i){
+          var f=i.fields||i;
+          var k=f.Title||f.Cal_Key||'';
+          if(!k) return;
+          var spId = i.id || f.ID || f.id;
+          if(!DB.calTiemposGuardados[k]) DB.calTiemposGuardados[k]={};
+          DB.calTiemposGuardados[k]._spId = spId;
+        });
+        if(DB.calTiemposGuardados[key] && DB.calTiemposGuardados[key]._spId)
+          console.log('[CalTiempos] Creado OK y ID recuperado:', key, '| _spId:', DB.calTiemposGuardados[key]._spId);
+        else
+          console.log('[CalTiempos] Creado OK:', key, '| (ID pendiente — actualizar Flow para devolverlo)');
+      } catch(re){ console.log('[CalTiempos] Creado OK:', key); }
     }
   } catch(e) { console.warn('[CalTiempos] ERROR:', e.message); }
 }
