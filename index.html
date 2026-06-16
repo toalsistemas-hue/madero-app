@@ -1119,7 +1119,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-val" id="hist-kpi-ofs" style="color:var(--green)">0</div><div class="kpi-lbl">OFs completadas (mes)</div></div>
-        <div class="kpi-card"><div class="kpi-val" id="hist-kpi-time" style="color:var(--accent-l)">—</div><div class="kpi-lbl">Tiempo prom/op</div></div>
+        <div class="kpi-card"><div class="kpi-val" id="hist-kpi-time" style="color:var(--accent-l)">—</div><div class="kpi-lbl">Tiempo prom/OF</div></div>
         <div class="kpi-card"><div class="kpi-val" id="hist-kpi-ok" style="color:var(--yellow)">—</div><div class="kpi-lbl">Piezas OK</div></div>
         <div class="kpi-card"><div class="kpi-val" id="hist-kpi-def" style="color:var(--red)">—</div><div class="kpi-lbl">Defectos</div></div>
       </div>
@@ -10163,8 +10163,11 @@ function renderHist(){
     pedidoMap[ped].ofs++;
     pedidoMap[ped].ok+=aof.ops.reduce(function(s,o){return s+(o.qty_ok||0);},0);
     pedidoMap[ped].mins+=aof.ops.reduce(function(s,o){return s+(o.mins||0);},0);
-    var fins=aof.ops.map(function(o){return o.fin||'';}).filter(Boolean);
-    if(fins.length) pedidoMap[ped].fecha=fins[fins.length-1];
+    // Usar fecha_fin_real (DD/MM/YYYY HH:MM) para mostrar fecha completa
+    var fechasReales=aof.ops.map(function(o){return o.fecha_fin_real||'';}).filter(Boolean);
+    var horasSolo=aof.ops.map(function(o){return o.fin||'';}).filter(Boolean);
+    if(fechasReales.length) pedidoMap[ped].fecha=fechasReales[fechasReales.length-1];
+    else if(horasSolo.length) pedidoMap[ped].fecha=horasSolo[horasSolo.length-1];
   });
   var histData=Object.values(pedidoMap).sort(function(a,b){return b.ok-a.ok;});
 
@@ -10186,9 +10189,17 @@ function renderHist(){
       return iso === mesActual;
     });
     if(enMes) ofsCompletadasMes++;
+  });
+  var totalOfsCompletas = 0;
+  DB.activeOFs.forEach(function(aof){
+    var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
+    if(ofRec.pedidoCerrado||ofRec.status==='Cerrado') return;
+    var allDone=aof.ops.length>0&&aof.ops.every(function(o){return o.status==='done';});
+    if(!allDone) return;
+    totalMins += aof.ops.reduce(function(s,o){return s+(o.mins||0);},0);
+    totalOfsCompletas++;
     aof.ops.forEach(function(op){
       if(op.status!=='done') return;
-      totalMins += (op.mins||0);
       totalOps++;
       totalOk  += (op.qty_ok||0);
       totalDef += (op.qty_def||0);
@@ -10199,7 +10210,7 @@ function renderHist(){
   var kpiOk  = document.getElementById('hist-kpi-ok');
   var kpiDef = document.getElementById('hist-kpi-def');
   if(kpiOfs)  kpiOfs.textContent  = ofsCompletadasMes;
-  if(kpiTime) kpiTime.textContent = totalOps>0 ? fmtM(Math.round(totalMins/totalOps)) : '—';
+  if(kpiTime) kpiTime.textContent = totalOfsCompletas>0 ? fmtM(Math.round(totalMins/totalOfsCompletas)) : '—';
   if(kpiOk)   kpiOk.textContent   = totalOk  > 0 ? totalOk  : '—';
   if(kpiDef)  kpiDef.textContent  = totalDef > 0 ? totalDef : '—';
   var filteredHist=histData.filter(function(d){
