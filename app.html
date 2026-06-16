@@ -715,6 +715,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="app-fl">Observaciones</div>
       <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
+      <div id="app-finish-foto-wrap"></div>
       <div class="app-ma">
         <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
         <button class="app-mb app-mb-g" onclick="appConfirmFinish()">Registrar Terminada</button>
@@ -728,6 +729,7 @@ tr:last-child td{border-bottom:none;}
       <div id="app-cal-resp-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:10px;font-size:.76rem;"></div>
       <div class="app-fl">Comentarios</div>
       <input class="app-fi" id="app-cal-comment" placeholder="Ej: Dimensiones correctas, superficie OK...">
+      <div id="app-cal-foto-wrap"></div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
         <button class="app-mb app-mb-g" style="padding:10px;" onclick="appCalRespond('liberado')">✅ Liberado por Calidad</button>
         <button class="app-mb app-mb-r" style="padding:10px;" onclick="appShowRejOpts()">❌ Rechazado por Calidad</button>
@@ -955,6 +957,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div class="app-fl">Observaciones</div>
       <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
+      <div id="app-finish-foto-wrap"></div>
       <div class="app-ma">
         <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
         <button class="app-mb app-mb-g" onclick="appConfirmFinish()">Registrar Terminada</button>
@@ -968,6 +971,7 @@ tr:last-child td{border-bottom:none;}
       <div id="app-cal-resp-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:10px;font-size:.76rem;"></div>
       <div class="app-fl">Comentarios</div>
       <input class="app-fi" id="app-cal-comment" placeholder="Ej: Dimensiones correctas, superficie OK...">
+      <div id="app-cal-foto-wrap"></div>
       <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
         <button class="app-mb app-mb-g" style="padding:10px;" onclick="appCalRespond('liberado')">✅ Liberado por Calidad</button>
         <button class="app-mb app-mb-r" style="padding:10px;" onclick="appShowRejOpts()">❌ Rechazado por Calidad</button>
@@ -1215,6 +1219,8 @@ function initActiveOFs() {
       var elapsedMs=Math.max(0,now-ref);
       DB.timers["12825_"+of12825.ops[1].id]={start:Date.now()-elapsedMs,elapsed:0,running:true};
     })();
+    // Restaurar errores SP pendientes de sesiones anteriores
+    appErrRestore();
     DB.notifications.push({id:"n1",type:"calidad",of_sap:"12825",op_id:of12825.ops[1].id,note:"Verificar continuidad eléctrica del módulo",time:"09:13",from:"supervisor"});
   }
 }
@@ -1262,6 +1268,8 @@ function appErrNotify(contexto, err, lista) {
     window._appErrQueue.unshift({ ts:ts, contexto:contexto, lista:lista||'', label:label, msg:msg });
     if (window._appErrQueue.length > 20) window._appErrQueue.pop();
     console.error('[SP Error App] ' + contexto + (lista ? ' [' + lista + ']' : '') + ':', msg);
+    appErrSave();       // persistir en localStorage
+    appErrPlaySound();  // notificar con sonido
     // ── Toast ─────────────────────────────────────────────────────
     var toastA = document.getElementById('toast-app');
     if (toastA) {
@@ -1291,6 +1299,7 @@ function appErrNotify(contexto, err, lista) {
     banner.style.display = 'block';
     var sL = label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     var sM = msg.substring(0,90).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var soundOff = localStorage.getItem(_APP_ERR_SOUND_KEY) === 'off';
     banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
       + '<div><strong>\u26a0\ufe0f Error al guardar' + (count > 1 ? ' (' + count + ')' : '') + '</strong><br>'
       + '<span style="font-size:.69rem;color:rgba(252,165,165,.8);">' + sL + ': ' + sM + '</span><br>'
@@ -1299,6 +1308,211 @@ function appErrNotify(contexto, err, lista) {
       + 'style="background:none;border:none;color:rgba(252,165,165,.6);font-size:1.1rem;cursor:pointer;flex-shrink:0;padding:2px 4px;line-height:1;">\u2715</button>'
       + '</div>';
   } catch(ignore) {}
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// ── PERSISTENCIA DE NOTIFICACIONES DE ERROR ───────────────────────
+// Guarda en localStorage para que sobrevivan cierres de pestaña.
+// ══════════════════════════════════════════════════════════════════
+var _APP_ERR_KEY = 'madero_app_err_notifs';
+var _APP_ERR_SOUND_KEY = 'madero_app_err_sound';
+
+function appErrSave() {
+  try { localStorage.setItem(_APP_ERR_KEY, JSON.stringify(window._appErrQueue.slice(0,20))); } catch(e){}
+}
+function appErrRestore() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(_APP_ERR_KEY) || '[]');
+    if (!Array.isArray(saved) || !saved.length) return;
+    window._appErrQueue = saved;
+    // Mostrar banner si hay errores pendientes sin resolver
+    var banner = document.getElementById('app-err-sp-banner');
+    if (saved.length && banner) {
+      var last = saved[0];
+      var sL = (last.label||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      var sM = (last.msg||'').substring(0,90).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      banner.dataset.count = saved.length;
+      banner.style.display = 'block';
+      banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'
+        + '<div><strong>⚠️ ' + saved.length + ' error(es) SP pendiente(s)</strong><br>'
+        + '<span style="font-size:.69rem;color:rgba(252,165,165,.8);">' + sL + ': ' + sM + '</span><br>'
+        + '<span style="font-size:.66rem;color:rgba(252,165,165,.55);">Último: ' + (last.ts||'') + ' · Los cambios pueden no estar en SharePoint.</span></div>'
+        + '<button onclick="this.closest(\'#app-err-sp-banner\').style.display=\'none\';this.closest(\'#app-err-sp-banner\').dataset.count=\'0\';localStorage.removeItem(\'' + _APP_ERR_KEY + '\');" '
+        + 'style="background:none;border:none;color:rgba(252,165,165,.6);font-size:1.1rem;cursor:pointer;flex-shrink:0;padding:2px 4px;line-height:1;">✕</button>'
+        + '</div>';
+    }
+  } catch(e) {}
+}
+
+// ── Sonido de notificación de error ───────────────────────────────
+// Genera un tono corto con Web Audio API (sin archivos externos).
+// Funciona en Android Chrome y desktop; en iOS Safari el primer
+// tono puede bloquearse si no hubo interacción previa — falla silenciosamente.
+function appErrPlaySound() {
+  try {
+    var enabled = localStorage.getItem(_APP_ERR_SOUND_KEY);
+    if (enabled === 'off') return;   // usuario desactivó el sonido
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Beep doble: tono de alerta característico
+    function beep(startTime, freq, dur) {
+      var osc  = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.25, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+      osc.start(startTime);
+      osc.stop(startTime + dur);
+    }
+    var t = ctx.currentTime;
+    beep(t,        880, 0.12);   // nota alta
+    beep(t + 0.18, 660, 0.18);   // nota media
+    // Cerrar contexto después para liberar recursos
+    setTimeout(function(){ try { ctx.close(); } catch(e){} }, 800);
+  } catch(e) { /* navegador no soporta Web Audio o bloqueó el audio — silencioso */ }
+}
+
+// Botón para activar/desactivar sonido (se renderiza en el banner de error)
+function appToggleErrSound() {
+  var cur = localStorage.getItem(_APP_ERR_SOUND_KEY);
+  if (cur === 'off') {
+    localStorage.removeItem(_APP_ERR_SOUND_KEY);
+    appErrPlaySound();  // demo inmediato
+  } else {
+    localStorage.setItem(_APP_ERR_SOUND_KEY, 'off');
+  }
+  // Re-renderizar para actualizar el ícono del botón
+  appErrUpdateSoundBtn();
+}
+function appErrUpdateSoundBtn() {
+  var btn = document.getElementById('app-err-sound-btn');
+  if (!btn) return;
+  var off = localStorage.getItem(_APP_ERR_SOUND_KEY) === 'off';
+  btn.textContent = off ? '🔇' : '🔔';
+  btn.title = off ? 'Sonido de alertas desactivado — tap para activar' : 'Sonido de alertas activado — tap para desactivar';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── FOTOGRAFÍAS EN OPERACIONES ────────────────────────────────────
+// Guarda fotos en SharePoint Document Library:
+//   /FT_Fotos/{of_sap}/{op_id}/{timestamp}_{tipo}.jpg
+// Usa el token MSAL existente — no requiere scopes adicionales.
+// ══════════════════════════════════════════════════════════════════
+var _ftFotoUploads = {};   // { "of_op_key": [ {name, url, tipo} ] } — en memoria
+
+async function appUploadFoto(file, of_sap, op_id, tipo) {
+  // tipo: 'terminada' | 'rechazo_calidad'
+  try {
+    var token = await appGetToken();
+    if (!token) throw new Error('Sin token de autenticación');
+    var siteId = await appGetSiteId();
+    if (!siteId) throw new Error('Sin siteId');
+
+    var ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    var ext  = (file.name || 'foto.jpg').split('.').pop().toLowerCase() || 'jpg';
+    var name = ts + '_' + tipo + '.' + ext;
+    var path = 'FT_Fotos/' + of_sap + '/' + op_id + '/' + name;
+
+    // Graph API: PUT /sites/{siteId}/drive/root:/{path}:/content
+    var endpoint = 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/drive/root:/' + encodeURIComponent(path) + ':/content';
+
+    var resp = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': file.type || 'image/jpeg'
+      },
+      body: file
+    });
+
+    if (!resp.ok) {
+      var errText = await resp.text();
+      throw new Error('HTTP ' + resp.status + ': ' + errText.slice(0, 200));
+    }
+
+    var data = await resp.json();
+    var key  = of_sap + '_' + op_id;
+    if (!_ftFotoUploads[key]) _ftFotoUploads[key] = [];
+    _ftFotoUploads[key].push({ name: name, url: data.webUrl || '', tipo: tipo });
+    return { ok: true, name: name, url: data.webUrl || '' };
+
+  } catch(e) {
+    appErrNotify('Subir fotografía (' + tipo + ')', e, 'FT_Operaciones');
+    return { ok: false, error: e.message };
+  }
+}
+
+// Abre el selector de cámara nativo y sube al terminar
+function appTakePhoto(of_sap, op_id, tipo) {
+  var input = document.createElement('input');
+  input.type    = 'file';
+  input.accept  = 'image/*';
+  input.capture = 'environment';   // cámara trasera por defecto
+  input.style.display = 'none';
+  document.body.appendChild(input);
+
+  input.onchange = function() {
+    var file = input.files && input.files[0];
+    document.body.removeChild(input);
+    if (!file) return;
+
+    // Mostrar indicador de carga en el botón
+    var btnId = 'foto-btn-' + of_sap + '-' + op_id.replace(/[^a-z0-9]/gi,'_');
+    var btn   = document.getElementById(btnId);
+    var origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = '⏳ Subiendo...'; btn.disabled = true; }
+
+    appUploadFoto(file, of_sap, op_id, tipo).then(function(res) {
+      if (btn) { btn.textContent = res.ok ? '📷 ✓' : '📷 ✗'; btn.disabled = false; }
+      if (res.ok) {
+        // Reproducir tono de éxito suave
+        try {
+          var ac = new (window.AudioContext || window.webkitAudioContext)();
+          var osc = ac.createOscillator(); var g = ac.createGain();
+          osc.connect(g); g.connect(ac.destination);
+          osc.frequency.value = 1047; g.gain.setValueAtTime(0.15, ac.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+          osc.start(); osc.stop(ac.currentTime + 0.3);
+          setTimeout(function(){ try{ac.close();}catch(e){} }, 500);
+        } catch(e){}
+        // Actualizar contador en el modal
+        appFotoUpdateCount(of_sap, op_id);
+      }
+    });
+  };
+  input.click();
+}
+
+function appFotoGetCount(of_sap, op_id) {
+  return (_ftFotoUploads[of_sap + '_' + op_id] || []).length;
+}
+function appFotoUpdateCount(of_sap, op_id) {
+  var countEl = document.getElementById('foto-count-' + of_sap + '-' + op_id.replace(/[^a-z0-9]/gi,'_'));
+  if (countEl) {
+    var n = appFotoGetCount(of_sap, op_id);
+    countEl.textContent = n > 0 ? n + ' foto' + (n > 1 ? 's' : '') : '';
+    countEl.style.display = n > 0 ? 'inline' : 'none';
+  }
+}
+
+// Genera el HTML del botón de foto para insertar en los modales
+function appFotoBtnHTML(of_sap, op_id, tipo) {
+  var safe_op = op_id.replace(/[^a-z0-9]/gi, '_');
+  var btnId   = 'foto-btn-' + of_sap + '-' + safe_op;
+  var countId = 'foto-count-' + of_sap + '-' + safe_op;
+  var n = appFotoGetCount(of_sap, op_id);
+  return '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+    + '<button id="' + btnId + '" onclick="appTakePhoto(\'' + of_sap + '\',\'' + op_id + '\',\'' + tipo + '\')" '
+    + 'style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;'
+    + 'padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">'
+    + '📷 Tomar foto'
+    + '</button>'
+    + '<span id="' + countId + '" style="font-size:.7rem;color:var(--aaccent);display:' + (n>0?'inline':'none') + ';">'
+    + (n > 0 ? n + ' foto' + (n>1?'s':'') : '') + '</span>'
+    + '</div>';
 }
 
 // ── Helpers globales ─────────────────────────────────
@@ -2845,6 +3059,11 @@ function openCalResp(sap,opId){
   document.getElementById("app-cal-rej-chatarra").value=0;
   document.getElementById("app-cal-lib-pcs").value=op.qty_total;
   document.getElementById("app-rej-partial-warn").style.display="none";
+  // Insertar botón de foto para "Rechazo calidad"
+  var calFotoWrap = document.getElementById('app-cal-foto-wrap');
+  if (calFotoWrap && APP.currentCalRespCtx) {
+    calFotoWrap.innerHTML = appFotoBtnHTML(APP.currentCalRespCtx.of_sap, APP.currentCalRespCtx.op_id, 'rechazo_calidad');
+  }
   openAppModal("app-modal-cal-resp");
 }
 function appShowRejOpts(){
@@ -2959,6 +3178,11 @@ function appOpenFinish(sap,opId){
   document.getElementById("app-finish-rej").value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
   document.getElementById("app-finish-obs").value="";
+  // Insertar botón de foto para "Terminada"
+  var fotoWrap = document.getElementById('app-finish-foto-wrap');
+  if (fotoWrap && APP.currentFinishCtx) {
+    fotoWrap.innerHTML = appFotoBtnHTML(APP.currentFinishCtx.of_sap, APP.currentFinishCtx.op_id, 'terminada');
+  }
   openAppModal("app-modal-finish");
 }
 function appValidateFinishQty(){
