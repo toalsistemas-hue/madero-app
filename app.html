@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.28</title>
+<title>FabTracker App v2.29</title>
 
 <!-- MSAL Browser -->
 
@@ -5956,25 +5956,6 @@ async function appLoadDataFromSP() {
         _spId: o.ID||o._itemId||null,
       })),
     }));
-    // Asignar padre y subarts desde templates
-    DB.activeOFs.forEach(function(aof){
-      var tpl = DB.templates && DB.templates[aof.articulo];
-      if(tpl){
-        aof.padre = tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
-        // Subartículos
-        var subartKeys = (tpl.subarts||[]).filter(Boolean);
-        aof.subarts = subartKeys.map(function(sa){
-          var saAof = DB.activeOFs.find(function(a){return a.articulo===sa;});
-          var saOps = saAof ? saAof.ops : [];
-          var saDone = saOps.filter(function(o){return o.status==='done';}).length;
-          var saStatus = saAof ? (saAof.ops.length>0 && saAof.ops.every(function(o){return o.status==='done';}) ? 'done' : saAof.ops.some(function(o){return o.status==='running';}) ? 'running' : 'planeacion') : 'missing';
-          return {articulo:sa, nombre:DB.articles[sa]||sa, of_sap:saAof?saAof.of_sap:null, pedido:saAof?saAof.pedido:'', status:saStatus, ops_done:saDone, ops_total:saOps.length, pct:saOps.length>0?Math.round(saDone/saOps.length*100):0};
-        });
-      } else {
-        aof.padre = null;
-        aof.subarts = [];
-      }
-    });
     DB.activeOFs.forEach(function(aof){
       if (aof.ops.length === 0 && aof.articulo) {
         var tplKey = aof.articulo;
@@ -6077,6 +6058,24 @@ async function appLoadDataFromSP() {
       try { ops = JSON.parse(f.Operaciones_JSON||'[]'); } catch(e){}
       DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
         subarts:[], ops:ops};
+    });
+    // Asignar padre y subarts DESPUÉS de cargar templates
+    DB.activeOFs.forEach(function(aof){
+      var tpl = DB.templates && DB.templates[aof.articulo];
+      if(tpl){
+        aof.padre = tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
+        var subartKeys = (tpl.subarts||[]).filter(Boolean);
+        aof.subarts = subartKeys.map(function(sa){
+          var saAof = DB.activeOFs.find(function(a){return a.articulo===sa;});
+          var saOps = saAof ? saAof.ops : [];
+          var saDone = saOps.filter(function(o){return o.status==='done';}).length;
+          var saStatus = saAof ? (saAof.ops.length>0 && saAof.ops.every(function(o){return o.status==='done';}) ? 'done' : saAof.ops.some(function(o){return o.status==='running';}) ? 'running' : 'planeacion') : 'missing';
+          return {articulo:sa, nombre:DB.articles[sa]||sa, of_sap:saAof?saAof.of_sap:null, pedido:saAof?saAof.pedido:'', status:saStatus, ops_done:saDone, ops_total:saOps.length, pct:saOps.length>0?Math.round(saDone/saOps.length*100):0};
+        });
+      } else {
+        aof.padre = null;
+        aof.subarts = [];
+      }
     });
     // Load catálogo de operaciones
     DB.catalog = [];
