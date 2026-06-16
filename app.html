@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.29</title>
+<title>FabTracker App v2.30</title>
 
 <!-- MSAL Browser -->
 
@@ -5908,6 +5908,7 @@ async function appLoadDataFromSP() {
       descripcion: f.Descripcion_Articulo||'',
       prioridad:   (f.Prioridad||'Normal').toLowerCase(),
       ofv:         f.OFV||f.Rotacion||'',
+      sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
         nombre: o.Nombre||o.Title||'', estacion: o.Estacion||'',
@@ -6062,20 +6063,25 @@ async function appLoadDataFromSP() {
     // Asignar padre y subarts DESPUÉS de cargar templates
     DB.activeOFs.forEach(function(aof){
       var tpl = DB.templates && DB.templates[aof.articulo];
-      if(tpl){
-        aof.padre = tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
-        var subartKeys = (tpl.subarts||[]).filter(Boolean);
-        aof.subarts = subartKeys.map(function(sa){
-          var saAof = DB.activeOFs.find(function(a){return a.articulo===sa;});
-          var saOps = saAof ? saAof.ops : [];
-          var saDone = saOps.filter(function(o){return o.status==='done';}).length;
-          var saStatus = saAof ? (saAof.ops.length>0 && saAof.ops.every(function(o){return o.status==='done';}) ? 'done' : saAof.ops.some(function(o){return o.status==='running';}) ? 'running' : 'planeacion') : 'missing';
-          return {articulo:sa, nombre:DB.articles[sa]||sa, of_sap:saAof?saAof.of_sap:null, pedido:saAof?saAof.pedido:'', status:saStatus, ops_done:saDone, ops_total:saOps.length, pct:saOps.length>0?Math.round(saDone/saOps.length*100):0};
-        });
-      } else {
-        aof.padre = null;
-        aof.subarts = [];
+      // Padre viene de la plantilla
+      aof.padre = (tpl && tpl.padre) ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||tpl.padre} : null;
+      // Subartículos vienen de la OF (sub_articulos cargados desde SP), NO de la plantilla
+      var subartKeys = (aof.sub_articulos||[]).filter(Boolean);
+      if(!subartKeys.length && tpl && tpl.subarts && tpl.subarts.length) {
+        subartKeys = tpl.subarts.filter(Boolean); // fallback a plantilla
       }
+      aof.subarts = subartKeys.map(function(sa){
+        var saAof = DB.activeOFs.find(function(a){return a.articulo===sa;});
+        var saOps = saAof ? saAof.ops : [];
+        var saDone = saOps.filter(function(o){return o.status==='done';}).length;
+        var saStatus = !saAof ? 'missing'
+          : (saAof.ops.length>0 && saAof.ops.every(function(o){return o.status==='done';}) ? 'done'
+          : saAof.ops.some(function(o){return o.status==='running';}) ? 'running' : 'planeacion');
+        return {articulo:sa, nombre:DB.articles[sa]||sa, of_sap:saAof?saAof.of_sap:null,
+          pedido:saAof?saAof.pedido:'', status:saStatus,
+          ops_done:saDone, ops_total:saOps.length,
+          pct:saOps.length>0?Math.round(saDone/saOps.length*100):0};
+      });
     });
     // Load catálogo de operaciones
     DB.catalog = [];
@@ -11347,8 +11353,9 @@ async function appReloadOpsFromSP() {
     if(doneOps.length>0) console.log('[Poll] Sample done op:', JSON.stringify({Qty_OK:doneOps[0].Qty_OK, Qty_Chat:doneOps[0].Qty_Chat, Qty_Def:doneOps[0].Qty_Def}));
     // Update ops on existing activeOFs — don't replace the whole array
     DB.activeOFs.forEach(function(aof) {
-      var existing_aof_padre  = aof.padre;
-      var existing_aof_subarts = aof.subarts;
+      var existing_aof_padre     = aof.padre;
+      var existing_aof_subarts   = aof.subarts;
+      var existing_aof_subartkeys = aof.sub_articulos;
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
                         .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
       if (!spOps.length) return; // keep existing ops if SP has none
@@ -11394,6 +11401,7 @@ async function appReloadOpsFromSP() {
       // Preservar padre y subarts que no vienen de SP
       if(existing_aof_padre !== undefined) aof.padre = existing_aof_padre;
       if(existing_aof_subarts !== undefined) aof.subarts = existing_aof_subarts;
+      if(existing_aof_subartkeys !== undefined) aof.sub_articulos = existing_aof_subartkeys;
     });
     console.log('Poll: ops recargadas OK');
     // Load FT_Cola_Estacion to get authoritative queue positions
