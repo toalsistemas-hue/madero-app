@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.44</title>
+<title>FabTracker App v2.45</title>
 
 <!-- MSAL Browser -->
 
@@ -6152,19 +6152,26 @@ async function appLoadDataFromSP() {
     });
     // Cargar CalTiempos existentes para obtener _spId y poder actualizar
     try {
-      var calExRes = await appFlowGet('FT_CalTiempos', 500);
-      var seenKeys2 = {};
-      (calExRes.value||[]).forEach(function(i){
-        var f = i.fields||i; 
-        var key = f.Title||f.Cal_Key||''; 
-        if(!key || seenKeys2[key]) return;
-        seenKeys2[key] = true;
-        var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
-        var avg=parseFloat(f.Promedio_Seg||0);
-        var spId = i.id || f.ID || f.id;
-        DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:spId};
+      // Usar SP REST API directamente con token MSAL
+      var calToken = await appGetToken();
+      var calUrl = 'https://maderoequipos.sharepoint.com/sites/AutomatizacionMadero/_api/web/lists/getbytitle(\'FT_CalTiempos\')/items?$select=ID,Title,Muestras_JSON,Promedio_Seg,Count&$top=500';
+      var calResp = await fetch(calUrl, {
+        headers: { 'Authorization': 'Bearer ' + calToken, 'Accept': 'application/json;odata=nometadata' }
       });
-      console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds cargados');
+      if(calResp.ok){
+        var calJson = await calResp.json();
+        var seenKeys3 = {};
+        (calJson.value||[]).forEach(function(item){
+          var key = item.Title||''; if(!key || seenKeys3[key]) return;
+          seenKeys3[key] = true;
+          var muestras=[]; try{muestras=JSON.parse(item.Muestras_JSON||'[]');}catch(e){}
+          var avg=parseFloat(item.Promedio_Seg||0);
+          DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(item.Count||muestras.length||0),_spId:item.ID};
+        });
+        console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds cargados');
+      } else {
+        console.warn('[CalTiempos] REST error:', calResp.status);
+      }
     } catch(e){ console.warn('[CalTiempos] No se pudieron cargar:', e.message); }
     console.log('App SP load OK — OFs:', DB.ofs.length, '| ActiveOFs:', DB.activeOFs.length, '| Templates:', Object.keys(DB.templates).length);
   } catch(e) { console.warn('appLoadDataFromSP error:', e); }
@@ -11166,14 +11173,13 @@ function calTiemSave(key){
   if(C&&C.currentPage==='historial') renderHist();
 }
 function calTiemEdit(key){
-  var d = calTiemGetData(key);
+  var existing = DB.calTiemposGuardados[key];
   if(!APP._ctSamples) APP._ctSamples = {};
-  APP._ctSamples[key] = d.samples.map(fmtMSS);
-  // Preservar _spId para poder actualizar el registro existente
-  if(DB.calTiemposGuardados[key]) DB.calTiemposGuardados[key]._editing = true;
+  var existingSamples = existing ? (existing.samples||existing.muestras||[]) : [];
+  APP._ctSamples[key] = existingSamples.length > 0 ? existingSamples.map(fmtMSS) : [''];
+  if(existing) existing._editing = true;
   renderApp();
 }
-
 
 // ── Auto-refresh running timers every 60s ─────────────────
 setInterval(function(){
