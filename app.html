@@ -1490,12 +1490,13 @@ function appFotoGetCount(of_sap, op_id) {
   return (_ftFotoUploads[of_sap + '_' + op_id] || []).length;
 }
 function appFotoUpdateCount(of_sap, op_id) {
-  var countEl = document.getElementById('foto-count-' + of_sap + '-' + op_id.replace(/[^a-z0-9]/gi,'_'));
-  if (countEl) {
-    var n = appFotoGetCount(of_sap, op_id);
-    countEl.textContent = n > 0 ? n + ' foto' + (n > 1 ? 's' : '') : '';
-    countEl.style.display = n > 0 ? 'inline' : 'none';
-  }
+  var safeOp = op_id.replace(/[^a-z0-9]/gi, '_');
+  var countId = 'foto-count-' + of_sap + '-' + safeOp;
+  var n = appFotoGetCount(of_sap, op_id);
+  document.querySelectorAll('#' + countId).forEach(function(el) {
+    el.textContent  = n > 0 ? n + ' foto' + (n > 1 ? 's' : '') : '';
+    el.style.display = n > 0 ? 'inline' : 'none';
+  });
 }
 
 // Genera el HTML del botón de foto para insertar en los modales
@@ -3059,11 +3060,10 @@ function openCalResp(sap,opId){
   document.getElementById("app-cal-rej-chatarra").value=0;
   document.getElementById("app-cal-lib-pcs").value=op.qty_total;
   document.getElementById("app-rej-partial-warn").style.display="none";
-  // Insertar botón de foto para "Rechazo calidad"
-  var calFotoWrap = document.getElementById('app-cal-foto-wrap');
-  if (calFotoWrap && APP.currentCalRespCtx) {
-    calFotoWrap.innerHTML = appFotoBtnHTML(APP.currentCalRespCtx.of_sap, APP.currentCalRespCtx.op_id, 'rechazo_calidad');
-  }
+  // Insertar botón de foto para "Rechazo calidad" en TODOS los wraps (hay dos modales en el DOM)
+  document.querySelectorAll('#app-cal-foto-wrap').forEach(function(w) {
+    w.innerHTML = appFotoBtnHTML(APP.currentCalRespCtx.of_sap, APP.currentCalRespCtx.op_id, 'rechazo_calidad');
+  });
   openAppModal("app-modal-cal-resp");
 }
 function appShowRejOpts(){
@@ -3178,11 +3178,10 @@ function appOpenFinish(sap,opId){
   document.getElementById("app-finish-rej").value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
   document.getElementById("app-finish-obs").value="";
-  // Insertar botón de foto para "Terminada"
-  var fotoWrap = document.getElementById('app-finish-foto-wrap');
-  if (fotoWrap && APP.currentFinishCtx) {
-    fotoWrap.innerHTML = appFotoBtnHTML(APP.currentFinishCtx.of_sap, APP.currentFinishCtx.op_id, 'terminada');
-  }
+  // Insertar botón de foto para "Terminada" en TODOS los wraps (hay dos modales en el DOM)
+  document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w) {
+    w.innerHTML = appFotoBtnHTML(APP.currentFinishCtx.of_sap, APP.currentFinishCtx.op_id, 'terminada');
+  });
   openAppModal("app-modal-finish");
 }
 function appValidateFinishQty(){
@@ -8679,6 +8678,10 @@ function openCalResp(sap,opId){
   document.getElementById("app-cal-rej-chatarra").value=0;
   document.getElementById("app-cal-lib-pcs").value=op.qty_total;
   document.getElementById("app-rej-partial-warn").style.display="none";
+  // Insertar botón de foto en TODOS los wraps
+  document.querySelectorAll('#app-cal-foto-wrap').forEach(function(w) {
+    w.innerHTML = appFotoBtnHTML(sap, opId, 'rechazo_calidad');
+  });
   openAppModal("app-modal-cal-resp");
 }
 function appShowRejOpts(){
@@ -8815,6 +8818,10 @@ function appOpenFinish(sap,opId){
   document.getElementById("app-finish-rej").value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
   document.getElementById("app-finish-obs").value="";
+  // Insertar botón de foto en TODOS los wraps
+  document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w) {
+    w.innerHTML = appFotoBtnHTML(sap, opId, 'terminada');
+  });
   openAppModal("app-modal-finish");
 }
 function appValidateFinishQty(){
