@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.35</title>
+<title>FabTracker App v2.37</title>
 
 <!-- MSAL Browser -->
 
@@ -6334,16 +6334,19 @@ async function appSaveCalTiempoToSP(key, calData) {
   if (!key) return;
   console.log('[CalTiempos] Guardando:', key, '| _spId:', calData._spId||'(nuevo)', '| appSiteId:', appSiteId?'ok':'NULL');
   try {
+    // Extraer OF_SAP y Op_ID desde el key (formato: "sap_opId" o "sap_opId_extra")
+    var keyParts = key.split('_');
+    var of_sap = calData.of_sap || keyParts[0] || '';
+    var op_id  = calData.op_id  || keyParts.slice(1).join('_') || '';
     var fields = {
-      Title:        key,
-      Articulo:     calData.articulo||'',
-      Operacion:    calData.operacion||'',
-      Estacion:     calData.estacion||'',
+      Title:         key,
+      OF_SAP:        of_sap,
+      Op_ID:         op_id,
       Muestras_JSON: JSON.stringify(calData.muestras||calData.samples||[]),
-      Promedio_Seg: calData.promedio||calData.avg||0,
-      Cuenta:       calData.count||0,
-      Fecha:        new Date().toISOString(),
-      Registrado_Por: appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
+      Promedio_Seg:  calData.promedio||calData.avg||0,
+      Count:         calData.count||0,
+      Tecnico_Cal:   appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
+      Fecha_Registro: new Date().toISOString(),
     };
     if (calData._spId) {
       await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
@@ -10127,7 +10130,22 @@ if(!DB.calTiemposGuardados) DB.calTiemposGuardados = {};
 function appSaveCalTime(key, val){
   var v = parseInt(val)||0;
   APP.calTimes[key] = v;
-  DB.calTiemposGuardados[key] = v;
+  var existing = DB.calTiemposGuardados[key];
+  var prevSamples = (existing && (existing.samples||existing.muestras)) ? (existing.samples||existing.muestras) : [];
+  var newSamples = prevSamples.concat([v]);
+  var avg = Math.round(newSamples.reduce(function(s,x){return s+x;},0)/newSamples.length);
+  var calData = {
+    samples: newSamples, muestras: newSamples,
+    avg: avg, promedio: avg,
+    count: newSamples.length,
+    articulo: existing ? existing.articulo||'' : '',
+    operacion: existing ? existing.operacion||'' : '',
+    estacion:  existing ? existing.estacion||'' : '',
+    _spId: existing ? existing._spId : undefined,
+  };
+  DB.calTiemposGuardados[key] = calData;
+  console.log('[CalTiempos] Guardando key:', key, '| samples:', newSamples.length, '| avg:', avg, '| appSiteId:', appSiteId?'ok':'NULL');
+  if(appSiteId) appSaveCalTiempoToSP(key, calData);
 }
 function appEditCalTime(key, currentVal){
   APP.calTimes[key] = currentVal;

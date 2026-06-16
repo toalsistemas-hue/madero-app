@@ -5286,15 +5286,14 @@ async function ftLoadDataFromSP() {
       var muestras = [];
       try { muestras = JSON.parse(f.Muestras_JSON||'[]'); } catch(e){}
       var avg = parseFloat(f.Promedio_Seg||0);
-      var count = parseInt(f.Cuenta||muestras.length||0);
+      var count = parseInt(f.Count||f.Cuenta||muestras.length||0);
       DB.calTiemposGuardados[key] = {
-        articulo:  f.Articulo||'',
-        operacion: f.Operacion||'',
-        estacion:  f.Estacion||'',
-        samples:   muestras,   // nombre que usa calTiemGetData
-        muestras:  muestras,   // alias
-        avg:       avg,        // nombre que usa calTiemGetData
-        promedio:  avg,        // alias
+        of_sap:    f.OF_SAP||'',
+        op_id:     f.Op_ID||'',
+        samples:   muestras,
+        muestras:  muestras,
+        avg:       avg,
+        promedio:  avg,
         count:     count,
         _spId:     i.id
       };
