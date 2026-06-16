@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.37</title>
+<title>FabTracker App v2.38</title>
 
 <!-- MSAL Browser -->
 
@@ -11129,11 +11129,21 @@ function calTiemSave(key){
   var nums = samples.map(parseMSS).filter(function(v){ return v>0; });
   if(!nums.length){ alert('Ingresa al menos una muestra. Formato: 3:31 ó 3.31 = 3 min 31 seg'); return; }
   var avgSecs = Math.round(nums.reduce(function(s,v){ return s+v; },0) / nums.length);
-  DB.calTiemposGuardados[key] = {samples:nums, avg:avgSecs, count:nums.length};
+  var existing = DB.calTiemposGuardados[key];
+  var calData = {
+    samples: nums, muestras: nums,
+    avg: avgSecs, promedio: avgSecs,
+    count: nums.length,
+    _spId: existing ? existing._spId : undefined,
+  };
+  DB.calTiemposGuardados[key] = calData;
   if(APP&&APP.calTimes) APP.calTimes[key] = avgSecs;
   if(APP._ctSamples) delete APP._ctSamples[key];
+  // Persistir en SP
+  console.log('[CalTiempos] calTiemSave:', key, '| avg:', avgSecs, '| appSiteId:', appSiteId?'ok':'NULL');
+  if(appSiteId) appSaveCalTiempoToSP(key, calData);
   renderApp();
-  if(C.currentPage==='historial') renderHist();
+  if(C&&C.currentPage==='historial') renderHist();
 }
 function calTiemEdit(key){
   var d = calTiemGetData(key);
