@@ -4931,7 +4931,7 @@ async function ftLoadDataFromSP() {
 
     // Load OFs and Operaciones in parallel
     const empty = function(){ return {value:[]}; };
-    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes] = await Promise.all([
+    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes, calTiemposRes] = await Promise.all([
       flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
       flowGet('FT_Operaciones', '', 5000).catch(empty),
       flowGet('FT_Tecnicos', '', 200).catch(empty),
@@ -4942,6 +4942,7 @@ async function ftLoadDataFromSP() {
       flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
       flowGet('FT_Articulos', '', 2000).catch(empty),
       flowGet('FT_Catalogo_Operaciones', '', 5000).catch(empty),
+      flowGet('FT_CalTiempos', '', 2000).catch(empty),
     ]);
 
     // Build DB.ofs from SharePoint
@@ -5277,6 +5278,28 @@ async function ftLoadDataFromSP() {
     });
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
+    DB.calTiemposGuardados = DB.calTiemposGuardados || {};
+    (calTiemposRes.value||[]).forEach(function(i){
+      var f = i.fields;
+      var key = f.Title || '';
+      if(!key) return;
+      var muestras = [];
+      try { muestras = JSON.parse(f.Muestras_JSON||'[]'); } catch(e){}
+      var avg = parseFloat(f.Promedio_Seg||0);
+      var count = parseInt(f.Cuenta||muestras.length||0);
+      DB.calTiemposGuardados[key] = {
+        articulo:  f.Articulo||'',
+        operacion: f.Operacion||'',
+        estacion:  f.Estacion||'',
+        samples:   muestras,   // nombre que usa calTiemGetData
+        muestras:  muestras,   // alias
+        avg:       avg,        // nombre que usa calTiemGetData
+        promedio:  avg,        // alias
+        count:     count,
+        _spId:     i.id
+      };
+    });
+    console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, 'registros');
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
     DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
     // Renumerar cola DESPUÉS de sqAddOF para que la queue esté completamente poblada

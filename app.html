@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.34</title>
+<title>FabTracker App v2.35</title>
 
 <!-- MSAL Browser -->
 
@@ -6332,6 +6332,7 @@ async function appSaveStationStatusToSP(estacion) {
 // ── Save FT_CalTiempos from app ───────────────────────────
 async function appSaveCalTiempoToSP(key, calData) {
   if (!key) return;
+  console.log('[CalTiempos] Guardando:', key, '| _spId:', calData._spId||'(nuevo)', '| appSiteId:', appSiteId?'ok':'NULL');
   try {
     var fields = {
       Title:        key,
@@ -6346,11 +6347,13 @@ async function appSaveCalTiempoToSP(key, calData) {
     };
     if (calData._spId) {
       await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
+      console.log('[CalTiempos] Actualizado OK:', key);
     } else {
       var res = await appFlowEscribir('FT_CalTiempos', 'crear', 0, fields);
       if (res && res.id) calData._spId = res.id;
+      console.log('[CalTiempos] Creado OK:', key, '| id:', res&&res.id);
     }
-  } catch(e) { console.warn('appSaveCalTiempoToSP:', e.message); }
+  } catch(e) { console.warn('[CalTiempos] ERROR:', e.message); }
 }
 
 // ── Save FT_Pedidos status from app ───────────────────────
