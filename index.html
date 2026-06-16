@@ -10952,7 +10952,7 @@ async function ftRptLoad() {
   _rptData.loading = true;
   var loading = document.getElementById('rpt-loading');
   var contenido = document.getElementById('rpt-contenido');
-  if (loading) loading.style.display = 'block';
+  if (loading) { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
   if (contenido) contenido.style.display = 'none';
 
   try {
@@ -10961,48 +10961,49 @@ async function ftRptLoad() {
       flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
       flowGet('FT_Operaciones', '', 5000).catch(empty)
     ]);
-    var ofsRaw = res[0];
-    var opsRaw = res[1];
 
-    // Mapear OFs
-    _rptData.ofs = (ofsRaw.value || []).map(function(i) {
+    // Mapear OFs — excluir status Cerrado / Pedido Cancelado
+    _rptData.ofs = (res[0].value || []).map(function(i) {
       var f = i.fields || {};
       return {
-        id: i.id,
-        of_sap: f.OF_SAP || f.Title || '',
-        pedido: f.Numero_Pedido || f.Pedido || '',
-        cliente: f.Cliente || '',
-        descripcion: f.Descripcion_Articulo || '',
-        cantidad: parseInt(f.Cantidad || 0) || 0,
-        status: f.Status || 'Sin programar',
-        fecha_entrega: (f.Fecha_Entrega || '').split('T')[0],
-        fecha_prog: (f.Fecha_Programacion || '').split('T')[0],
-        prioridad: f.Prioridad || 'Normal'
+        id:           i.id,
+        of_sap:       f.OF_SAP || f.Title || '',
+        pedido:       f.Numero_Pedido || f.Pedido || '',
+        cliente:      f.Cliente || '',
+        descripcion:  f.Descripcion_Articulo || '',
+        cantidad:     parseInt(f.Cantidad || 0) || 0,
+        status:       f.Status || 'Sin programar',
+        fecha_prog:   (f.Fecha_Programacion || '').split('T')[0],
+        fecha_entrega:(f.Fecha_Entrega || '').split('T')[0],
+        prioridad:    f.Prioridad || 'Normal'
       };
+    }).filter(function(of) {
+      var s = (of.status || '').toLowerCase();
+      return s !== 'cerrado' && s !== 'pedido cancelado' && s !== 'cerrada';
     });
 
-    // Mapear Operaciones con datos para reportes
-    _rptData.ops = (opsRaw.value || []).map(function(i) {
+    // Mapear Operaciones — incluyendo ayudantes
+    _rptData.ops = (res[1].value || []).map(function(i) {
       var f = i.fields || {};
+      var ayRaw = f.Ayudantes_JSON || f.Ayudantes || '';
+      var ayudantes = ayRaw ? ayRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
       return {
-        of_sap: f.OF_SAP || '',
-        op_id: f.Op_ID || '',
-        nombre: f.Nombre || f.Title || '',
-        estacion: f.Estacion || '',
-        tecnico: f.Tecnico || '',
-        status: f.Status || 'pending',
-        fecha_inicio: (f.Fecha_Inicio || '').split('T')[0],
-        fecha_fin: (f.Fecha_Fin || '').split('T')[0],
-        qty_total: parseInt(f.Qty_Total || 0) || 0,
-        qty_ok: parseInt(f.Qty_OK || 0) || 0,
-        mins: parseInt(f.Mins || 0) || 0,
-        secuencia: parseInt(f.Secuencia || 0) || 0
+        of_sap:      f.OF_SAP || '',
+        op_id:       f.Op_ID || '',
+        nombre:      f.Nombre || f.Title || '',
+        estacion:    f.Estacion || '',
+        tecnico:     f.Tecnico || '',
+        ayudantes:   ayudantes,
+        status:      f.Status || 'pending',
+        qty_total:   parseInt(f.Qty_Total || 0) || 0,
+        qty_ok:      parseInt(f.Qty_OK || 0) || 0,
+        secuencia:   parseInt(f.Secuencia || 0) || 0
       };
     });
 
     _rptData.loaded = true;
 
-    // Poblar selector de estaciones
+    // Poblar selector de estaciones con valores reales de SP
     var estacionesUnicas = {};
     _rptData.ops.forEach(function(op) {
       if (op.estacion) estacionesUnicas[op.estacion] = true;
@@ -11029,32 +11030,24 @@ function ftRptFmtFecha(s) {
   if (!s) return '—';
   var p = s.split('-');
   if (p.length < 3) return s;
-  return p[2] + '/' + p[1] + '/' + p[3] || (p[0].slice(2));
+  return p[2] + '/' + p[1] + '/' + p[0].slice(2);
 }
 
 function ftRptAvanceColor(pct) {
   if (pct >= 100) return '#4ade80';
-  if (pct >= 60) return '#60a5fa';
-  if (pct >= 30) return '#facc15';
+  if (pct >= 60)  return '#60a5fa';
+  if (pct >= 30)  return '#facc15';
   return '#f87171';
 }
 
-function ftRptStatusPill(status) {
-  var s = (status || '').toLowerCase();
-  if (s === 'done' || s === 'terminada' || s === 'terminado') return '<span class="rpt-pill rpt-pill-term">Terminada</span>';
-  if (s === 'running' || s === 'en proceso' || s === 'en fabricacion' || s === 'paused' || s === 'validating') return '<span class="rpt-pill rpt-pill-proceso">En Proceso</span>';
+function ftRptStatusPill(opStatus) {
+  if (opStatus === 'Terminada')  return '<span class="rpt-pill rpt-pill-term">Terminada</span>';
+  if (opStatus === 'En Proceso') return '<span class="rpt-pill rpt-pill-proceso">En Proceso</span>';
   return '<span class="rpt-pill rpt-pill-plan">Planeación</span>';
 }
 
-function ftRptStatusLabel(status) {
-  var s = (status || '').toLowerCase();
-  if (s === 'done' || s === 'terminada' || s === 'terminado') return 'Terminada';
-  if (s === 'running' || s === 'en proceso' || s === 'en fabricacion') return 'En Proceso';
-  return 'Planeación';
-}
-
 function ftRptRender() {
-  var loading = document.getElementById('rpt-loading');
+  var loading   = document.getElementById('rpt-loading');
   var contenido = document.getElementById('rpt-contenido');
   if (!_rptData.loaded) {
     if (loading) { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
@@ -11064,106 +11057,134 @@ function ftRptRender() {
   if (!contenido) return;
   contenido.style.display = 'block';
 
-  // Filtros
-  var filtEst = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
-  var filtStatus = (document.getElementById('rpt-filtro-status') || {}).value || '';
-  var filtDesde = (document.getElementById('rpt-desde') || {}).value || '';
-  var filtHasta = (document.getElementById('rpt-hasta') || {}).value || '';
-  var filtQ = ((document.getElementById('rpt-buscar') || {}).value || '').toLowerCase().trim();
+  // ── Filtros ──────────────────────────────────────────────────────
+  var filtEst    = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
+  var filtStatus = (document.getElementById('rpt-filtro-status')   || {}).value || '';
+  var filtDesde  = (document.getElementById('rpt-desde')           || {}).value || '';
+  var filtHasta  = (document.getElementById('rpt-hasta')           || {}).value || '';
+  var filtQ      = ((document.getElementById('rpt-buscar')         || {}).value || '').toLowerCase().trim();
 
-  // Construir mapa avance por OF desde operaciones
-  var avanceMap = {};
+  // ── Índice de OFs (excluye cerradas, ya filtradas en load) ───────
+  var ofMap = {};
+  _rptData.ofs.forEach(function(of) { ofMap[of.of_sap] = of; });
+
+  // ── Agrupar ops por (of_sap × estacion) ──────────────────────────
+  var opsPorOfEst = {};
   _rptData.ops.forEach(function(op) {
     var k = op.of_sap;
-    if (!k) return;
-    if (!avanceMap[k]) avanceMap[k] = { total: 0, terminadas: 0 };
-    avanceMap[k].total++;
-    var s = (op.status || '').toLowerCase();
-    if (s === 'done' || s === 'terminada' || s === 'terminado') avanceMap[k].terminadas++;
+    if (!k || !ofMap[k]) return;
+    var est = op.estacion || '';
+    if (!opsPorOfEst[k]) opsPorOfEst[k] = {};
+    if (!opsPorOfEst[k][est]) opsPorOfEst[k][est] = [];
+    opsPorOfEst[k][est].push(op);
   });
 
-  // Determinar qué OFs aparecen en ops con la estación filtrada
-  // Para cada OF calculamos su estación dominante (la de la primera op)
-  var ofEstacion = {};
-  var ofTecnico = {};
-  var ofFechaInicioOp = {};
-  var ofFechaFinOp = {};
-  _rptData.ops.forEach(function(op) {
-    var k = op.of_sap;
-    if (!k) return;
-    if (!ofEstacion[k] && op.estacion) ofEstacion[k] = op.estacion;
-    if (!ofTecnico[k] && op.tecnico) ofTecnico[k] = op.tecnico;
-    if (op.fecha_inicio && (!ofFechaInicioOp[k] || op.fecha_inicio < ofFechaInicioOp[k])) ofFechaInicioOp[k] = op.fecha_inicio;
-    if (op.fecha_fin && (!ofFechaFinOp[k] || op.fecha_fin > ofFechaFinOp[k])) ofFechaFinOp[k] = op.fecha_fin;
-  });
-
-  // Agrupar por estación
+  // ── Construir filas: una por (OF × estacion) ─────────────────────
   var porEstacion = {};
+
+  // 1. OFs con ops → aparecen en cada estación que tengan
+  Object.keys(opsPorOfEst).forEach(function(ofSap) {
+    var of = ofMap[ofSap];
+    if (!of) return;
+    var estaciones = Object.keys(opsPorOfEst[ofSap]);
+
+    estaciones.forEach(function(est) {
+      if (filtEst && est !== filtEst) return;
+      var ops = opsPorOfEst[ofSap][est];
+
+      // Avance = ops terminadas de ESTA estación / total ops de ESTA estación
+      var total  = ops.length;
+      var term   = ops.filter(function(o) {
+        var s = (o.status || '').toLowerCase();
+        return s === 'done' || s === 'terminada' || s === 'terminado';
+      }).length;
+      var enProc = ops.some(function(o) {
+        var s = (o.status || '').toLowerCase();
+        return s === 'running' || s === 'paused' || s === 'validating';
+      });
+      var pct = total > 0 ? Math.round(term / total * 100) : 0;
+      var opStatus = (pct === 100 && total > 0) ? 'Terminada' : ((enProc || term > 0) ? 'En Proceso' : 'Planeación');
+
+      // Operador: técnico + ayudantes de las ops de ESTA estación (únicos, sep /)
+      var personasSet = {};
+      ops.forEach(function(o) {
+        if (o.tecnico) personasSet[o.tecnico] = true;
+        (o.ayudantes || []).forEach(function(a) { if (a) personasSet[a] = true; });
+      });
+      var operador = Object.keys(personasSet).join(' / ') || '—';
+
+      // Fechas desde FT_OrdenesFabricacion
+      var fProg    = of.fecha_prog    || '';
+      var fEntrega = of.fecha_entrega || '';
+      if (filtDesde && fProg && fProg < filtDesde) return;
+      if (filtHasta && fProg && fProg > filtHasta) return;
+
+      if (filtStatus) {
+        var fs = filtStatus.toLowerCase();
+        if (fs === 'en proceso' && opStatus !== 'En Proceso')  return;
+        if (fs === 'planeacion' && opStatus !== 'Planeación')  return;
+        if (fs === 'terminada'  && opStatus !== 'Terminada')   return;
+      }
+
+      if (filtQ) {
+        var hay = (ofSap + ' ' + of.pedido + ' ' + of.cliente + ' ' + of.descripcion + ' ' + operador).toLowerCase();
+        if (hay.indexOf(filtQ) < 0) return;
+      }
+
+      if (!porEstacion[est]) porEstacion[est] = [];
+      porEstacion[est].push({ of: of, pct: pct, opStatus: opStatus, operador: operador, fProg: fProg, fEntrega: fEntrega, totalOps: total, termOps: term });
+    });
+  });
+
+  // 2. OFs sin ninguna op → "Sin estación"
   _rptData.ofs.forEach(function(of) {
-    var est = ofEstacion[of.of_sap] || 'Sin estación';
-    if (filtEst && est !== filtEst) return;
-    var fi = ofFechaInicioOp[of.of_sap] || of.fecha_prog || '';
-    var ff = ofFechaFinOp[of.of_sap] || of.fecha_entrega || '';
-    if (filtDesde && fi && fi < filtDesde) return;
-    if (filtHasta && fi && fi > filtHasta) return;
-
-    var av = avanceMap[of.of_sap] || { total: 0, terminadas: 0 };
-    var pct = av.total > 0 ? Math.round(av.terminadas / av.total * 100) : 0;
-
-    // Status derived
-    var opStatus = 'Planeación';
-    var statusOk = false;
-    if (pct === 100 && av.total > 0) { opStatus = 'Terminada'; }
-    else if (av.terminadas > 0 || pct > 0) { opStatus = 'En Proceso'; }
-    else { opStatus = 'Planeación'; }
-
-    if (filtStatus) {
-      var fs = filtStatus.toLowerCase();
-      if (fs === 'en proceso' && opStatus !== 'En Proceso') return;
-      if (fs === 'planeacion' && opStatus !== 'Planeación') return;
-      if (fs === 'terminada' && opStatus !== 'Terminada') return;
-    }
-
+    if (opsPorOfEst[of.of_sap]) return;
+    var est = 'Sin estación';
+    if (filtEst && filtEst !== est) return;
+    if (filtStatus && filtStatus.toLowerCase() !== 'planeacion') return;
+    var fProg    = of.fecha_prog    || '';
+    var fEntrega = of.fecha_entrega || '';
+    if (filtDesde && fProg && fProg < filtDesde) return;
+    if (filtHasta && fProg && fProg > filtHasta) return;
     if (filtQ) {
       var hay = (of.of_sap + ' ' + of.pedido + ' ' + of.cliente + ' ' + of.descripcion).toLowerCase();
       if (hay.indexOf(filtQ) < 0) return;
     }
-
     if (!porEstacion[est]) porEstacion[est] = [];
-    porEstacion[est].push({
-      of: of, av: av, pct: pct, opStatus: opStatus,
-      tecnico: ofTecnico[of.of_sap] || '—',
-      fi: fi, ff: ff
-    });
+    porEstacion[est].push({ of: of, pct: 0, opStatus: 'Planeación', operador: '—', fProg: fProg, fEntrega: fEntrega, totalOps: 0, termOps: 0 });
   });
 
+  // ── Render HTML ───────────────────────────────────────────────────
   var html = '';
-  var estaciones = Object.keys(porEstacion).sort();
+  var estaciones = Object.keys(porEstacion).sort(function(a, b) {
+    if (a === 'Sin estación') return 1;
+    if (b === 'Sin estación') return -1;
+    return a.localeCompare(b);
+  });
 
   if (!estaciones.length) {
-    html = '<div class="rpt-empty">No se encontraron registros con los filtros seleccionados.</div>';
-    contenido.innerHTML = html;
+    contenido.innerHTML = '<div class="rpt-empty">No se encontraron registros con los filtros seleccionados.</div>';
     return;
   }
 
-  var iconos = { 'Lavado': '💧', 'Pintura': '🎨', 'Grabado': '✏️', 'CNC': '⚙️', 'Laser': '🔆', 'TIG': '🔥', 'MIG': '🔥', 'Torno': '🔩', 'Fresadora': '🔩', 'Electronico': '⚡', 'Electronica': '⚡' };
+  var iconos = { 'Lavado':'💧','Pintura':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electronico':'⚡','Electronica':'⚡','Sierra':'🪚','Equipo':'🔌' };
   function iconoEst(e) {
+    if (e === 'Sin estación') return '📭';
     var k = Object.keys(iconos).find(function(k){ return e.indexOf(k) >= 0; });
     return k ? iconos[k] : '🏗️';
   }
 
   estaciones.forEach(function(est) {
     var rows = porEstacion[est];
-    var enProceso = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
+    var enProceso  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
     var terminadas = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-    var avgPct = rows.length ? Math.round(rows.reduce(function(s, r){ return s + r.pct; }, 0) / rows.length) : 0;
-    var tec = rows[0] ? rows[0].tecnico : '—';
+    var avgPct = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
 
     html += '<div class="rpt-section" data-estacion="' + est + '">';
     html += '<div class="rpt-section-hdr">';
-    html += '<div class="rpt-section-title">' + iconoEst(est) + ' ' + est + ' <span style="font-weight:400;color:var(--dim);font-size:.72rem;">— ' + tec + '</span>';
+    html += '<div class="rpt-section-title">' + iconoEst(est) + ' ' + est;
     html += ' <span style="background:rgba(255,255,255,.07);border-radius:20px;padding:1px 8px;font-size:.65rem;font-weight:400;">' + rows.length + ' OFs</span>';
-    if (enProceso) html += ' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + enProceso + ' en proceso</span>';
+    if (enProceso)  html += ' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + enProceso + ' en proceso</span>';
     if (terminadas) html += ' <span style="background:rgba(34,197,94,.12);color:#4ade80;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + terminadas + ' term.</span>';
     html += '</div>';
     html += '<div class="rpt-section-meta">Avance prom: <strong>' + avgPct + '%</strong></div>';
@@ -11172,21 +11193,22 @@ function ftRptRender() {
     html += '<div style="overflow-x:auto;"><table class="rpt-table">';
     html += '<thead><tr>' +
       '<th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th>' +
-      '<th style="text-align:center;">Cant.</th><th>Status</th>' +
-      '<th>F.Inicio</th><th>F.Term</th><th>Avance</th>' +
+      '<th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th>' +
+      '<th>F.Prog</th><th>F.Entrega</th><th>Avance</th>' +
       '</tr></thead><tbody>';
 
     rows.forEach(function(r) {
       var color = ftRptAvanceColor(r.pct);
       html += '<tr>';
       html += '<td class="rpt-of-sap">' + (r.of.of_sap || '—') + '</td>';
-      html += '<td style="font-size:.68rem;color:var(--dim);">' + (r.of.pedido || '—') + '</td>';
-      html += '<td style="font-size:.7rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (r.of.cliente || '—') + '</td>';
+      html += '<td style="font-size:.68rem;color:var(--dim);">' + (r.of.pedido || 'N/A') + '</td>';
+      html += '<td style="font-size:.7rem;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (r.of.cliente || '') + '">' + (r.of.cliente || '—') + '</td>';
       html += '<td class="rpt-desc" style="max-width:180px;" title="' + (r.of.descripcion || '') + '">' + (r.of.descripcion || '—') + '</td>';
       html += '<td style="text-align:center;">' + (r.of.cantidad || '—') + '</td>';
       html += '<td>' + ftRptStatusPill(r.opStatus) + '</td>';
-      html += '<td style="font-size:.68rem;">' + ftRptFmtFecha(r.fi) + '</td>';
-      html += '<td style="font-size:.68rem;">' + ftRptFmtFecha(r.ff) + '</td>';
+      html += '<td style="font-size:.67rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + r.operador + '">' + r.operador + '</td>';
+      html += '<td style="font-size:.68rem;white-space:nowrap;">' + ftRptFmtFecha(r.fProg) + '</td>';
+      html += '<td style="font-size:.68rem;white-space:nowrap;">' + ftRptFmtFecha(r.fEntrega) + '</td>';
       html += '<td><div class="rpt-avance-wrap">' +
         '<div class="rpt-avance-bar"><div class="rpt-avance-fill" style="width:' + r.pct + '%;background:' + color + ';"></div></div>' +
         '<span class="rpt-avance-pct" style="color:' + color + ';">' + r.pct + '%</span>' +
@@ -11201,8 +11223,7 @@ function ftRptRender() {
 }
 
 function ftRptLimpiarFiltros() {
-  var ids = ['rpt-filtro-estacion','rpt-filtro-status','rpt-desde','rpt-hasta','rpt-buscar'];
-  ids.forEach(function(id) {
+  ['rpt-filtro-estacion','rpt-filtro-status','rpt-desde','rpt-hasta','rpt-buscar'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
