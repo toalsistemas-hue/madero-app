@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.31</title>
+<title>FabTracker App v2.32</title>
 
 <!-- MSAL Browser -->
 
@@ -6057,8 +6057,13 @@ async function appLoadDataFromSP() {
       if (!key) return;
       var ops = [];
       try { ops = JSON.parse(f.Operaciones_JSON||'[]'); } catch(e){}
+      var subarts = [];
+      try {
+        if(f.Subarts_JSON) subarts = JSON.parse(f.Subarts_JSON)||[];
+        else if(f.Sub_Articulos) subarts = f.Sub_Articulos.split(',').map(function(s){return s.trim();}).filter(Boolean);
+      } catch(e){}
       DB.templates[key] = {articulo:key, nombre:f.Nombre_Articulo||key, padre:f.Padre_Articulo||null,
-        subarts:[], ops:ops};
+        subarts:subarts, ops:ops};
     });
     // Asignar padre y subarts DESPUÉS de cargar templates
     // Log diagnóstico
@@ -6067,6 +6072,9 @@ async function appLoadDataFromSP() {
       console.log('[subarts] OF:', _aof0.of_sap, '| articulo:', _aof0.articulo, '| sub_articulos:', JSON.stringify(_aof0.sub_articulos));
       var _tpl0 = DB.templates && DB.templates[_aof0.articulo];
       console.log('[subarts] tpl:', _tpl0 ? JSON.stringify({padre:_tpl0.padre, subarts:_tpl0.subarts}) : 'null');
+      // Ver raw fields de plantilla para diagnóstico
+      var _rawTpl = (tplRes.value||[]).find(function(i){return (i.fields.Articulo_Key||i.fields.Title||'')=== _aof0.articulo;});
+      if(_rawTpl) console.log('[subarts] raw SP fields:', JSON.stringify({Subarts_JSON:_rawTpl.fields.Subarts_JSON, Sub_Articulos:_rawTpl.fields.Sub_Articulos, Padre:_rawTpl.fields.Padre_Articulo}));
     }
     DB.activeOFs.forEach(function(aof){
       var tpl = DB.templates && DB.templates[aof.articulo];
