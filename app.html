@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.38</title>
+<title>FabTracker App v2.39</title>
 
 <!-- MSAL Browser -->
 
@@ -5482,7 +5482,9 @@ function calTiemSave(key){
   renderApp();
   if(C.currentPage==='historial') renderHist();
   // Persist to FT_CalTiempos
+  console.log('[CalTiemSave] key='+key+' appSiteId='+appSiteId+' nums='+nums.length);
   if (appSiteId) appSaveCalTiempoToSP(key, calData);
+  else { console.warn('[CalTiemSave] appSiteId es null, reintentando en 2s...'); setTimeout(function(){ if(appSiteId) appSaveCalTiempoToSP(key, calData); else console.error('[CalTiemSave] appSiteId sigue null'); }, 2000); }
 }
 function calTiemEdit(key){
   var d = calTiemGetData(key);
