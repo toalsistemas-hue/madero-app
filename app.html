@@ -1232,8 +1232,8 @@ function onSync(target, cb) { syncCallbacks[target].push(cb); }
 function fireSync(source, event, data) {
   var targets = source==="coord" ? syncCallbacks.app : syncCallbacks.coord;
   targets.forEach(function(cb){ try{cb(event,data);}catch(e){} });
-  // Mostrar toast de sincronización
   showSyncToast(source, event);
+  if(source === 'coord') appPlayNotifSound('coord');
 }
 function showSyncToast(source, event) {
   var toastId = source==="coord"?"toast-coord":"toast-app";
@@ -1242,6 +1242,37 @@ function showSyncToast(source, event) {
   el.textContent = (source==="coord"?"📡 App actualizada":"📡 Panel actualizado") + " — " + event;
   el.style.opacity="1"; el.style.transform="translateY(0)";
   setTimeout(function(){el.style.opacity="0"; el.style.transform="translateY(10px)";},2500);
+}
+
+// ── Sonidos de notificación (distintos por tipo) ──────────────────
+// Usa la misma preferencia que _APP_ERR_SOUND_KEY
+// Tipos: 'coord', 'calidad', 'turno', 'retrabajo', 'ok'
+function appPlayNotifSound(tipo) {
+  try {
+    if(localStorage.getItem(_APP_ERR_SOUND_KEY) === 'off') return;
+    var ac = new (window.AudioContext || window.webkitAudioContext)();
+    function tone(t, freq, dur, vol) {
+      var o = ac.createOscillator(); var g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine'; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(vol||0.2, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.start(t); o.stop(t + dur);
+    }
+    var t = ac.currentTime;
+    if(tipo === 'coord') {
+      tone(t, 523, 0.10, 0.18); tone(t+0.13, 659, 0.14, 0.18);   // Do-Mi ascendente
+    } else if(tipo === 'calidad') {
+      tone(t, 659, 0.10, 0.20); tone(t+0.13, 659, 0.10, 0.20); tone(t+0.26, 784, 0.18, 0.22);  // triple alerta
+    } else if(tipo === 'turno') {
+      tone(t, 784, 0.12, 0.18); tone(t+0.15, 523, 0.18, 0.18);   // Sol-Do descendente
+    } else if(tipo === 'retrabajo') {
+      tone(t, 440, 0.08, 0.22); tone(t+0.12, 440, 0.08, 0.22); tone(t+0.28, 349, 0.18, 0.22);
+    } else if(tipo === 'ok') {
+      tone(t, 523, 0.08, 0.15); tone(t+0.10, 784, 0.14, 0.15);   // confirmación suave
+    }
+    setTimeout(function(){ try{ ac.close(); }catch(e){} }, 1000);
+  } catch(e) {}
 }
 
 
@@ -2805,6 +2836,7 @@ function appConfirmReanudar(){
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
       time:nowT(),read:false
     });
+    appPlayNotifSound('turno');
     closeAppModal('app-modal-traspaso');
     // ── Persistir en SP ────────────────────────────────────────────────────────
     (async function(){
@@ -2903,6 +2935,7 @@ function appConfirmValCal(){
   var note=document.getElementById("app-valcal-note").value.trim()||"Sin nota";
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appPlayNotifSound('calidad');
   closeAppModal("app-modal-valcal");renderApp();
   console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' needsCal='+op.needsCal+' note='+note);
   if(typeof appSaveOpToSP==='function'){
@@ -2984,7 +3017,7 @@ function appCalRespond(result){
       showAppConfirm("¿Todo el lote?","Sin cantidades. ¿Aplicar rechazo total ("+op.qty_total+" piezas) como Chatarra?",function(){
         op.qty_rej=op.qty_total;op.qty_chat=op.qty_total;op.qty_ok=0;op.status="done";op.calResult="rechazado";
         DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
-        closeAppModal("app-modal-cal-resp");renderApp();
+        closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
       },"Sí, chatarra total","app-mb-r");return;
     }
     var lib=Math.max(0,op.qty_total-total);
@@ -2995,12 +3028,13 @@ function appCalRespond(result){
     op.status=lib>0?"running":"done";
     // Solo notificar al supervisor — la op de retrabajo se genera cuando el supervisor termina
     if(retr>0){
+      appPlayNotifSound('retrabajo');
       DB.notifications.push({id:"retr_cal_"+Date.now(),type:"retrabajo_pendiente",of_sap:ctx.of_sap,op_id:op.id,
         msg:"🔄 "+retr+" pieza(s) de retrabajo pendientes en: "+op.nombre,time:nowT(),read:false});
     }
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
-  closeAppModal("app-modal-cal-resp");renderApp();
+  closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
 }
 function appOpenFinish(sap,opId){
   APP.currentFinishCtx={of_sap:sap,op_id:opId};
@@ -3734,7 +3768,7 @@ function doFinish(ctx, el, ok, def, rej) {
   });
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
-  closeAppModal('app-modal-finish'); renderApp();
+  closeAppModal('app-modal-finish'); appPlayNotifSound('ok'); renderApp();
   if(typeof appSaveOpToSP==='function') appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){console.warn('SP finish save:',e);});
   fireSync('app','op_finished',{of_sap:ctx.of_sap, op_id:op.id, op_name:op.nombre, obs:obs, tecnico:op.tecnico||''});
 }
@@ -6953,8 +6987,8 @@ function onSync(target, cb) { syncCallbacks[target].push(cb); }
 function fireSync(source, event, data) {
   var targets = source==="coord" ? syncCallbacks.app : syncCallbacks.coord;
   targets.forEach(function(cb){ try{cb(event,data);}catch(e){} });
-  // Mostrar toast de sincronización
   showSyncToast(source, event);
+  if(source === 'coord') appPlayNotifSound('coord');
 }
 function showSyncToast(source, event) {
   var toastId = source==="coord"?"toast-coord":"toast-app";
@@ -8408,6 +8442,7 @@ function appConfirmReanudar(){
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
       time:nowT(),read:false
     });
+    appPlayNotifSound('turno');
     closeAppModal('app-modal-traspaso');
     // ── Persistir en SP ────────────────────────────────────────────────────────
     (async function(){
@@ -8521,6 +8556,7 @@ function appConfirmValCal(){
   var note=document.getElementById("app-valcal-note").value.trim()||"Sin nota";
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appPlayNotifSound('calidad');
   closeAppModal("app-modal-valcal");renderApp();
   console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' note='+note);
   appSaveOpToSP(ctx.of_sap, ctx.op_id)
@@ -8606,7 +8642,7 @@ function appCalRespond(result){
         op.needsCal=false;
         if(DB.timers[key]) DB.timers[key].running=false;
         DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
-        closeAppModal("app-modal-cal-resp");renderApp();
+        closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
         appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){});
         _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:'rechazado'});
       },"Sí, chatarra total","app-mb-r");return;
@@ -8627,12 +8663,13 @@ function appCalRespond(result){
       if(DB.timers[key]) DB.timers[key].running=false;
     }
     if(retr>0){
+      appPlayNotifSound('retrabajo');
       DB.notifications.push({id:"retr_cal_"+Date.now(),type:"retrabajo_pendiente",of_sap:ctx.of_sap,op_id:op.id,
         msg:"🔄 "+retr+" pieza(s) de retrabajo pendientes en: "+op.nombre,time:nowT(),read:false});
     }
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
-  closeAppModal("app-modal-cal-resp");renderApp();
+  closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
   appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
   _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
 }
@@ -11551,6 +11588,7 @@ async function spPollCheck() {
       if (!exists) {
         DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅',
           msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
+        appPlayNotifSound('coord');
       }
       renderApp();
       return;
