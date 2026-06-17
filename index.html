@@ -1615,15 +1615,16 @@ tr:last-child td{border-bottom:none;}
             <div>
               <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">
                 Canal ntfy 🔔
-                <span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — para notificaciones con pantalla bloqueada</span>
+                <span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — solo Administrador General</span>
               </label>
               <div style="display:flex;align-items:center;gap:6px;">
                 <span style="font-size:.75rem;color:var(--dim);white-space:nowrap;">ntfy.sh/</span>
                 <input class="form-input" id="ft-tec-ntfy" placeholder="madero-juan-garcia" style="flex:1;"
-                  oninput="this.value=this.value.replace(/[^a-z0-9\-_]/g,'').toLowerCase()">
+                  oninput="this.value=this.value.replace(/[^a-z0-9\-_]/g,'').toLowerCase()"
+                  id="ft-tec-ntfy">
               </div>
               <div style="font-size:.67rem;color:var(--dim);margin-top:4px;">
-                El técnico instala la app <strong>ntfy</strong> y se suscribe a este canal. Dejar vacío si no usa notificaciones.
+                Configurar el canal ntfy del técnico para notificaciones push. Solo editable por el Administrador General.
               </div>
             </div>
             <label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;">
@@ -1676,6 +1677,8 @@ tr:last-child td{border-bottom:none;}
         <button class="cfg-tab-btn cfg-tab-active" id="cfg-tab-usuarios" onclick="cfgShowTab('usuarios')">👤 Usuarios</button>
         <button class="cfg-tab-btn" id="cfg-tab-menu" onclick="cfgShowTab('menu')">🗂️ Módulos y Accesos</button>
         <button class="cfg-tab-btn" id="cfg-tab-sesiones" onclick="cfgShowTab('sesiones')">🟢 Sesiones Activas</button>
+        <button class="cfg-tab-btn" id="cfg-tab-usuarios-movil" onclick="cfgShowTab('usuarios-movil')">📱 Usuarios App Móvil</button>
+        <button class="cfg-tab-btn" id="cfg-tab-accesos-movil" onclick="cfgShowTab('accesos-movil')">🖥️ Pantallas y Accesos Móvil</button>
       </div>
 
       <!-- TAB: USUARIOS -->
@@ -1856,6 +1859,96 @@ tr:last-child td{border-bottom:none;}
     </div>
 
   </div>
+
+      <!-- TAB: USUARIOS APP MÓVIL -->
+      <div id="cfg-view-usuarios-movil" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input id="cfg-movil-usr-search" type="text" placeholder="Buscar usuario…" class="field-input" style="width:220px;margin-bottom:0;" oninput="cfgFilterUsuariosMovil()">
+            <select id="cfg-movil-usr-filter-puesto" class="field-input" style="width:200px;margin-bottom:0;" onchange="cfgFilterUsuariosMovil()">
+              <option value="">Todos los puestos</option>
+            </select>
+            <select id="cfg-movil-usr-filter-activo" class="field-input" style="width:140px;margin-bottom:0;" onchange="cfgFilterUsuariosMovil()">
+              <option value="">Activo / Inactivo</option>
+              <option value="1">Solo Activos</option>
+              <option value="0">Solo Inactivos</option>
+            </select>
+          </div>
+          <button class="btn-primary" onclick="cfgOpenUsuarioMovilModal(null)">+ Nuevo Usuario App</button>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+            <thead>
+              <tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Usuario</th>
+                <th style="padding:10px 14px;text-align:left;">Email</th>
+                <th style="padding:10px 14px;text-align:left;">Puesto Móvil</th>
+                <th style="padding:10px 14px;text-align:left;">Rol App</th>
+                <th style="padding:10px 14px;text-align:center;">🔔 Canal ntfy</th>
+                <th style="padding:10px 14px;text-align:center;">Estado</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="cfg-movil-usr-tbody">
+              <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TAB: PANTALLAS Y ACCESOS MÓVIL -->
+      <div id="cfg-view-accesos-movil" style="display:none;">
+        <!-- Sub-tabs -->
+        <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+          <button class="cfg-subtab-btn cfg-subtab-active" id="cfg-stab-pantallas-movil" onclick="cfgShowSubTabMovil('pantallas-movil')">🖥️ Pantallas Móvil</button>
+          <button class="cfg-subtab-btn" id="cfg-stab-puestos-movil" onclick="cfgShowSubTabMovil('puestos-movil')">🏷️ Puestos Móvil</button>
+        </div>
+
+        <!-- Pantallas Móvil -->
+        <div id="cfg-view-pantallas-movil">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">Pantallas disponibles en el menú de la app móvil</span>
+            <button class="btn-primary" onclick="cfgOpenPantallaMovilModal(null)">+ Nueva Pantalla</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre</th>
+                <th style="padding:10px 14px;text-align:center;">Icono</th>
+                <th style="padding:10px 14px;text-align:center;">PantallaID</th>
+                <th style="padding:10px 14px;text-align:left;">Descripción</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-pan-movil-tbody">
+                <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Puestos Móvil -->
+        <div id="cfg-view-puestos-movil" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <span style="font-size:.82rem;color:var(--text-mid);">Puestos con acceso a la app móvil y sus pantallas asignadas</span>
+            <button class="btn-primary" onclick="cfgOpenPuestoMovilModal(null)">+ Nuevo Puesto</button>
+          </div>
+          <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);overflow:hidden;">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem;">
+              <thead><tr style="background:var(--accent);color:#fff;">
+                <th style="padding:10px 14px;text-align:left;">Nombre del Puesto</th>
+                <th style="padding:10px 14px;text-align:center;">PuestoID</th>
+                <th style="padding:10px 14px;text-align:center;">Rol App</th>
+                <th style="padding:10px 14px;text-align:left;">Pantallas asignadas</th>
+                <th style="padding:10px 14px;text-align:center;">Acciones</th>
+              </tr></thead>
+              <tbody id="cfg-pst-movil-tbody">
+                <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
 </div>
 
 <!-- PAGE: COTIZADOR MADERO EQUIPOS -->
@@ -3135,14 +3228,16 @@ var CFG = { usuarios:[], puestos:[], modulos:[], submodulos:[], pantallas:[], cu
 // ── TAB NAVIGATION ────────────────────────────────────────────────
 function cfgShowTab(tab) {
   CFG.currentTab = tab;
-  ['usuarios','menu','sesiones'].forEach(function(t) {
+  ['usuarios','menu','sesiones','usuarios-movil','accesos-movil'].forEach(function(t) {
     var el = document.getElementById('cfg-view-'+t); var btn = document.getElementById('cfg-tab-'+t);
     if (el) el.style.display = (t===tab)?'':'none';
     if (btn) btn.classList.toggle('cfg-tab-active', t===tab);
   });
-  if (tab==='usuarios') cfgLoadUsuarios();
-  if (tab==='menu')     cfgLoadMenuData();
-  if (tab==='sesiones') cfgLoadSesiones();
+  if (tab==='usuarios')       cfgLoadUsuarios();
+  if (tab==='menu')           cfgLoadMenuData();
+  if (tab==='sesiones')       cfgLoadSesiones();
+  if (tab==='usuarios-movil') cfgLoadUsuariosMovil();
+  if (tab==='accesos-movil')  cfgLoadAccesosMovil();
 }
 async function cfgDiagListFields(listName) {
   try {
@@ -4762,6 +4857,15 @@ function ftOpenTecnico(spId) {
   document.getElementById('ft-tec-ntfy').value  = '';
   document.getElementById('ft-tec-activo').checked = true;
   document.getElementById('ft-tec-sp-id').textContent = spId || '';
+  // Solo el Administrador General puede editar el canal ntfy
+  var ntfyInput = document.getElementById('ft-tec-ntfy');
+  var isAdmin = window.currentUser && (window.currentUser.esAdmin || (window.currentUser.puesto||'').toLowerCase().includes('administrador'));
+  if (ntfyInput) {
+    ntfyInput.readOnly = !isAdmin;
+    ntfyInput.style.opacity = isAdmin ? '1' : '0.45';
+    ntfyInput.style.cursor  = isAdmin ? '' : 'not-allowed';
+    ntfyInput.title = isAdmin ? '' : 'Solo el Administrador General puede modificar este campo';
+  }
   openCModal('ft-modal-tecnico');
 }
 function ftOpenTecnicoFromData(spId, nombre, puesto, ntfy, activo) {
@@ -11062,6 +11166,291 @@ async function ntfyNotificarEvento(evento, data) {
   }
 
   destinos.forEach(function(c){ ntfySend(c, m.titulo, m.cuerpo, m.prioridad).catch(function(){}); });
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// ── CONFIGURACIÓN APP MÓVIL — Pantallas, Puestos y Usuarios ────────
+// Listas SP: FT_PantallasMovil, FT_PuestosMovil, FT_UsuariosMovil
+// Completamente separadas de las listas del portal web.
+// ══════════════════════════════════════════════════════════════════
+
+// ── Caché local ───────────────────────────────────────────────────
+var _cfgMovil = {
+  pantallas: [], puestos: [], usuarios: [],
+  subTab: 'pantallas-movil'
+};
+
+// ── Tab load handlers ─────────────────────────────────────────────
+async function cfgLoadUsuariosMovil() {
+  var tbody = document.getElementById('cfg-movil-usr-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">⏳ Cargando…</td></tr>';
+  try {
+    var sid = await getSiteId();
+    var [usrRes, pstRes] = await Promise.all([
+      graphGet('sites/'+sid+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'),
+      graphGet('sites/'+sid+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
+    ]);
+    _cfgMovil.usuarios = (usrRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
+    _cfgMovil.puestos  = (pstRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
+    // Populate puesto filter
+    var sel = document.getElementById('cfg-movil-usr-filter-puesto');
+    if (sel) {
+      sel.innerHTML = '<option value="">Todos los puestos</option>' +
+        _cfgMovil.puestos.map(function(p){ return '<option value="'+p.PuestoID+'">'+p.Nombre+'</option>'; }).join('');
+    }
+    cfgRenderUsuariosMovil(_cfgMovil.usuarios);
+  } catch(e) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#ef4444;">'+
+      'Error: '+e.message+'<br><small>Las listas FT_UsuariosMovil / FT_PuestosMovil deben crearse primero en SharePoint.</small></td></tr>';
+  }
+}
+
+function cfgFilterUsuariosMovil() {
+  var q    = (document.getElementById('cfg-movil-usr-search')||{}).value||'';
+  var pst  = (document.getElementById('cfg-movil-usr-filter-puesto')||{}).value||'';
+  var act  = (document.getElementById('cfg-movil-usr-filter-activo')||{}).value||'';
+  var list = _cfgMovil.usuarios.filter(function(u) {
+    if (q   && !(u.Nombre+u.Email+'').toLowerCase().includes(q.toLowerCase())) return false;
+    if (pst && u.PuestoMovilID !== pst) return false;
+    if (act === '1' && u.Activo === false) return false;
+    if (act === '0' && u.Activo !== false) return false;
+    return true;
+  });
+  cfgRenderUsuariosMovil(list);
+}
+
+function cfgRenderUsuariosMovil(list) {
+  var tbody = document.getElementById('cfg-movil-usr-tbody');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">Sin usuarios registrados.</td></tr>';
+    return;
+  }
+  var rolLabels = { supervisor:'Supervisor de Línea', calidad_lin:'Inspector Calidad', calidad_tiem:'Analista Tiempos' };
+  tbody.innerHTML = list.map(function(u) {
+    var puestNom = (_cfgMovil.puestos.find(function(p){ return p.PuestoID===u.PuestoMovilID; })||{}).Nombre || u.PuestoMovilID || '—';
+    var rolLabel = rolLabels[u.RolApp] || u.RolApp || '—';
+    var activo   = u.Activo_App !== false;
+    return '<tr style="border-bottom:1px solid var(--border-color);">' +
+      '<td style="padding:10px 14px;font-weight:600;">'+(u.Nombre||u.Title||'')+'</td>' +
+      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(u.Email||'')+'</td>' +
+      '<td style="padding:10px 14px;font-size:.78rem;">'+(puestNom)+'</td>' +
+      '<td style="padding:10px 14px;font-size:.78rem;">'+(rolLabel)+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;font-size:.75rem;">'+(u.Canal_Ntfy?'<span style="color:#22c55e;">ntfy.sh/'+u.Canal_Ntfy+'</span>':'<span style="color:var(--text-mid);">—</span>')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;"><span style="background:rgba('+(activo?'34,197,94':'239,68,68')+',.1);color:'+(activo?'#22c55e':'#ef4444')+';border-radius:5px;padding:2px 8px;font-size:.72rem;">'+(activo?'Activo':'Inactivo')+'</span></td>' +
+      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenUsuarioMovilModal(\''+u._id+'\')">✏ Editar</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+async function cfgLoadAccesosMovil() {
+  cfgShowSubTabMovil(_cfgMovil.subTab || 'pantallas-movil');
+  var sid = await getSiteId().catch(function(){return null;});
+  if (!sid) return;
+  try {
+    var [panRes, pstRes] = await Promise.all([
+      graphGet('sites/'+sid+'/lists/FT_PantallasMovil/items?$expand=fields&$top=100'),
+      graphGet('sites/'+sid+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
+    ]);
+    _cfgMovil.pantallas = (panRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
+    _cfgMovil.puestos   = (pstRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
+    cfgRenderPantallasMovil();
+    cfgRenderPuestosMovil();
+  } catch(e) {
+    var tb = document.getElementById('cfg-pan-movil-tbody');
+    if (tb) tb.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#ef4444;">'+
+      'Error: '+e.message+'<br><small>Crear las listas FT_PantallasMovil y FT_PuestosMovil en SharePoint primero.</small></td></tr>';
+  }
+}
+
+function cfgShowSubTabMovil(sub) {
+  _cfgMovil.subTab = sub;
+  ['pantallas-movil','puestos-movil'].forEach(function(s){
+    var el  = document.getElementById('cfg-view-'+s);
+    var btn = document.getElementById('cfg-stab-'+s);
+    if (el)  el.style.display = s===sub ? 'block' : 'none';
+    if (btn) { btn.classList.toggle('cfg-subtab-active', s===sub); }
+  });
+}
+
+function cfgRenderPantallasMovil() {
+  var tbody = document.getElementById('cfg-pan-movil-tbody');
+  if (!tbody) return;
+  if (!_cfgMovil.pantallas.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Sin pantallas registradas.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _cfgMovil.pantallas.map(function(p) {
+    return '<tr style="border-bottom:1px solid var(--border-color);">' +
+      '<td style="padding:10px 14px;font-weight:600;">'+(p.Nombre||p.Title||'')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;font-size:1.4rem;">'+(p.Icono_App||p.Icono||'📱')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;font-family:monospace;font-size:.78rem;background:rgba(255,255,255,.03);">'+(p.PantallaID||'')+'</td>' +
+      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(p.Descripcion||'')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenPantallaMovilModal(\''+p._id+'\')">✏ Editar</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function cfgRenderPuestosMovil() {
+  var tbody = document.getElementById('cfg-pst-movil-tbody');
+  if (!tbody) return;
+  if (!_cfgMovil.puestos.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Sin puestos registrados.</td></tr>';
+    return;
+  }
+  var rolLabels = { supervisor:'Supervisor', calidad_lin:'Inspector Calidad', calidad_tiem:'Analista Tiempos' };
+  tbody.innerHTML = _cfgMovil.puestos.map(function(p) {
+    var pans = [];
+    try { pans = JSON.parse(p.Pantallas||'[]'); } catch(e){}
+    var panNames = pans.map(function(pid){
+      var pan = _cfgMovil.pantallas.find(function(x){ return x.PantallaID===pid; });
+      return pan ? pan.Nombre : pid;
+    }).join(', ');
+    return '<tr style="border-bottom:1px solid var(--border-color);">' +
+      '<td style="padding:10px 14px;font-weight:600;">'+(p.Nombre||p.Title||'')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;font-family:monospace;font-size:.78rem;">'+(p.PuestoID||'')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;font-size:.78rem;">'+(rolLabels[p.RolApp]||p.RolApp||'—')+'</td>' +
+      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(panNames||'Sin pantallas')+'</td>' +
+      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenPuestoMovilModal(\''+p._id+'\')">✏ Editar</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Modals for create/edit ────────────────────────────────────────
+function cfgOpenPantallaMovilModal(spId) {
+  var p = spId ? _cfgMovil.pantallas.find(function(x){return x._id===spId;}) : null;
+  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre</label><input class="form-input" id="cfgpm-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Icono (emoji)</label><input class="form-input" id="cfgpm-icono" value="'+(p?p.Icono_App||p.Icono||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PantallaID <span style="font-size:.65rem;">(sin espacios)</span></label><input class="form-input" id="cfgpm-pid" value="'+(p?p.PantallaID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Descripción</label><input class="form-input" id="cfgpm-desc" value="'+(p?p.Descripcion||'':'')+'"></div>' +
+    '</div>';
+  showCfgMovilModal('🖥️ '+(spId?'Editar':'Nueva')+' Pantalla Móvil', html, async function(){
+    var fields = {
+      Title:      document.getElementById('cfgpm-nombre').value.trim(),
+      Nombre:     document.getElementById('cfgpm-nombre').value.trim(),
+      Icono_App:  document.getElementById('cfgpm-icono').value.trim(),
+      PantallaID: document.getElementById('cfgpm-pid').value.trim(),
+      Descripcion:document.getElementById('cfgpm-desc').value.trim(),
+    };
+    if (!fields.Nombre || !fields.PantallaID) { alert('Nombre y PantallaID son requeridos.'); return; }
+    var sid = await getSiteId();
+    if (spId) await graphPatch('sites/'+sid+'/lists/FT_PantallasMovil/items/'+spId+'/fields', fields);
+    else      await graphPost('sites/'+sid+'/lists/FT_PantallasMovil/items', {fields:fields});
+    closeCfgMovilModal();
+    cfgLoadAccesosMovil();
+  });
+}
+
+function cfgOpenPuestoMovilModal(spId) {
+  var p = spId ? _cfgMovil.puestos.find(function(x){return x._id===spId;}) : null;
+  var rolOpts = ['supervisor','calidad_lin','calidad_tiem'].map(function(r){
+    var sel = p&&p.RolApp===r?' selected':'';
+    var lbl = {supervisor:'Supervisor de Línea',calidad_lin:'Inspector Calidad Línea',calidad_tiem:'Analista de Tiempos'}[r];
+    return '<option value="'+r+'"'+sel+'>'+lbl+'</option>';
+  }).join('');
+  var curPans = [];
+  try { curPans = JSON.parse(p&&p.Pantallas||'[]'); } catch(e){}
+  var panChecks = _cfgMovil.pantallas.map(function(pan){
+    var chk = curPans.indexOf(pan.PantallaID)>=0?' checked':'';
+    return '<label style="display:flex;align-items:center;gap:7px;font-size:.8rem;cursor:pointer;">' +
+      '<input type="checkbox" value="'+pan.PantallaID+'" class="cfgpm-pan-check"'+chk+'> ' +
+      (pan.Icono_App||pan.Icono||'')+ ' '+pan.Nombre+'</label>';
+  }).join('');
+  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre del Puesto</label><input class="form-input" id="cfgpm-pst-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PuestoID <span style="font-size:.65rem;">(sin espacios)</span></label><input class="form-input" id="cfgpm-pst-pid" value="'+(p?p.PuestoID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Rol en la App</label><select class="form-input" id="cfgpm-pst-rol"><option value="">Sin rol</option>'+rolOpts+'</select></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:8px;">Pantallas asignadas</label><div style="display:flex;flex-direction:column;gap:6px;">'+(panChecks||'<span style="font-size:.78rem;color:var(--dim);">Sin pantallas disponibles — créalas primero.</span>')+'</div></div>' +
+    '</div>';
+  showCfgMovilModal('🏷️ '+(spId?'Editar':'Nuevo')+' Puesto Móvil', html, async function(){
+    var nombre = document.getElementById('cfgpm-pst-nombre').value.trim();
+    var pid    = document.getElementById('cfgpm-pst-pid').value.trim();
+    var rol    = document.getElementById('cfgpm-pst-rol').value;
+    var pans   = Array.from(document.querySelectorAll('.cfgpm-pan-check:checked')).map(function(c){return c.value;});
+    if (!nombre||!pid) { alert('Nombre y PuestoID son requeridos.'); return; }
+    var fields = { Title: nombre, Nombre: nombre, PuestoID: pid, RolApp: rol, Pantallas: JSON.stringify(pans) };
+    var sid = await getSiteId();
+    if (spId) await graphPatch('sites/'+sid+'/lists/FT_PuestosMovil/items/'+spId+'/fields', fields);
+    else      await graphPost('sites/'+sid+'/lists/FT_PuestosMovil/items', {fields:fields});
+    closeCfgMovilModal();
+    cfgLoadAccesosMovil();
+  });
+}
+
+function cfgOpenUsuarioMovilModal(spId) {
+  var u = spId ? _cfgMovil.usuarios.find(function(x){return x._id===spId;}) : null;
+  var pstOpts = _cfgMovil.puestos.map(function(p){
+    var sel = u&&u.PuestoMovilID===p.PuestoID?' selected':'';
+    return '<option value="'+p.PuestoID+'"'+sel+'>'+p.Nombre+'</option>';
+  }).join('');
+  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre completo</label><input class="form-input" id="cfgum-nombre" value="'+(u?u.Nombre||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Email @maderoequipos.com</label><input class="form-input" id="cfgum-email" type="email" value="'+(u?u.Email||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Puesto Móvil</label><select class="form-input" id="cfgum-puesto"><option value="">Sin puesto</option>'+pstOpts+'</select></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Canal ntfy 🔔<span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — notificaciones con pantalla bloqueada</span></label>' +
+    '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:.75rem;color:var(--dim);">ntfy.sh/</span><input class="form-input" id="cfgum-ntfy" value="'+(u?u.Canal_Ntfy||'':'')+'" placeholder="madero-juan-garcia" oninput="this.value=this.value.replace(/[^a-z0-9\\-_]/g,\'\').toLowerCase()" style="flex:1;"></div></div>' +
+    '<label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;"><input type="checkbox" id="cfgum-activo" '+((!u||u.Activo_App!==false)?'checked':'')+'>Activo</label>' +
+    '</div>';
+  showCfgMovilModal('👤 '+(spId?'Editar':'Nuevo')+' Usuario App Móvil', html, async function(){
+    var nombre = document.getElementById('cfgum-nombre').value.trim();
+    var email  = document.getElementById('cfgum-email').value.trim().toLowerCase();
+    var puesto = document.getElementById('cfgum-puesto').value;
+    var ntfy   = document.getElementById('cfgum-ntfy').value.trim().toLowerCase();
+    var activo = document.getElementById('cfgum-activo').checked;
+    if (!nombre||!email) { alert('Nombre y email son requeridos.'); return; }
+    // Get RolApp from selected puesto
+    var puestoObj = _cfgMovil.puestos.find(function(p){return p.PuestoID===puesto;});
+    var rolApp = puestoObj ? puestoObj.RolApp||'' : '';
+    var fields = { Title: nombre, Nombre: nombre, Email: email, PuestoMovilID: puesto, Canal_Ntfy: ntfy, Activo_App: activo, RolApp: rolApp };
+    var sid = await getSiteId();
+    if (spId) await graphPatch('sites/'+sid+'/lists/FT_UsuariosMovil/items/'+spId+'/fields', fields);
+    else      await graphPost('sites/'+sid+'/lists/FT_UsuariosMovil/items', {fields:fields});
+    closeCfgMovilModal();
+    cfgLoadUsuariosMovil();
+  });
+}
+
+// ── Shared modal helper ───────────────────────────────────────────
+var _cfgMovilModalCb = null;
+function showCfgMovilModal(titulo, html, onSave) {
+  _cfgMovilModalCb = onSave;
+  var m = document.getElementById('cfg-movil-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'cfg-movil-modal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
+    m.innerHTML = '<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:min(480px,92vw);max-height:88vh;overflow-y:auto;padding:20px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<h3 id="cfgmm-title" style="font-size:.95rem;font-weight:700;"></h3>' +
+      '<button onclick="closeCfgMovilModal()" style="background:none;border:none;color:var(--dim);font-size:1.2rem;cursor:pointer;">✕</button></div>' +
+      '<div id="cfgmm-body"></div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">' +
+      '<button class="btn btn-ghost" onclick="closeCfgMovilModal()">Cancelar</button>' +
+      '<button class="btn btn-primary" onclick="cfgMovilModalSave()">💾 Guardar</button></div></div>';
+    m.addEventListener('click', function(e){ if(e.target===m) closeCfgMovilModal(); });
+    document.body.appendChild(m);
+  }
+  document.getElementById('cfgmm-title').textContent = titulo;
+  document.getElementById('cfgmm-body').innerHTML = html;
+  m.style.display = 'flex';
+}
+function closeCfgMovilModal() {
+  var m = document.getElementById('cfg-movil-modal');
+  if (m) m.style.display = 'none';
+  _cfgMovilModalCb = null;
+}
+async function cfgMovilModalSave() {
+  if (!_cfgMovilModalCb) return;
+  var btn = document.querySelector('#cfg-movil-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+  try {
+    await _cfgMovilModalCb();
+  } catch(e) {
+    alert('Error: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  }
 }
 
 // -- Auto-refresh running timers every 60s -----------------
