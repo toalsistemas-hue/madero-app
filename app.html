@@ -6295,17 +6295,17 @@ function appToggleGearMenu() {
   if (!menu) return;
   var isOpen = menu.style.display === 'block';
   menu.style.display = isOpen ? 'none' : 'block';
-  // Cerrar al click fuera
   if (!isOpen) {
     setTimeout(function() {
-      document.addEventListener('click', function closeGear(e) {
-        var gear = document.getElementById('app-gear-menu');
-        var btn  = document.getElementById('app-gear-btn');
-        if (gear && !gear.contains(e.target) && !btn.contains(e.target)) {
-          gear.style.display = 'none';
-          document.removeEventListener('click', closeGear);
+      var _gearClose = function(ev) {
+        var gearMenu = document.getElementById('app-gear-menu');
+        var gearBtn  = document.getElementById('app-gear-btn');
+        if (gearMenu && !gearMenu.contains(ev.target) && gearBtn && !gearBtn.contains(ev.target)) {
+          gearMenu.style.display = 'none';
+          document.removeEventListener('click', _gearClose);
         }
-      });
+      };
+      document.addEventListener('click', _gearClose);
     }, 10);
   }
 }
@@ -6351,30 +6351,6 @@ function appGearLogout() {
 }
 
 
-  try {
-    // Clear all MSAL-related localStorage keys
-    var keysToRemove = [];
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (k && (k.indexOf('msal')>=0 || k.indexOf('login.windows')>=0 || k.indexOf('login.microsoftonline')>=0)) {
-        keysToRemove.push(k);
-      }
-    }
-    keysToRemove.forEach(function(k){ localStorage.removeItem(k); });
-    // Also clear sessionStorage
-    sessionStorage.clear();
-    appMsalInstance = null;
-    appToken = null;
-    appCurrentUser = null;
-    var statusEl = document.getElementById('app-login-status');
-    if (statusEl) statusEl.textContent = 'Sesión limpiada. Recargando...';
-    console.log('Session cleared, reloading...');
-    setTimeout(function(){ window.location.reload(); }, 1000);
-  } catch(e) {
-    console.error('Clear session error:', e);
-    window.location.reload();
-  }
-}
 // Also treat any private IP as semi-secure for MSAL purposes
 var APP_IS_LOCAL_IP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(window.location.hostname);
 
