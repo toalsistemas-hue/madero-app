@@ -6424,13 +6424,21 @@ async function appInitMsal() {
       return;
     }
 
+    // If user just logged out, skip silent token and show login directly
+    if (localStorage.getItem('msal_force_account_select') === '1') {
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-btn').disabled = false;
+      document.getElementById('app-login-status').textContent = '';
+      return;
+    }
+
     // Check for existing cached session (already logged in before)
     var accounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
     if (accounts.length > 0) {
       try {
         var silent = await Promise.race([
           appMsalInstance.acquireTokenSilent({ account: accounts[0], scopes: APP_CONFIG.scopes }),
-          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 5000); })
+          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 3000); })
         ]);
         if (silent && silent.accessToken) {
           appToken = silent.accessToken;
@@ -7497,11 +7505,41 @@ async function appValidateRole() {
 
 // Init
 (function() {
-  if (typeof msal !== 'undefined') { appInitMsal(); }
+  // Safety net: if appInitMsal hangs for any reason, always enable the login button
+  var _initSafetyTimer = setTimeout(function() {
+    var btn    = document.getElementById('app-login-btn');
+    var status = document.getElementById('app-login-status');
+    var login  = document.getElementById('app-login-screen');
+    if (btn && btn.disabled) {
+      console.warn('[appInit] Safety timeout — forcing login screen');
+      if (login)  login.style.display  = 'flex';
+      if (btn)    btn.disabled          = false;
+      if (status) status.textContent    = '';
+    }
+  }, 6000);
+
+  var _doInit = function() {
+    if (typeof msal !== 'undefined') {
+      appInitMsal().finally(function() {
+        clearTimeout(_initSafetyTimer);
+      }).catch(function(e) {
+        console.warn('[appInit] Fatal:', e);
+        clearTimeout(_initSafetyTimer);
+        var btn    = document.getElementById('app-login-btn');
+        var login  = document.getElementById('app-login-screen');
+        var status = document.getElementById('app-login-status');
+        if (login)  login.style.display  = 'flex';
+        if (btn)    btn.disabled          = false;
+        if (status) status.textContent    = '';
+      });
+    }
+  };
+
+  if (typeof msal !== 'undefined') { _doInit(); }
   else {
     var tries = 0;
     var wait = setInterval(function(){
-      if (typeof msal !== 'undefined') { clearInterval(wait); appInitMsal(); }
+      if (typeof msal !== 'undefined') { clearInterval(wait); _doInit(); }
       else if (++tries > 30) { clearInterval(wait); document.getElementById('app-login-status').textContent = 'Error: Microsoft no disponible'; }
     }, 200);
   }
