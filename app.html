@@ -6310,44 +6310,59 @@ function appToggleGearMenu() {
   }
 }
 
-// Logout: limpia sesión local y fuerza selector de cuenta en el próximo login
-function appGearLogout() {
+// Logout: cierra sesión en Microsoft (borra la cookie SSO) y regresa al login
+async function appGearLogout() {
   document.getElementById('app-gear-menu').style.display = 'none';
 
-  // Marcar que el próximo login debe mostrar el selector de cuenta
-  localStorage.setItem('msal_force_account_select', '1');
+  // Marcar en localStorage (sobrevive redirección) que venimos de logout
+  localStorage.setItem('msal_just_logged_out', '1');
 
-  // Limpiar todos los tokens MSAL del localStorage
+  // Limpiar tokens locales antes de redirigir
   var keysToRemove = [];
   for (var i = 0; i < localStorage.length; i++) {
     var k = localStorage.key(i);
-    if (k && (k.indexOf('msal') >= 0 || k.indexOf('login.windows') >= 0 ||
-              k.indexOf('login.microsoftonline') >= 0)) {
+    if (k && k !== 'msal_just_logged_out' &&
+        (k.indexOf('msal') >= 0 || k.indexOf('login.windows') >= 0 ||
+         k.indexOf('login.microsoftonline') >= 0)) {
       keysToRemove.push(k);
     }
   }
   keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
-  sessionStorage.clear();
 
-  // Reset estado de la app
-  appToken = null;
-  appCurrentUser = null;
-  appMsalInstance = null;
-  APP_USER_PROFILE = null;
-
-  // Volver al login directamente (sin redirect a Microsoft)
-  var shell = document.getElementById('app-shell-mobile');
-  var launcher = document.getElementById('app-launcher');
-  var login = document.getElementById('app-login-screen');
-  if (shell)    shell.style.display    = 'none';
-  if (launcher) launcher.style.display = 'none';
-  if (login) {
-    login.style.display = 'flex';
-    var btn = document.getElementById('app-login-btn');
-    var status = document.getElementById('app-login-status');
-    if (btn)    btn.disabled = false;
-    if (status) status.textContent = '';
+  try {
+    if (!appMsalInstance) await appInitMsalInstance();
+    var accounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
+    if (accounts.length > 0 && appMsalInstance) {
+      // logoutRedirect cierra la sesión SSO en Microsoft y regresa a la app
+      await appMsalInstance.logoutRedirect({
+        account: accounts[0],
+        postLogoutRedirectUri: appGetRedirectUri()
+      });
+      return; // página redirige — nada más se ejecuta
+    }
+  } catch(e) {
+    console.warn('[logout]', e.message);
   }
+
+  // Fallback si MSAL no está disponible: recargar directamente
+  window.location.reload();
+}
+
+// Inicializar solo la instancia MSAL sin flujo completo de login
+async function appInitMsalInstance() {
+  try {
+    var msalConfig = {
+      auth: {
+        clientId: APP_CONFIG.clientId,
+        authority: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
+        redirectUri: appGetRedirectUri(),
+        navigateToLoginRequestUrl: false,
+      },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+    };
+    appMsalInstance = new msal.PublicClientApplication(msalConfig);
+    await appMsalInstance.initialize();
+  } catch(e) { console.warn('appInitMsalInstance:', e.message); }
 }
 
 
@@ -6391,6 +6406,24 @@ async function appInitMsal() {
     try {
       redirect = await appMsalInstance.handleRedirectPromise();
     } catch(e) { console.warn('handleRedirectPromise:', e.message); }
+
+    // Detectar retorno de logoutRedirect (flag en localStorage sobrevive redirección)
+    var justLoggedOut = localStorage.getItem('msal_just_logged_out') === '1';
+    if (justLoggedOut) {
+      localStorage.removeItem('msal_just_logged_out');
+      // Limpiar cualquier cuenta residual en caché de MSAL
+      try {
+        var residualAccounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
+        if (residualAccounts.length > 0 && appMsalInstance) {
+          await appMsalInstance.clearCache();
+        }
+      } catch(ce) { console.warn('clearCache:', ce.message); }
+      // Mostrar login limpio
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-btn').disabled = false;
+      document.getElementById('app-login-status').textContent = '';
+      return;
+    }
 
     if (redirect && redirect.accessToken) {
       // Successfully returned from redirect login
@@ -6475,14 +6508,9 @@ async function appDoLogin() {
   try {
     status.textContent = 'Redirigiendo a Microsoft...';
     // REDIRECT ONLY — popup is blocked in PWAs installed on Android
-    // Si el usuario acaba de cerrar sesión, forzar el selector de cuenta
-    var forceSelect = localStorage.getItem('msal_force_account_select') === '1';
-    if (forceSelect) localStorage.removeItem('msal_force_account_select');
-
     await appMsalInstance.loginRedirect({
       scopes: APP_CONFIG.scopes,
       redirectUri: appGetRedirectUri(),
-      prompt: forceSelect ? 'select_account' : undefined,
     });
     // Page will redirect — no code runs after this
   } catch(e) {
