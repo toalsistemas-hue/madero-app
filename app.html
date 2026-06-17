@@ -1414,10 +1414,11 @@ async function appUploadFoto(file, of_sap, op_id, tipo) {
     var ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     var ext  = (file.name || 'foto.jpg').split('.').pop().toLowerCase() || 'jpg';
     var name = ts + '_' + tipo + '.' + ext;
-    var path = 'FT_Fotos/' + of_sap + '/' + op_id + '/' + name;
+    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
+    var pathSegments = ['FT_Fotos', of_sap, op_id, name].map(encodeURIComponent).join('/');
 
     // Graph API: PUT /sites/{siteId}/drive/root:/{path}:/content
-    var endpoint = 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/drive/root:/' + encodeURIComponent(path) + ':/content';
+    var endpoint = 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/drive/root:/' + pathSegments + ':/content';
 
     var resp = await fetch(endpoint, {
       method: 'PUT',

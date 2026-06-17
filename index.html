@@ -9797,21 +9797,6 @@ function renderSeg(){
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);white-space:nowrap;">👷 '+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
         if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
-        // Ícono de fotos — sólo en ops terminadas o rechazadas por calidad
-        if(op.status==='done' || op.calResult==='rechazado') {
-          var fotoKey = aof.of_sap + '__' + op.id;
-          var hasFoto = _coordFotoCache[fotoKey];
-          if(hasFoto === true) {
-            // Tiene fotos — mostrar botón activo
-            h+='<button onclick="coordVerFotos(\''+esc(aof.of_sap)+'\',\''+esc(op.id)+'\',\''+esc(op.nombre.replace(/'/g,''))+'\');event.stopPropagation()" '+
-              'title="Ver fotos de esta operación" '+
-              'style="background:rgba(0,180,216,.12);border:1px solid rgba(0,180,216,.25);border-radius:5px;'+
-              'padding:2px 7px;cursor:pointer;color:var(--aaccent);font-size:.75rem;white-space:nowrap;">📷</button>';
-          } else if(hasFoto === undefined || hasFoto === 'pending') {
-            // Consultar en background y mostrar placeholder mientras tanto
-            coordCheckFotos(aof.of_sap, op.id);
-          }
-        }
         h+='</div>';
         // Ayudantes
         if(op.ayudantes && op.ayudantes.length>0){
@@ -9853,6 +9838,21 @@ function renderSeg(){
             h+='<div style="font-size:.68rem;color:'+c.col+';padding-left:14px;"><span style="margin-right:4px;">'+c.ico+'</span>'+esc(c.txt)+'</div>';
           });
           h+='</div>';
+        }
+        // ── Botón de fotos — debajo de comentarios, solo en ops terminadas o rechazadas ──
+        if(op.status==='done' || op.calResult==='rechazado') {
+          var fotoKey = aof.of_sap + '__' + op.id;
+          var hasFoto = _coordFotoCache[fotoKey];
+          if(hasFoto === true) {
+            h+='<div style="margin-top:5px;padding-left:14px;">' +
+              '<button onclick="coordVerFotos(\''+esc(aof.of_sap)+'\',\''+esc(op.id)+'\',\''+esc(op.nombre.replace(/'/g,''))+'\');event.stopPropagation()" ' +
+              'title="Ver fotos de esta operación" ' +
+              'style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;' +
+              'padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">' +
+              '📷 Ver fotos</button></div>';
+          } else if(hasFoto === undefined || hasFoto === 'pending') {
+            coordCheckFotos(aof.of_sap, op.id);
+          }
         }
         h+='</div>';
       });
@@ -11699,10 +11699,11 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
 
   try {
     var siteId = await getSiteId();
-    var folderPath = 'FT_Fotos/' + of_sap + '/' + op_id;
+    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
+    var folderSegments = ['FT_Fotos', of_sap, op_id].map(encodeURIComponent).join('/');
     // Graph: listar archivos de la carpeta
     var endpoint = 'sites/' + siteId + '/drive/root:/' +
-      encodeURIComponent(folderPath) + ':/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime';
+      folderSegments + ':/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime';
     var res = await graphGet(endpoint).catch(function(e) { return null; });
     var items = res && res.value ? res.value.filter(function(i) { return i.file; }) : [];
 
@@ -11780,9 +11781,10 @@ async function coordCheckFotos(of_sap, op_id) {
   _coordFotoCache[key] = 'pending';
   try {
     var siteId = await getSiteId();
-    var folderPath = 'FT_Fotos/' + of_sap + '/' + op_id;
+    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
+    var folderSegments = ['FT_Fotos', of_sap, op_id].map(encodeURIComponent).join('/');
     var res = await graphGet('sites/' + siteId + '/drive/root:/' +
-      encodeURIComponent(folderPath) + ':/children?$select=id&$top=1').catch(function() { return null; });
+      folderSegments + ':/children?$select=id&$top=1').catch(function() { return null; });
     _coordFotoCache[key] = !!(res && res.value && res.value.length > 0);
     // Si cambió el estado, re-renderizar seguimiento para mostrar/ocultar el ícono
     if (_coordFotoCache[key]) renderSeg();
