@@ -565,14 +565,27 @@ tr:last-child td{border-bottom:none;}
     </button>
   </nav>
 
-  <!-- Configuración ntfy — botón en footer -->
-  <div id="app-ntfy-bar" style="padding:6px 12px 2px;border-top:1px solid rgba(255,255,255,.06);">
-    <button id="app-ntfy-btn" onclick="appNtfyOpenConfig()"
-      style="width:100%;background:rgba(0,180,216,.08);border:1px solid rgba(0,180,216,.2);
-             border-radius:8px;padding:8px 12px;font-size:.74rem;cursor:pointer;
-             color:var(--aaccent);display:flex;align-items:center;gap:7px;justify-content:center;">
-      🔔 Configurar notificaciones
+  <!-- Footer: cerrar sesión + configurar notificaciones (admin) -->
+  <div style="display:flex;flex-direction:column;gap:4px;padding:6px 12px 6px;border-top:1px solid rgba(255,255,255,.06);">
+
+    <!-- Botón cerrar sesión — siempre visible -->
+    <button onclick="appClearSession()"
+      style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+             border-radius:8px;padding:7px 12px;font-size:.72rem;cursor:pointer;
+             color:#8b949e;display:flex;align-items:center;gap:7px;justify-content:center;">
+      🔄 Cerrar sesión / Cambiar cuenta
     </button>
+
+    <!-- Botón ntfy — solo visible para Administrador General -->
+    <div id="app-ntfy-bar" style="display:none;">
+      <button id="app-ntfy-btn" onclick="appNtfyOpenConfig()"
+        style="width:100%;background:rgba(0,180,216,.08);border:1px solid rgba(0,180,216,.2);
+               border-radius:8px;padding:8px 12px;font-size:.74rem;cursor:pointer;
+               color:var(--aaccent);display:flex;align-items:center;gap:7px;justify-content:center;">
+        🔔 Configurar notificaciones
+      </button>
+    </div>
+
   </div>
 
   <!-- Modal ntfy config -->
@@ -7371,6 +7384,12 @@ function applyAppUserProfile() {
   var pillsEl = document.querySelector('.app-role-pills');
   if (pillsEl) {
     pillsEl.style.display = APP_USER_PROFILE.esAdmin ? 'flex' : 'none';
+  }
+
+  // Botón de notificaciones ntfy — solo visible para Administrador General
+  var ntfyBar = document.getElementById('app-ntfy-bar');
+  if (ntfyBar) {
+    ntfyBar.style.display = APP_USER_PROFILE.esAdmin ? 'block' : 'none';
   }
 
   // Set active pill
