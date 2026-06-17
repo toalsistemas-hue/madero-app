@@ -9700,17 +9700,17 @@ function renderSeg(){
           var fotoKey = aof.of_sap + '__' + op.id;
           var hasFoto = _coordFotoCache[fotoKey];
           if(hasFoto === true) {
-            var _fSap=esc(aof.of_sap),_fId=esc(op.id),_fNom=esc(op.nombre.replace(/'/g,''));
-            h+='<div style="margin-top:5px;padding-left:14px;">'
-              +'<button onclick="coordVerFotos(\'' +_fSap+ '\',\'' +_fId+ '\',\'' +_fNom+ '\');event.stopPropagation()" '
-              +'title="Ver fotos" '
-              +'style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">'
-              +'📷 Ver fotos</button></div>';
+            var _fBtn='<div style="margin-top:5px;padding-left:14px;">'
+              +'<button'
+              +' data-of="'+aof.of_sap+'"'
+              +' data-op="'+op.id+'"'
+              +' data-nom="'+op.nombre.replace(/"/g,'&quot;')+'"'
+              +' onclick="var b=this;coordVerFotos(b.dataset.of,b.dataset.op,b.dataset.nom);event.stopPropagation()"'
+              +' style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">'
+              +'&#128247; Ver fotos</button></div>';
+            h+=_fBtn;
           } else if(hasFoto === undefined || hasFoto === 'pending') {
             coordCheckFotos(aof.of_sap, op.id);
-          }
-        }
-        h+='</div>';
       });
       h+='</div></div>';
     });
