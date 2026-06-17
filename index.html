@@ -5013,18 +5013,37 @@ async function ftLoadDataFromSP() {
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
       cantidad: parseInt(f.Cantidad||0)||null,
     }));
-    // Restaurar pedidos cerrados desde localStorage (persistencia entre recargas)
+    // Restaurar pedidos cerrados desde localStorage
+    // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
     var _pedidosCerrados = JSON.parse(localStorage.getItem('madero_pedidos_cerrados')||'[]');
+    var _statusActivosSP = ['sin programar','en fabricacion','en proceso'];
     if(_pedidosCerrados.length > 0){
       DB.ofs.forEach(function(of){
-        if(_pedidosCerrados.indexOf(of.pedido) >= 0){
+        var spSL = (of.status||'').toLowerCase();
+        var esActivo = _statusActivosSP.some(function(s){ return spSL.indexOf(s) >= 0; });
+        if(!esActivo && _pedidosCerrados.indexOf(of.pedido) >= 0){
           of.pedidoCerrado = true;
           of.status = 'Cerrado';
         }
       });
-      console.log('[DB.ofs] Pedidos cerrados restaurados desde localStorage:', _pedidosCerrados);
+      console.log('[DB.ofs] Pedidos cerrados restaurados:', _pedidosCerrados);
     }
-    // Log diagnóstico — verificar que columnas SP existen
+    // Auto-limpiar entradas stale: si un pedido en localStorage tiene OFs con status activo en SP,
+    // significa que fueron recargadas frescas — remover del localStorage para que vuelvan a mostrarse
+    if(_pedidosCerrados.length > 0){
+      var _pedidosConOFsActivas = {};
+      DB.ofs.forEach(function(of){
+        var s = (of.status||'').toLowerCase();
+        var esActivo = s.indexOf('sin programar') >= 0 || s.indexOf('en fabricacion') >= 0 || s === 'planeacion' || s === 'planeación';
+        if(esActivo && of.pedido) _pedidosConOFsActivas[of.pedido] = true;
+      });
+      var _cerradosActualizados = _pedidosCerrados.filter(function(p){ return !_pedidosConOFsActivas[p]; });
+      if(_cerradosActualizados.length !== _pedidosCerrados.length){
+        localStorage.setItem('madero_pedidos_cerrados', JSON.stringify(_cerradosActualizados));
+        console.log('[DB.ofs] Pedidos cerrados stale removidos del localStorage:', 
+          _pedidosCerrados.filter(function(p){ return _pedidosConOFsActivas[p]; }));
+      }
+    }
     if(DB.ofs.length > 0){
       var sample = (ofsRes.value||[])[0];
       var sampleFields = sample ? Object.keys(sample.fields||{}) : [];
@@ -5076,7 +5095,11 @@ async function ftLoadDataFromSP() {
     const allOps=Object.values(_seen);
     if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
     DB.activeOFs = ofs
-      .filter(f => f.Programado_Hoy === true || ['Planeacion','En Fabricacion','Sin programar'].includes(f.Status))
+      .filter(f => {
+        if(f.Programado_Hoy === true) return true;
+        var s = (f.Status||'').trim();
+        return s==='Planeacion' || s==='Planeación' || s==='En Fabricacion' || s==='Sin programar' || s==='Sin Programar';
+      })
       .map(f => {
         const ofSap = f.OF_SAP || f.Title || '';
         return {
@@ -8034,6 +8057,7 @@ function renderProg(){
   }
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
+  console.log('[renderProg] DB.ofs total:', DB.ofs.length, '| cerradas:', DB.ofs.filter(function(o){return o.pedidoCerrado||o.status==='Cerrado';}).length);
   var groups = groupByPedido(DB.ofs.filter(function(of){
     if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
     if(of.status==='Pedido Cancelado') return false;
@@ -9711,6 +9735,9 @@ function renderSeg(){
             h+=_fBtn;
           } else if(hasFoto === undefined || hasFoto === 'pending') {
             coordCheckFotos(aof.of_sap, op.id);
+          }
+        }
+        h+='</div>';
       });
       h+='</div></div>';
     });
