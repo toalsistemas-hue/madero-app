@@ -534,10 +534,46 @@ tr:last-child td{border-bottom:none;}
       <div class="app-hdr-logo" onclick="_onAvatarTap()" style="cursor:pointer;user-select:none;">FM</div>
       <div><div class="app-hdr-title">FabTracker</div><div class="app-hdr-sub" id="app-role-sub">Supervisor de Línea</div></div>
     </div>
-    <div class="app-role-pills">
-      <button class="app-rp active" onclick="setAppRole('supervisor',this)">Sup.</button>
-      <button class="app-rp" onclick="setAppRole('calidad_lin',this)">Cal.Línea</button>
-      <button class="app-rp" onclick="setAppRole('calidad_tiem',this)">Cal.Tiem.</button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <div class="app-role-pills">
+        <button class="app-rp active" onclick="setAppRole('supervisor',this)">Sup.</button>
+        <button class="app-rp" onclick="setAppRole('calidad_lin',this)">Cal.Línea</button>
+        <button class="app-rp" onclick="setAppRole('calidad_tiem',this)">Cal.Tiem.</button>
+      </div>
+      <!-- Menú de configuración (engrane) -->
+      <div style="position:relative;">
+        <button id="app-gear-btn" onclick="appToggleGearMenu()"
+          style="background:none;border:1px solid rgba(255,255,255,.12);border-radius:7px;
+                 padding:5px 7px;cursor:pointer;color:var(--adim);display:flex;align-items:center;
+                 line-height:1;transition:.15s;" title="Configuración">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <!-- Menú desplegable -->
+        <div id="app-gear-menu" style="display:none;position:absolute;top:calc(100% + 6px);right:0;
+             background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:10px;
+             min-width:210px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden;">
+          <!-- Notificaciones — solo admin -->
+          <div id="app-gear-ntfy" style="display:none;">
+            <button onclick="appNtfyOpenConfig();appToggleGearMenu()"
+              style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
+                     cursor:pointer;color:#e6edf3;font-size:.78rem;display:flex;align-items:center;gap:9px;
+                     border-bottom:1px solid rgba(255,255,255,.07);">
+              <span id="app-gear-ntfy-icon">🔔</span>
+              <span id="app-gear-ntfy-label">Configurar notificaciones</span>
+            </button>
+          </div>
+          <!-- Cerrar sesión — siempre visible -->
+          <button onclick="appGearLogout()"
+            style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
+                   cursor:pointer;color:#e6edf3;font-size:.78rem;display:flex;align-items:center;gap:9px;">
+            <span>🔄</span>
+            <span>Cerrar sesión / Cambiar cuenta</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -564,29 +600,6 @@ tr:last-child td{border-bottom:none;}
       <span class="app-bni-lbl">RESUMEN</span>
     </button>
   </nav>
-
-  <!-- Footer: cerrar sesión + configurar notificaciones (admin) -->
-  <div style="display:flex;flex-direction:column;gap:4px;padding:6px 12px 6px;border-top:1px solid rgba(255,255,255,.06);">
-
-    <!-- Botón cerrar sesión — siempre visible -->
-    <button onclick="appClearSession()"
-      style="width:100%;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
-             border-radius:8px;padding:7px 12px;font-size:.72rem;cursor:pointer;
-             color:#8b949e;display:flex;align-items:center;gap:7px;justify-content:center;">
-      🔄 Cerrar sesión / Cambiar cuenta
-    </button>
-
-    <!-- Botón ntfy — solo visible para Administrador General -->
-    <div id="app-ntfy-bar" style="display:none;">
-      <button id="app-ntfy-btn" onclick="appNtfyOpenConfig()"
-        style="width:100%;background:rgba(0,180,216,.08);border:1px solid rgba(0,180,216,.2);
-               border-radius:8px;padding:8px 12px;font-size:.74rem;cursor:pointer;
-               color:var(--aaccent);display:flex;align-items:center;gap:7px;justify-content:center;">
-        🔔 Configurar notificaciones
-      </button>
-    </div>
-
-  </div>
 
   <!-- Modal ntfy config -->
   <div class="app-mo" id="app-modal-ntfy">
@@ -1827,16 +1840,23 @@ async function appNtfyGuardar() {
 function appNtfyUpdateBtn() {
   var btn   = document.getElementById('app-ntfy-btn');
   var canal = localStorage.getItem(_APP_NTFY_KEY);
-  if (!btn) return;
-  if (canal) {
-    btn.textContent = '🔔 ntfy activo — ' + canal;
-    btn.style.color = '#4ade80';
-    btn.style.borderColor = 'rgba(74,222,128,.3)';
-  } else {
-    btn.textContent = '🔔 Configurar notificaciones';
-    btn.style.color = 'var(--aaccent)';
-    btn.style.borderColor = 'rgba(0,180,216,.2)';
+  // Old footer button (may not exist)
+  if (btn) {
+    if (canal) {
+      btn.textContent = '🔔 ntfy activo — ' + canal;
+      btn.style.color = '#4ade80';
+      btn.style.borderColor = 'rgba(74,222,128,.3)';
+    } else {
+      btn.textContent = '🔔 Configurar notificaciones';
+      btn.style.color = 'var(--aaccent)';
+      btn.style.borderColor = 'rgba(0,180,216,.2)';
+    }
   }
+  // Gear menu label
+  var gearIcon  = document.getElementById('app-gear-ntfy-icon');
+  var gearLabel = document.getElementById('app-gear-ntfy-label');
+  if (gearIcon)  gearIcon.textContent  = canal ? '🔔' : '🔔';
+  if (gearLabel) gearLabel.textContent = canal ? 'Notificaciones: ' + canal : 'Configurar notificaciones';
 }
 
 
@@ -6269,7 +6289,67 @@ var appCurrentUser = null;
 var APP_IS_SECURE = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 // Clear MSAL session cache — use when login fails with "No podemos iniciar sesión"
-function appClearSession() {
+// ── Menú engrane (configuración en header) ───────────────────────
+function appToggleGearMenu() {
+  var menu = document.getElementById('app-gear-menu');
+  if (!menu) return;
+  var isOpen = menu.style.display === 'block';
+  menu.style.display = isOpen ? 'none' : 'block';
+  // Cerrar al click fuera
+  if (!isOpen) {
+    setTimeout(function() {
+      document.addEventListener('click', function closeGear(e) {
+        var gear = document.getElementById('app-gear-menu');
+        var btn  = document.getElementById('app-gear-btn');
+        if (gear && !gear.contains(e.target) && !btn.contains(e.target)) {
+          gear.style.display = 'none';
+          document.removeEventListener('click', closeGear);
+        }
+      });
+    }, 10);
+  }
+}
+
+// Logout que fuerza el selector de cuenta de Microsoft
+async function appGearLogout() {
+  document.getElementById('app-gear-menu').style.display = 'none';
+  try {
+    // 1. Limpiar caché local de MSAL
+    var keysToRemove = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && (k.indexOf('msal') >= 0 || k.indexOf('login.windows') >= 0 ||
+                k.indexOf('login.microsoftonline') >= 0)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+    sessionStorage.clear();
+
+    // 2. Si MSAL está inicializado, hacer logout completo hacia Microsoft
+    //    con post_logout_redirect_uri apuntando de vuelta a la app
+    //    Microsoft borrará la cookie de sesión SSO y mostrará el selector
+    if (appMsalInstance) {
+      var accounts = appMsalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        await appMsalInstance.logoutRedirect({
+          account: accounts[0],
+          postLogoutRedirectUri: appGetRedirectUri(),
+        });
+        return; // Page will redirect — execution stops here
+      }
+    }
+  } catch(e) {
+    console.warn('[logout]', e.message);
+  }
+  // Fallback: reload directo (limpia tokens locales, Microsoft puede mantener SSO)
+  appToken = null;
+  appCurrentUser = null;
+  appMsalInstance = null;
+  window.location.reload();
+}
+
+
   try {
     // Clear all MSAL-related localStorage keys
     var keysToRemove = [];
@@ -7388,9 +7468,11 @@ function applyAppUserProfile() {
 
   // Botón de notificaciones ntfy — solo visible para Administrador General
   var ntfyBar = document.getElementById('app-ntfy-bar');
-  if (ntfyBar) {
-    ntfyBar.style.display = APP_USER_PROFILE.esAdmin ? 'block' : 'none';
-  }
+  if (ntfyBar) ntfyBar.style.display = APP_USER_PROFILE.esAdmin ? 'block' : 'none';
+  var gearNtfy = document.getElementById('app-gear-ntfy');
+  if (gearNtfy) gearNtfy.style.display = APP_USER_PROFILE.esAdmin ? 'block' : 'none';
+  // Sync ntfy button label in gear menu
+  appNtfyUpdateBtn();
 
   // Set active pill
   document.querySelectorAll('.app-rp').forEach(function(btn) {
