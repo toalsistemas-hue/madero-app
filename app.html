@@ -460,7 +460,7 @@ tr:last-child td{border-bottom:none;}
   <button onclick="appClearSession()" style="margin-top:14px;background:transparent;border:1px solid rgba(255,255,255,.12);color:#8b949e;padding:7px 16px;border-radius:6px;font-size:.72rem;cursor:pointer;width:100%;">
     🔄 Limpiar sesión / Reintentar
   </button>
-  <div class="app-login-note">Usa tu cuenta @maderoequipos.com para acceder. Solo supervisores y personal de calidad tienen acceso.</div>
+  <div class="app-login-note">Usa tu cuenta @maderoequipos.com para acceder.</div>
   <div style="margin-top:20px;font-size:.65rem;color:rgba(255,255,255,.2);letter-spacing:.05em;">v1.0.0</div>
 </div>
 
@@ -6332,6 +6332,8 @@ async function appGearLogout() {
     if (appMsalInstance) {
       var accounts = appMsalInstance.getAllAccounts();
       if (accounts.length > 0) {
+        // Set flag BEFORE redirect so we know it's a logout when we return
+        sessionStorage.setItem('msal_logout_in_progress', '1');
         await appMsalInstance.logoutRedirect({
           account: accounts[0],
           postLogoutRedirectUri: appGetRedirectUri(),
@@ -6409,11 +6411,22 @@ async function appInitMsal() {
       ]);
     } catch(e) { console.warn('MSAL init timeout, continuing:', e.message); }
 
-    // Check if we're returning from a redirect login
+    // Check if we're returning from a redirect login OR logout
     var redirect = null;
     try {
       redirect = await appMsalInstance.handleRedirectPromise();
     } catch(e) { console.warn('handleRedirectPromise:', e.message); }
+
+    // Detect logout redirect return via sessionStorage flag
+    var justLoggedOut = sessionStorage.getItem('msal_logout_in_progress') === '1';
+    if (justLoggedOut) {
+      sessionStorage.removeItem('msal_logout_in_progress');
+      try { await appMsalInstance.clearCache().catch(function(){}); } catch(ce) {}
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-btn').disabled = false;
+      document.getElementById('app-login-status').textContent = '';
+      return;
+    }
 
     if (redirect && redirect.accessToken) {
       // Successfully returned from redirect login
