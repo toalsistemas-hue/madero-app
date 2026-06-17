@@ -1411,21 +1411,31 @@ async function appUploadFoto(file, of_sap, op_id, tipo) {
     var siteId = await appGetSiteId();
     if (!siteId) throw new Error('Sin siteId');
 
-    var ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    var ext  = (file.name || 'foto.jpg').split('.').pop().toLowerCase() || 'jpg';
+    var ts  = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    var ext = (file.name || 'foto.jpg').split('.').pop().toLowerCase() || 'jpg';
     var name = ts + '_' + tipo + '.' + ext;
-    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
-    var pathSegments = ['FT_Fotos', of_sap, op_id, name].map(encodeURIComponent).join('/');
 
-    // Graph API: PUT /sites/{siteId}/drive/root:/{path}:/content
+    // Determinar nombre de carpeta predecible para que el portal pueda encontrarla:
+    // - Op desde SP (id tipo op_14354_2): usar ese mismo id que el portal conoce
+    // - Op extra (id tipo op_app_1234567): usar nombre de operacion sanitizado
+    var folderOpName = op_id;
+    var aof = DB.activeOFs.find(function(a) { return a.of_sap === of_sap; });
+    if (aof) {
+      var op = aof.ops.find(function(o) { return o.id === op_id; });
+      if (op && op.id.indexOf('op_app_') >= 0 && op.nombre) {
+        // Op extra no sincronizada con SP — carpeta con nombre legible
+        folderOpName = 'op_' + op.nombre.replace(/[^a-zA-Z0-9_\-]/g, '_').substring(0, 40);
+      }
+      // Op desde SP: folderOpName ya es op_id que coincide con Op_ID en SP
+    }
+
+    // Codificar cada segmento individualmente — slashes sin codificar para Graph
+    var pathSegments = ['FT_Fotos', of_sap, folderOpName, name].map(encodeURIComponent).join('/');
     var endpoint = 'https://graph.microsoft.com/v1.0/sites/' + siteId + '/drive/root:/' + pathSegments + ':/content';
 
     var resp = await fetch(endpoint, {
       method: 'PUT',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': file.type || 'image/jpeg'
-      },
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': file.type || 'image/jpeg' },
       body: file
     });
 
@@ -1437,8 +1447,8 @@ async function appUploadFoto(file, of_sap, op_id, tipo) {
     var data = await resp.json();
     var key  = of_sap + '_' + op_id;
     if (!_ftFotoUploads[key]) _ftFotoUploads[key] = [];
-    _ftFotoUploads[key].push({ name: name, url: data.webUrl || '', tipo: tipo });
-    return { ok: true, name: name, url: data.webUrl || '' };
+    _ftFotoUploads[key].push({ name: name, url: data.webUrl || '', tipo: tipo, folder: folderOpName });
+    return { ok: true, name: name, url: data.webUrl || '', folder: folderOpName };
 
   } catch(e) {
     appErrNotify('Subir fotografía (' + tipo + ')', e, 'FT_Operaciones');

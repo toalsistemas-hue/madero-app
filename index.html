@@ -11660,33 +11660,18 @@ function ftRptExportExcel() {
  * Abre el visor de fotos para una OF + operación específica.
  * Se llama desde el ícono 📷 en la lista de operaciones de renderSeg().
  */
+// ══════════════════════════════════════════════════════════════════
+// ── VISOR DE FOTOS — Portal Coordinador (Tiempo Real) ─────────────
+// ══════════════════════════════════════════════════════════════════
+
 async function coordVerFotos(of_sap, op_id, op_nombre) {
-  // Crear o reutilizar el modal
   var modal = document.getElementById('coord-foto-modal');
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'coord-foto-modal';
-    modal.style.cssText = [
-      'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.82);',
-      'display:flex;align-items:center;justify-content:center;',
-      'backdrop-filter:blur(4px);'
-    ].join('');
-    modal.innerHTML = [
-      '<div style="background:#0f1623;border:1px solid rgba(255,255,255,.12);border-radius:12px;',
-      'width:min(90vw,680px);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;">',
-      '  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;',
-      '  border-bottom:1px solid rgba(255,255,255,.08);">',
-      '    <div id="coord-foto-title" style="font-size:.88rem;font-weight:600;"></div>',
-      '    <button onclick="document.getElementById(\'coord-foto-modal\').style.display=\'none\'" ',
-      '    style="background:none;border:none;color:var(--dim);font-size:1.2rem;cursor:pointer;padding:2px 6px;">✕</button>',
-      '  </div>',
-      '  <div id="coord-foto-body" style="overflow-y:auto;padding:14px;flex:1;"></div>',
-      '</div>'
-    ].join('');
-    // Cerrar al click fuera
-    modal.addEventListener('click', function(e) {
-      if (e.target === modal) modal.style.display = 'none';
-    });
+    modal.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+    modal.innerHTML = '<div style="background:#0f1623;border:1px solid rgba(255,255,255,.12);border-radius:12px;width:min(90vw,680px);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;"><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);"><div id="coord-foto-title" style="font-size:.88rem;font-weight:600;"></div><button onclick="document.getElementById(\'coord-foto-modal\').style.display=\'none\'" style="background:none;border:none;color:var(--dim);font-size:1.2rem;cursor:pointer;padding:2px 6px;">✕</button></div><div id="coord-foto-body" style="overflow-y:auto;padding:14px;flex:1;"></div></div>';
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
     document.body.appendChild(modal);
   }
 
@@ -11699,81 +11684,86 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
 
   try {
     var siteId = await getSiteId();
-    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
-    var folderSegments = ['FT_Fotos', of_sap, op_id].map(encodeURIComponent).join('/');
-    // Graph: listar archivos de la carpeta
-    var endpoint = 'sites/' + siteId + '/drive/root:/' +
-      folderSegments + ':/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime';
-    var res = await graphGet(endpoint).catch(function(e) { return null; });
-    var items = res && res.value ? res.value.filter(function(i) { return i.file; }) : [];
+    var items = [];
+
+    // Paso 1: listar subcarpetas de FT_Fotos/{of_sap}/
+    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
+    var foldersRes = await graphGet(
+      'sites/' + siteId + '/drive/root:/' + ofSeg + ':/children?$select=name,id,folder&$top=50'
+    ).catch(function() { return null; });
+
+    if (foldersRes && foldersRes.value && foldersRes.value.length) {
+      var subFolders = foldersRes.value.filter(function(f) { return f.folder; });
+
+      // Paso 2: intentar coincidencia exacta primero, luego parcial, luego todas
+      var targetFolder = subFolders.find(function(f) { return f.name === op_id; })
+        || subFolders.find(function(f) { return f.name.indexOf(op_id) >= 0 || op_id.indexOf(f.name) >= 0; });
+
+      var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+
+      for (var fi = 0; fi < foldersToSearch.length; fi++) {
+        var filesRes = await graphGet(
+          'sites/' + siteId + '/drive/items/' + foldersToSearch[fi].id +
+          '/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime'
+        ).catch(function() { return null; });
+        if (filesRes && filesRes.value) {
+          filesRes.value.filter(function(i) { return i.file; }).forEach(function(f) {
+            f._folder = foldersToSearch[fi].name;
+            items.push(f);
+          });
+        }
+      }
+    }
 
     if (!items.length) {
       document.getElementById('coord-foto-body').innerHTML =
         '<div style="text-align:center;padding:32px;color:var(--dim);font-size:.82rem;">' +
-        '📭 No hay fotos registradas para esta operación.</div>';
+        '📭 No hay fotos registradas para esta operación.<br>' +
+        '<span style="font-size:.68rem;opacity:.55;">Ruta buscada: FT_Fotos/' + of_sap + '/</span></div>';
       return;
     }
 
     var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">';
     items.forEach(function(item) {
       var downloadUrl = item['@microsoft.graph.downloadUrl'] || item.webUrl;
-      // Determinar tipo por nombre
       var tipo = item.name.indexOf('terminada') >= 0 ? '✅ Terminada' :
-                 item.name.indexOf('rechazo') >= 0  ? '❌ Rechazo calidad' : '📷';
-      // Extraer fecha del nombre: 2026-06-16T14-22-33_terminada.jpg → 16/06/26 14:22
-      var fechaMatch = item.name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
-      var fechaStr = fechaMatch
-        ? fechaMatch[3] + '/' + fechaMatch[2] + '/' + fechaMatch[1].slice(2) + ' ' + fechaMatch[4] + ':' + fechaMatch[5]
-        : item.name;
-
-      html += '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);' +
-        'border-radius:8px;overflow:hidden;cursor:pointer;" ' +
-        'onclick="coordFotoZoom(\'' + downloadUrl.replace(/'/g, '%27') + '\',\'' + esc(tipo) + '\')">' +
+                 item.name.indexOf('rechazo')   >= 0 ? '❌ Rechazo calidad' : '📷 Foto';
+      var fm = item.name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
+      var fechaStr = fm ? fm[3]+'/'+fm[2]+'/'+fm[1].slice(2)+' '+fm[4]+':'+fm[5] : item.name;
+      html += '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;cursor:pointer;" ' +
+        'onclick="coordFotoZoom(\''+downloadUrl.replace(/'/g,'%27')+'\',\''+esc(tipo)+'\')">' +
         '<div style="position:relative;padding-top:72%;background:#0a1020;overflow:hidden;">' +
-        '<img src="' + downloadUrl + '" ' +
-        'style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" ' +
-        'loading="lazy" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'">' +
-        '<div style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;' +
-        'color:var(--dim);font-size:.72rem;">No se pudo cargar</div>' +
-        '</div>' +
+        '<img src="'+downloadUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'">' +
+        '<div style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.72rem;">No se pudo cargar</div></div>' +
         '<div style="padding:6px 8px;">' +
-        '<div style="font-size:.7rem;font-weight:600;color:var(--accent-l);">' + tipo + '</div>' +
-        '<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">' + fechaStr + '</div>' +
-        '<a href="' + item.webUrl + '" target="_blank" ' +
-        'style="font-size:.64rem;color:var(--accent-l);text-decoration:none;opacity:.7;" ' +
-        'onclick="event.stopPropagation()">↗ Abrir en SP</a>' +
+        '<div style="font-size:.7rem;font-weight:600;color:var(--accent-l);">'+tipo+'</div>' +
+        '<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">'+fechaStr+'</div>' +
+        '<a href="'+item.webUrl+'" target="_blank" style="font-size:.64rem;color:var(--accent-l);text-decoration:none;opacity:.7;" onclick="event.stopPropagation()">↗ Abrir en SP</a>' +
         '</div></div>';
     });
-    html += '</div>';
-    html += '<div style="margin-top:10px;font-size:.7rem;color:var(--dim);text-align:right;">' +
+    html += '</div><div style="margin-top:10px;font-size:.7rem;color:var(--dim);text-align:right;">' +
       items.length + ' foto' + (items.length > 1 ? 's' : '') + '</div>';
     document.getElementById('coord-foto-body').innerHTML = html;
 
   } catch(e) {
     document.getElementById('coord-foto-body').innerHTML =
-      '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error al cargar fotos: ' + esc(e.message) + '</div>';
+      '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: ' + esc(e.message) + '</div>';
     console.error('[coordVerFotos]', e);
   }
 }
 
-// Zoom de una foto en lightbox dentro del modal
 function coordFotoZoom(url, titulo) {
-  var existing = document.getElementById('coord-foto-zoom');
-  if (existing) existing.remove();
+  var ex = document.getElementById('coord-foto-zoom'); if (ex) ex.remove();
   var z = document.createElement('div');
   z.id = 'coord-foto-zoom';
-  z.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.92);' +
-    'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-out;';
-  z.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.6);">' + titulo +
-    ' <span style="opacity:.5;font-size:.7rem;">(click para cerrar)</span></div>' +
-    '<img src="' + url + '" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" ' +
-    'onerror="this.alt=\'No se pudo cargar la imagen\'">';
+  z.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-out;';
+  z.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.6);">'+titulo+' <span style="opacity:.5;font-size:.7rem;">(click para cerrar)</span></div>' +
+    '<img src="'+url+'" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" onerror="this.alt=\'No se pudo cargar\'">';
   z.onclick = function() { z.remove(); };
   document.body.appendChild(z);
 }
 
-// Verifica si una operación tiene fotos en SP (cache en memoria para no consultar cada render)
-var _coordFotoCache = {};   // { "of_sap__op_id": true | false | 'pending' }
+var _coordFotoCache = {};
 
 async function coordCheckFotos(of_sap, op_id) {
   var key = of_sap + '__' + op_id;
@@ -11781,12 +11771,41 @@ async function coordCheckFotos(of_sap, op_id) {
   _coordFotoCache[key] = 'pending';
   try {
     var siteId = await getSiteId();
-    // Codificar cada segmento individualmente — Graph requiere slashes sin codificar
-    var folderSegments = ['FT_Fotos', of_sap, op_id].map(encodeURIComponent).join('/');
-    var res = await graphGet('sites/' + siteId + '/drive/root:/' +
-      folderSegments + ':/children?$select=id&$top=1').catch(function() { return null; });
-    _coordFotoCache[key] = !!(res && res.value && res.value.length > 0);
-    // Si cambió el estado, re-renderizar seguimiento para mostrar/ocultar el ícono
+    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
+    var res = await graphGet(
+      'sites/' + siteId + '/drive/root:/' + ofSeg + ':/children?$select=name,id,folder&$top=50'
+    ).catch(function() { return null; });
+
+    if (!res || !res.value || !res.value.length) {
+      _coordFotoCache[key] = false; return;
+    }
+
+    var subFolders = res.value.filter(function(f) { return f.folder; });
+
+    // Calcular nombres candidatos para esta operación:
+    // 1. op_id exacto  2. op_id parcial  3. nombre sanitizado (para ops op_app_*)
+    var candidateNames = [op_id];
+    var aof = DB.activeOFs.find(function(a) { return a.of_sap === of_sap; });
+    if (aof) {
+      var op = aof.ops.find(function(o) { return o.id === op_id; });
+      if (op && op.nombre) {
+        candidateNames.push('op_' + op.nombre.replace(/[^a-zA-Z0-9_\-]/g, '_').substring(0, 40));
+      }
+    }
+
+    var target = subFolders.find(function(f) {
+      return candidateNames.some(function(c) {
+        return f.name === c || f.name.indexOf(c) >= 0 || c.indexOf(f.name) >= 0;
+      });
+    });
+
+    if (!target) { _coordFotoCache[key] = false; return; }
+
+    var filesRes = await graphGet(
+      'sites/' + siteId + '/drive/items/' + target.id + '/children?$select=id,file&$top=1'
+    ).catch(function() { return null; });
+
+    _coordFotoCache[key] = !!(filesRes && filesRes.value && filesRes.value.some(function(i) { return i.file; }));
     if (_coordFotoCache[key]) renderSeg();
   } catch(e) {
     _coordFotoCache[key] = false;
