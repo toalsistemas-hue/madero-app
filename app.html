@@ -515,6 +515,68 @@ tr:last-child td{border-bottom:none;}
     </button>
   </nav>
 
+  <!-- Configuración ntfy — botón en footer -->
+  <div id="app-ntfy-bar" style="padding:6px 12px 2px;border-top:1px solid rgba(255,255,255,.06);">
+    <button id="app-ntfy-btn" onclick="appNtfyOpenConfig()"
+      style="width:100%;background:rgba(0,180,216,.08);border:1px solid rgba(0,180,216,.2);
+             border-radius:8px;padding:8px 12px;font-size:.74rem;cursor:pointer;
+             color:var(--aaccent);display:flex;align-items:center;gap:7px;justify-content:center;">
+      🔔 Configurar notificaciones
+    </button>
+  </div>
+
+  <!-- Modal ntfy config -->
+  <div class="app-mo" id="app-modal-ntfy">
+    <div class="app-ms" style="max-height:85vh;overflow-y:auto;">
+      <div class="app-mh"></div>
+      <div class="app-mt">🔔 Notificaciones push</div>
+      <div style="font-size:.75rem;color:var(--adim);margin-bottom:14px;line-height:1.5;">
+        Recibe alertas en tu móvil aunque la pantalla esté bloqueada, usando la app <strong>ntfy</strong> (gratuita).
+      </div>
+
+      <!-- Paso 1 -->
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:.76rem;font-weight:700;margin-bottom:6px;">Paso 1 — Instalar ntfy</div>
+        <div style="font-size:.72rem;color:var(--adim);line-height:1.5;">
+          Descarga la app <strong>ntfy</strong> desde:<br>
+          • Play Store (Android): busca "<strong>ntfy</strong>"<br>
+          • App Store (iOS): busca "<strong>ntfy</strong>"
+        </div>
+      </div>
+
+      <!-- Paso 2 -->
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+        <div style="font-size:.76rem;font-weight:700;margin-bottom:6px;">Paso 2 — Tu canal personal</div>
+        <div style="font-size:.72rem;color:var(--adim);margin-bottom:8px;">
+          El coordinador te asigna un canal único. Escríbelo aquí exactamente como te lo dieron:
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:.72rem;color:var(--adim);white-space:nowrap;">ntfy.sh/</span>
+          <input id="app-ntfy-canal" type="text" placeholder="madero-juan-garcia"
+            style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);
+                   border-radius:7px;padding:8px 10px;color:var(--atext);font-size:.78rem;"
+            oninput="this.value=this.value.replace(/[^a-z0-9\-_]/g,'').toLowerCase()">
+        </div>
+      </div>
+
+      <!-- Paso 3 -->
+      <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+        <div style="font-size:.76rem;font-weight:700;margin-bottom:6px;">Paso 3 — Suscribirse en ntfy</div>
+        <div style="font-size:.72rem;color:var(--adim);line-height:1.5;">
+          En la app ntfy, toca <strong>+</strong> y escribe el mismo canal.<br>
+          Activa las notificaciones cuando ntfy te lo pida.
+        </div>
+      </div>
+
+      <div id="app-ntfy-status" style="font-size:.72rem;text-align:center;margin-bottom:10px;min-height:16px;"></div>
+
+      <div class="app-ma">
+        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-ntfy')">Cancelar</button>
+        <button class="app-mb app-mb-g" onclick="appNtfyGuardar()">💾 Guardar y probar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- APP MODALS -->
   <div class="app-mo" id="app-modal-op">
     <div class="app-ms">
@@ -1220,6 +1282,8 @@ function initActiveOFs() {
       DB.timers["12825_"+of12825.ops[1].id]={start:Date.now()-elapsedMs,elapsed:0,running:true};
     })();
     appErrRestore();
+    pushInit().catch(function(){});
+    appNtfyUpdateBtn();
     DB.notifications.push({id:"n1",type:"calidad",of_sap:"12825",op_id:of12825.ops[1].id,note:"Verificar continuidad eléctrica del módulo",time:"09:13",from:"supervisor"});
   }
 }
@@ -1416,6 +1480,300 @@ function appFotoBtnHTML(of_sap,op_id,tipo){
     +'style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">📷 Tomar foto</button>'
     +'<span id="'+countId+'" style="font-size:.7rem;color:var(--aaccent);display:'+(n>0?'inline':'none')+';">'+(n>0?n+' foto'+(n>1?'s':''):'')+'</span>'
     +'</div>';
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ── PUSH NOTIFICATIONS — Sistema completo ──────────────────────────
+// Flujo: app solicita permiso → guarda suscripción en SP lista
+// FT_PushSubscriptions → Power Automate lee la suscripción y
+// envía el push cuando el coordinador hace cambios
+// ═══════════════════════════════════════════════════════════════════
+
+// VAPID Public Key (generada para este proyecto — NO cambiar)
+var VAPID_PUBLIC_KEY = 'BG7Rw32VT3smOB3HjFEFt5mVW3X8yQK0-YABDhCgFTvmsex9rxvucL8mq7alwVIbF6VtbuQs2NP2frPQGiIDrPE';
+
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw     = window.atob(base64);
+  var output  = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+// Estado de la suscripción push (persistido en localStorage)
+var _pushState = {
+  permission:   Notification.permission,  // 'default' | 'granted' | 'denied'
+  subscribed:   false,
+  subscription: null,
+  userId:       null
+};
+
+// ── Inicializar Push al arrancar la app ────────────────────────────
+async function pushInit() {
+  if (!('PushManager' in window)) {
+    console.log('[Push] PushManager no soportado en este navegador');
+    return;
+  }
+  if (!('serviceWorker' in navigator)) {
+    console.log('[Push] Service Worker no disponible');
+    return;
+  }
+
+  // Esperar a que el SW esté activo
+  var reg = await navigator.serviceWorker.ready;
+
+  // Verificar si ya tenemos una suscripción activa
+  var existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    _pushState.subscribed   = true;
+    _pushState.subscription = existing;
+    console.log('[Push] Ya suscrito:', existing.endpoint.slice(0, 50) + '...');
+    // Escuchar mensajes del SW (clicks en notificaciones)
+    navigator.serviceWorker.addEventListener('message', pushHandleSWMessage);
+    return;
+  }
+
+  // Si el permiso ya fue otorgado anteriormente, re-suscribir automáticamente
+  if (Notification.permission === 'granted') {
+    await pushSubscribe(reg);
+  }
+  // Si es 'default', mostrar botón para pedir permiso (no pedir automáticamente)
+}
+
+// ── Solicitar permiso y suscribirse ───────────────────────────────
+async function pushSolicitarPermiso() {
+  if (!('PushManager' in window)) {
+    alert('Tu navegador no soporta notificaciones push. Usa Chrome o Firefox.');
+    return;
+  }
+  var perm = await Notification.requestPermission();
+  _pushState.permission = perm;
+  pushUpdateBtn();
+
+  if (perm !== 'granted') {
+    alert('⚠️ Permiso denegado. Para activar notificaciones ve a Configuración del navegador → Notificaciones → Permitir.');
+    return;
+  }
+
+  var reg = await navigator.serviceWorker.ready;
+  await pushSubscribe(reg);
+}
+
+// ── Crear suscripción y guardar en SharePoint ─────────────────────
+async function pushSubscribe(reg) {
+  try {
+    var subscription = await reg.pushManager.subscribe({
+      userVisibleOnly:     true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+
+    _pushState.subscribed   = true;
+    _pushState.subscription = subscription;
+
+    // Guardar en SP lista FT_PushSubscriptions para que Power Automate la use
+    await pushGuardarEnSP(subscription);
+
+    // Escuchar mensajes del SW
+    navigator.serviceWorker.addEventListener('message', pushHandleSWMessage);
+
+    pushUpdateBtn();
+    console.log('[Push] Suscripción activa y guardada en SP');
+
+    // Notificación de prueba inmediata
+    reg.showNotification('✅ Notificaciones activadas', {
+      body:    'Recibirás alertas de FabTracker aunque la pantalla esté bloqueada.',
+      icon:    './icon-192.png',
+      vibrate: [100, 50, 100]
+    });
+
+  } catch(e) {
+    console.error('[Push] Error al suscribir:', e);
+    alert('Error al activar notificaciones: ' + e.message);
+  }
+}
+
+// ── Cancelar suscripción ───────────────────────────────────────────
+async function pushCancelar() {
+  if (!_pushState.subscription) return;
+  try {
+    await _pushState.subscription.unsubscribe();
+    _pushState.subscribed   = false;
+    _pushState.subscription = null;
+    await pushEliminarDeSP();
+    pushUpdateBtn();
+    console.log('[Push] Suscripción cancelada');
+  } catch(e) {
+    console.error('[Push] Error al cancelar:', e);
+  }
+}
+
+// ── Guardar suscripción en SP lista FT_PushSubscriptions ──────────
+async function pushGuardarEnSP(subscription) {
+  try {
+    var subJson  = subscription.toJSON();
+    var userId   = appCurrentUser ? (appCurrentUser.displayName || appCurrentUser.username || 'tecnico') : 'tecnico';
+    var deviceId = localStorage.getItem('madero_device_id') || ('dev_' + Date.now());
+    localStorage.setItem('madero_device_id', deviceId);
+    _pushState.userId = userId;
+
+    var fields = {
+      Title:        deviceId,
+      Usuario:      userId,
+      Endpoint:     subJson.endpoint,
+      P256DH:       (subJson.keys && subJson.keys.p256dh)   || '',
+      Auth:         (subJson.keys && subJson.keys.auth)      || '',
+      UserAgent:    navigator.userAgent.substring(0, 200),
+      Activa:       true
+    };
+
+    // Verificar si ya existe una suscripción para este device
+    var siteId = await appGetSiteId();
+    var res = await graphGet(
+      'sites/' + siteId + '/lists/FT_PushSubscriptions/items' +
+      '?$filter=fields/Title eq \'' + deviceId + '\'&$select=id&$top=1'
+    ).catch(function() { return null; });
+
+    var existingId = res && res.value && res.value[0] ? res.value[0].id : null;
+    if (existingId) {
+      // Actualizar suscripción existente
+      await appGraphPatch(
+        'sites/' + siteId + '/lists/FT_PushSubscriptions/items/' + existingId,
+        { fields: fields }
+      );
+    } else {
+      // Crear nueva suscripción
+      await appGraphPost(
+        'sites/' + siteId + '/lists/FT_PushSubscriptions/items',
+        { fields: fields }
+      );
+    }
+    console.log('[Push] Suscripción guardada en SP para:', userId);
+  } catch(e) {
+    console.warn('[Push] No se pudo guardar en SP:', e.message);
+  }
+}
+
+// ── Eliminar suscripción de SP ────────────────────────────────────
+async function pushEliminarDeSP() {
+  try {
+    var deviceId = localStorage.getItem('madero_device_id');
+    if (!deviceId) return;
+    var siteId = await appGetSiteId();
+    var res = await graphGet(
+      'sites/' + siteId + '/lists/FT_PushSubscriptions/items' +
+      '?$filter=fields/Title eq \'' + deviceId + '\'&$select=id&$top=1'
+    ).catch(function() { return null; });
+    var existingId = res && res.value && res.value[0] ? res.value[0].id : null;
+    if (existingId) {
+      await appGraphPatch(
+        'sites/' + siteId + '/lists/FT_PushSubscriptions/items/' + existingId,
+        { fields: { Activa: false } }
+      );
+    }
+  } catch(e) { console.warn('[Push] No se pudo desactivar en SP:', e.message); }
+}
+
+// ── Manejar mensajes del SW (click en notificación) ───────────────
+function pushHandleSWMessage(evt) {
+  if (!evt.data || evt.data.type !== 'NOTIF_CLICK') return;
+  var tipo   = evt.data.tipo;
+  var of_sap = evt.data.of_sap;
+  // Navegar a la vista correcta según el tipo
+  if (tipo === 'calidad') {
+    setAppView('home');
+    // Scroll a la notificación de calidad
+    setTimeout(function() {
+      var notifEl = document.querySelector('.app-notif-calidad');
+      if (notifEl) notifEl.scrollIntoView({ behavior: 'smooth' });
+    }, 500);
+  } else {
+    setAppView('ofs');
+  }
+}
+
+// ── Actualizar botón de estado de push en la UI ───────────────────
+function pushUpdateBtn() {
+  var btn = document.getElementById('app-push-btn');
+  if (!btn) return;
+  if (_pushState.permission === 'denied') {
+    btn.textContent  = '🔕 Notificaciones bloqueadas';
+    btn.style.color  = '#f87171';
+    btn.onclick      = function() {
+      alert('Las notificaciones están bloqueadas en este navegador.\n\nPara activarlas:\n1. Toca el ícono 🔒 en la barra de dirección\n2. Selecciona "Notificaciones" → Permitir\n3. Recarga la app');
+    };
+  } else if (_pushState.subscribed) {
+    btn.textContent  = '🔔 Notificaciones activas';
+    btn.style.color  = '#4ade80';
+    btn.onclick      = pushCancelar;
+  } else {
+    btn.textContent  = '🔔 Activar notificaciones push';
+    btn.style.color  = 'var(--aaccent)';
+    btn.onclick      = pushSolicitarPermiso;
+  }
+}
+
+
+// ── Configuración ntfy en la app móvil ───────────────────────────
+var _APP_NTFY_KEY = 'madero_ntfy_canal';
+
+function appNtfyOpenConfig() {
+  var canal = localStorage.getItem(_APP_NTFY_KEY) || '';
+  var input = document.getElementById('app-ntfy-canal');
+  var status = document.getElementById('app-ntfy-status');
+  if (input)  input.value = canal;
+  if (status) status.textContent = canal ? ('✅ Canal activo: ntfy.sh/' + canal) : '';
+  openAppModal('app-modal-ntfy');
+  appNtfyUpdateBtn();
+}
+
+async function appNtfyGuardar() {
+  var canal  = (document.getElementById('app-ntfy-canal').value || '').trim().toLowerCase();
+  var status = document.getElementById('app-ntfy-status');
+  if (!canal) {
+    localStorage.removeItem(_APP_NTFY_KEY);
+    if (status) status.textContent = '🔕 Notificaciones desactivadas';
+    appNtfyUpdateBtn();
+    return;
+  }
+  if (status) status.textContent = '⏳ Enviando notificación de prueba...';
+  try {
+    // Enviar notificación de prueba al canal
+    var resp = await fetch('https://ntfy.sh/' + canal, {
+      method: 'POST',
+      headers: { 'Title': '✅ FabTracker conectado', 'Priority': 'high', 'Tags': 'white_check_mark,bell' },
+      body:   'Tu canal ntfy está configurado correctamente. Recibirás alertas de producción aquí.'
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    localStorage.setItem(_APP_NTFY_KEY, canal);
+    if (status) {
+      status.style.color = '#4ade80';
+      status.textContent = '✅ ¡Funcionando! Revisa la app ntfy para ver la notificación de prueba.';
+    }
+    appNtfyUpdateBtn();
+    setTimeout(function(){ closeAppModal('app-modal-ntfy'); }, 2500);
+  } catch(e) {
+    if (status) {
+      status.style.color = '#f87171';
+      status.textContent = '⚠️ Error: ' + e.message + '. Verifica tu conexión.';
+    }
+  }
+}
+
+function appNtfyUpdateBtn() {
+  var btn   = document.getElementById('app-ntfy-btn');
+  var canal = localStorage.getItem(_APP_NTFY_KEY);
+  if (!btn) return;
+  if (canal) {
+    btn.textContent = '🔔 ntfy activo — ' + canal;
+    btn.style.color = '#4ade80';
+    btn.style.borderColor = 'rgba(74,222,128,.3)';
+  } else {
+    btn.textContent = '🔔 Configurar notificaciones';
+    btn.style.color = 'var(--aaccent)';
+    btn.style.borderColor = 'rgba(0,180,216,.2)';
+  }
 }
 
 // ── Helpers globales ─────────────────────────────────

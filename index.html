@@ -1612,6 +1612,20 @@ tr:last-child td{border-bottom:none;}
               <input class="form-input" id="ft-tec-nombre" placeholder="Ej: Juan García" style="width:100%;"></div>
             <div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Puesto</label>
               <input class="form-input" id="ft-tec-puesto" placeholder="Ej: Operador Torno" style="width:100%;"></div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">
+                Canal ntfy 🔔
+                <span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — para notificaciones con pantalla bloqueada</span>
+              </label>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="font-size:.75rem;color:var(--dim);white-space:nowrap;">ntfy.sh/</span>
+                <input class="form-input" id="ft-tec-ntfy" placeholder="madero-juan-garcia" style="flex:1;"
+                  oninput="this.value=this.value.replace(/[^a-z0-9\-_]/g,'').toLowerCase()">
+              </div>
+              <div style="font-size:.67rem;color:var(--dim);margin-top:4px;">
+                El técnico instala la app <strong>ntfy</strong> y se suscribe a este canal. Dejar vacío si no usa notificaciones.
+              </div>
+            </div>
             <label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;">
               <input type="checkbox" id="ft-tec-activo" checked> Activo
             </label>
@@ -4719,15 +4733,24 @@ async function ftLoadTecnicos() {
     list.innerHTML = items.map(t =>
       '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;">' +
       '<div style="width:36px;height:36px;background:rgba(31,111,235,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;">' + (t.Nombre||t.Title||'?').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase() + '</div>' +
-      '<div style="flex:1;"><div style="font-size:.82rem;font-weight:600;">' + (t.Nombre||t.Title||'') + '</div><div style="font-size:.7rem;color:var(--dim);">' + (t.Puesto||'') + '</div></div>' +
+      '<div style="flex:1;"><div style="font-size:.82rem;font-weight:600;">' + (t.Nombre||t.Title||'') + '</div>' +
+      '<div style="font-size:.7rem;color:var(--dim);">' + (t.Puesto||'') + '</div>' +
+      '<div style="font-size:.67rem;color:var(--dim);margin-top:1px;">' + (t.Canal_Ntfy ? '🔔 ntfy.sh/' + t.Canal_Ntfy : '🔕 Sin notificaciones push') + '</div>' +
+      '</div>' +
       '<span style="background:rgba(' + (t.Activo?'34,197,94':'239,68,68') + ',.1);color:' + (t.Activo?'#22c55e':'#ef4444') + ';border-radius:5px;padding:2px 8px;font-size:.65rem;">' + (t.Activo?'Activo':'Inactivo') + '</span>' +
-      '<button onclick="ftOpenTecnico(' + "'" + t.id + "'" + ')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:4px 10px;font-size:.7rem;cursor:pointer;color:var(--dim);">✏ Editar</button>' +
+      '<button onclick="ftOpenTecnicoFromData(\'' + t.id + '\',\'' + (t.Nombre||t.Title||'').replace(/'/g,'') + '\',\'' + (t.Puesto||'').replace(/'/g,'') + '\',\'' + (t.Canal_Ntfy||'') + '\',' + (t.Activo?'true':'false') + ')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:4px 10px;font-size:.7rem;cursor:pointer;color:var(--dim);">✏ Editar</button>' +
       '</div>'
     ).join('');
-    // Sync to DB.TECHNICIANS
+    // Sync to DB.TECHNICIANS and ntfy channel cache
     if (window.TECHNICIANS) window.TECHNICIANS.length = 0;
     else window.TECHNICIANS = [];
-    items.filter(t=>t.Activo).forEach(t => window.TECHNICIANS.push(t.Nombre||t.Title||''));
+    if (!window._ntfyCanales) window._ntfyCanales = {};
+    items.filter(t=>t.Activo).forEach(t => {
+      var n = t.Nombre||t.Title||'';
+      window.TECHNICIANS.push(n);
+      if (t.Canal_Ntfy) window._ntfyCanales[n] = t.Canal_Ntfy;
+      else delete window._ntfyCanales[n];
+    });
   } catch(e) { list.innerHTML = '<div style="text-align:center;padding:20px;color:#ef4444;font-size:.8rem;">Error: ' + e.message + '</div>'; }
 }
 
@@ -4736,13 +4759,19 @@ function ftOpenTecnico(spId) {
   document.getElementById('ft-tecnico-title').textContent = spId ? 'Editar Técnico' : 'Agregar Técnico';
   document.getElementById('ft-tec-nombre').value = '';
   document.getElementById('ft-tec-puesto').value = '';
+  document.getElementById('ft-tec-ntfy').value  = '';
   document.getElementById('ft-tec-activo').checked = true;
   document.getElementById('ft-tec-sp-id').textContent = spId || '';
-  if (spId) {
-    // Load data from rendered list
-    const cards = document.querySelectorAll('#ft-tecnicos-list > div');
-    // Simple: user edits fresh fields
-  }
+  openCModal('ft-modal-tecnico');
+}
+function ftOpenTecnicoFromData(spId, nombre, puesto, ntfy, activo) {
+  _ftEditTecId = spId || null;
+  document.getElementById('ft-tecnico-title').textContent = 'Editar Técnico';
+  document.getElementById('ft-tec-nombre').value = nombre || '';
+  document.getElementById('ft-tec-puesto').value = puesto || '';
+  document.getElementById('ft-tec-ntfy').value  = ntfy   || '';
+  document.getElementById('ft-tec-activo').checked = activo !== false;
+  document.getElementById('ft-tec-sp-id').textContent = spId || '';
   openCModal('ft-modal-tecnico');
 }
 
@@ -4750,14 +4779,11 @@ async function ftSaveTecnico() {
   const nombre = document.getElementById('ft-tec-nombre').value.trim();
   const puesto = document.getElementById('ft-tec-puesto').value.trim();
   const activo = document.getElementById('ft-tec-activo').checked;
+  const ntfy   = (document.getElementById('ft-tec-ntfy').value || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
   if (!nombre) { alert('El nombre es requerido.'); return; }
   try {
     const siteId = await getSiteId();
-    // Detect SP columns once and cache
-    if (!window._ftTecColumnasConocidas) {
-      window._ftTecColumnasConocidas = ['Title','Nombre','Puesto','Activo'];
-    }
-    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo };
+    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy };
     if (_ftEditTecId) {
       await spEscribir('FT_Tecnicos', fields, _ftEditTecId);
     } else {
@@ -4765,10 +4791,14 @@ async function ftSaveTecnico() {
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);
-    window._ftTecColumnasConocidas = null; // reset cache
+    // Actualizar caché ntfy para que las notificaciones usen el canal correcto de inmediato
+    if (!window._ntfyCanales) window._ntfyCanales = {};
+    if (ntfy) window._ntfyCanales[nombre] = ntfy;
+    else delete window._ntfyCanales[nombre];
     closeCModal('ft-modal-tecnico');
     ftLoadTecnicos();
   } catch(e) { alert('Error guardando técnico: ' + e.message); }
+}
 }
 
 
@@ -6508,6 +6538,7 @@ function savePrios(){
   });
   closeCModal("modal-prio");
   fireSync("coord","prio_updated",null);
+  ntfyNotificarEvento('prio_updated', null).catch(function(){});
   // -- Persist prioridad changes to SharePoint ----------------------
   ftSavePrioridadToSP();
 }
@@ -7995,6 +8026,7 @@ function confirmProgMain() {
     time:nowT(), read:false
   });
   fireSync('coord', 'prog_updated', {count: hoy});
+  ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   ftSaveProgramacionToSP();
   // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
@@ -8365,6 +8397,7 @@ function saveOFOps() {
   }
   renderSeg();
   fireSync('coord','ops_assigned',{of_sap:sap});
+  ntfyNotificarEvento('ops_assigned', {of_sap:sap}).catch(function(){});
   renderApp();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
 }
@@ -10619,6 +10652,7 @@ async function portalSaveColaToSP(estacion){
   console.log('✅ Cola SP — FT_Op: '+savedOps+', FT_Cola: '+savedQueue+'/'+q.length+' ops');
   addCoordNotif('queue_reordered', {estacion: estacion, moved_by: 'coordinador'});
   fireSync('coord','queue_reordered',{estacion: estacion, moved_by:'coordinador'});
+  ntfyNotificarEvento('queue_reordered', {estacion: estacion}).catch(function(){});
 }
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
@@ -10978,6 +11012,58 @@ function calTiemEdit(key){
   renderApp();
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+// ── NTFY.SH — Notificaciones push a técnicos ──────────────────────
+// ══════════════════════════════════════════════════════════════════
+
+var _ntfyMensajes = {
+  prog_updated:     { titulo: '📅 Programación actualizada',  cuerpo: 'El Coordinador actualizó la programación para hoy.',          prioridad: 'default' },
+  prio_updated:     { titulo: '⚡ Prioridades actualizadas',  cuerpo: 'El Coordinador actualizó las prioridades de fabricación.',     prioridad: 'high'    },
+  template_updated: { titulo: '📋 Plantilla actualizada',     cuerpo: 'Se actualizó la plantilla de operaciones.',                   prioridad: 'default' },
+  ops_assigned:     { titulo: '👷 Operaciones asignadas',     cuerpo: 'El Coordinador te asignó operaciones en una orden.',          prioridad: 'high'    },
+  queue_reordered:  { titulo: '≡ Cola reordenada',            cuerpo: 'El Coordinador reordenó la cola de tu estación.',             prioridad: 'default' },
+};
+
+async function ntfySend(canal, titulo, cuerpo, prioridad) {
+  if (!canal) return;
+  try {
+    await fetch('https://ntfy.sh/' + canal, {
+      method: 'POST',
+      headers: { 'Title': titulo, 'Priority': prioridad || 'default', 'Tags': 'factory,bell' },
+      body: cuerpo
+    });
+    console.log('[ntfy] Enviado a:', canal, '—', titulo);
+  } catch(e) { console.warn('[ntfy] Error:', canal, e.message); }
+}
+
+async function ntfyNotificarEvento(evento, data) {
+  var m = _ntfyMensajes[evento];
+  if (!m || !window._ntfyCanales) return;
+  var canales  = window._ntfyCanales;
+  var destinos = [];
+
+  if (evento === 'ops_assigned' && data && data.of_sap) {
+    // Solo técnicos de esa OF
+    var aof = DB.activeOFs.find(function(a){ return a.of_sap === data.of_sap; });
+    if (aof) {
+      var tecSet = {};
+      (aof.ops||[]).forEach(function(op){
+        if (op.tecnico) tecSet[op.tecnico] = true;
+        (op.ayudantes||[]).forEach(function(a){ if(a) tecSet[a] = true; });
+      });
+      Object.keys(tecSet).forEach(function(tec){ if (canales[tec]) destinos.push(canales[tec]); });
+      m = { titulo: '👷 Operaciones asignadas — OF ' + data.of_sap,
+            cuerpo: 'Se te asignaron operaciones en: ' + ((aof.descripcion||'').substring(0,60)||data.of_sap),
+            prioridad: 'high' };
+    }
+  } else {
+    // Todos los técnicos con canal configurado
+    Object.keys(canales).forEach(function(tec){ destinos.push(canales[tec]); });
+  }
+
+  destinos.forEach(function(c){ ntfySend(c, m.titulo, m.cuerpo, m.prioridad).catch(function(){}); });
+}
 
 // -- Auto-refresh running timers every 60s -----------------
 setInterval(function(){
