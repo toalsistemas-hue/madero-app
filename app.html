@@ -6310,45 +6310,44 @@ function appToggleGearMenu() {
   }
 }
 
-// Logout que fuerza el selector de cuenta de Microsoft
-async function appGearLogout() {
+// Logout: limpia sesión local y fuerza selector de cuenta en el próximo login
+function appGearLogout() {
   document.getElementById('app-gear-menu').style.display = 'none';
-  try {
-    // 1. Limpiar caché local de MSAL
-    var keysToRemove = [];
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (k && (k.indexOf('msal') >= 0 || k.indexOf('login.windows') >= 0 ||
-                k.indexOf('login.microsoftonline') >= 0)) {
-        keysToRemove.push(k);
-      }
-    }
-    keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
-    sessionStorage.clear();
 
-    // 2. Si MSAL está inicializado, hacer logout completo hacia Microsoft
-    //    con post_logout_redirect_uri apuntando de vuelta a la app
-    //    Microsoft borrará la cookie de sesión SSO y mostrará el selector
-    if (appMsalInstance) {
-      var accounts = appMsalInstance.getAllAccounts();
-      if (accounts.length > 0) {
-        // Set flag BEFORE redirect so we know it's a logout when we return
-        sessionStorage.setItem('msal_logout_in_progress', '1');
-        await appMsalInstance.logoutRedirect({
-          account: accounts[0],
-          postLogoutRedirectUri: appGetRedirectUri(),
-        });
-        return; // Page will redirect — execution stops here
-      }
+  // Marcar que el próximo login debe mostrar el selector de cuenta
+  localStorage.setItem('msal_force_account_select', '1');
+
+  // Limpiar todos los tokens MSAL del localStorage
+  var keysToRemove = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && (k.indexOf('msal') >= 0 || k.indexOf('login.windows') >= 0 ||
+              k.indexOf('login.microsoftonline') >= 0)) {
+      keysToRemove.push(k);
     }
-  } catch(e) {
-    console.warn('[logout]', e.message);
   }
-  // Fallback: reload directo (limpia tokens locales, Microsoft puede mantener SSO)
+  keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+  sessionStorage.clear();
+
+  // Reset estado de la app
   appToken = null;
   appCurrentUser = null;
   appMsalInstance = null;
-  window.location.reload();
+  APP_USER_PROFILE = null;
+
+  // Volver al login directamente (sin redirect a Microsoft)
+  var shell = document.getElementById('app-shell-mobile');
+  var launcher = document.getElementById('app-launcher');
+  var login = document.getElementById('app-login-screen');
+  if (shell)    shell.style.display    = 'none';
+  if (launcher) launcher.style.display = 'none';
+  if (login) {
+    login.style.display = 'flex';
+    var btn = document.getElementById('app-login-btn');
+    var status = document.getElementById('app-login-status');
+    if (btn)    btn.disabled = false;
+    if (status) status.textContent = '';
+  }
 }
 
 
@@ -6416,17 +6415,6 @@ async function appInitMsal() {
     try {
       redirect = await appMsalInstance.handleRedirectPromise();
     } catch(e) { console.warn('handleRedirectPromise:', e.message); }
-
-    // Detect logout redirect return via sessionStorage flag
-    var justLoggedOut = sessionStorage.getItem('msal_logout_in_progress') === '1';
-    if (justLoggedOut) {
-      sessionStorage.removeItem('msal_logout_in_progress');
-      try { await appMsalInstance.clearCache().catch(function(){}); } catch(ce) {}
-      document.getElementById('app-login-screen').style.display = 'flex';
-      document.getElementById('app-login-btn').disabled = false;
-      document.getElementById('app-login-status').textContent = '';
-      return;
-    }
 
     if (redirect && redirect.accessToken) {
       // Successfully returned from redirect login
@@ -6503,9 +6491,14 @@ async function appDoLogin() {
   try {
     status.textContent = 'Redirigiendo a Microsoft...';
     // REDIRECT ONLY — popup is blocked in PWAs installed on Android
+    // Si el usuario acaba de cerrar sesión, forzar el selector de cuenta
+    var forceSelect = localStorage.getItem('msal_force_account_select') === '1';
+    if (forceSelect) localStorage.removeItem('msal_force_account_select');
+
     await appMsalInstance.loginRedirect({
       scopes: APP_CONFIG.scopes,
       redirectUri: appGetRedirectUri(),
+      prompt: forceSelect ? 'select_account' : undefined,
     });
     // Page will redirect — no code runs after this
   } catch(e) {
