@@ -745,28 +745,6 @@ td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:middle;
 tr:hover td{background:rgba(26,52,85,.4);}
 tr:last-child td{border-bottom:none;}
 
-/* Reportes */
-.rpt-section{margin-bottom:16px;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden;}
-.rpt-section-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:rgba(26,52,85,.5);border-bottom:1px solid rgba(255,255,255,.06);flex-wrap:wrap;gap:6px;}
-.rpt-section-title{font-size:.82rem;font-weight:700;display:flex;align-items:center;gap:7px;}
-.rpt-section-meta{font-size:.72rem;color:var(--dim);white-space:nowrap;}
-.rpt-table{width:100%;border-collapse:collapse;font-size:.73rem;}
-.rpt-table th{background:rgba(255,255,255,.05);padding:5px 8px;text-align:left;font-weight:600;font-size:.65rem;letter-spacing:.04em;color:var(--dim);border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;}
-.rpt-table td{padding:5px 8px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle;}
-.rpt-table tr:last-child td{border-bottom:none;}
-.rpt-table tr:hover td{background:rgba(26,52,85,.35);}
-.rpt-of-sap{font-weight:600;color:var(--accent-l,#58a6ff);font-size:.73rem;}
-.rpt-desc{max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.rpt-avance-wrap{display:flex;align-items:center;gap:6px;min-width:90px;}
-.rpt-avance-bar{flex:1;height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;}
-.rpt-avance-fill{height:100%;border-radius:3px;transition:width .3s;}
-.rpt-avance-pct{font-size:.68rem;color:var(--dim);min-width:28px;text-align:right;}
-.rpt-pill{font-size:.62rem;padding:2px 7px;border-radius:12px;font-weight:600;white-space:nowrap;}
-.rpt-pill-proceso{background:rgba(59,130,246,.15);color:#93c5fd;}
-.rpt-pill-plan{background:rgba(100,116,139,.12);color:var(--dim);}
-.rpt-pill-term{background:rgba(34,197,94,.12);color:#4ade80;}
-.rpt-empty{text-align:center;padding:20px;color:var(--dim);font-size:.78rem;}
-
 /* Coord Modal */
 .coord-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(4px);}
 .coord-modal-bg.show{display:flex;}
@@ -1005,7 +983,6 @@ tr:last-child td{border-bottom:none;}
     <span style="width:1px;height:16px;background:rgba(255,255,255,.12);margin:0 6px;flex-shrink:0;align-self:center;"></span>
     <button class="coord-nav-pill" onclick="showCoordPage('seguimiento',this)">📡 Tiempo Real</button>
     <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
-    <button class="coord-nav-pill" onclick="showCoordPage('reportes',this);ftRptLoad()">📋 Reportes</button>
     <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
       <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);font-size:.78rem;display:flex;align-items:center;gap:5px;font-family:'Archivo',sans-serif;transition:background .15s;" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='rgba(255,255,255,.06)'">
         🔔
@@ -1171,38 +1148,6 @@ tr:last-child td{border-bottom:none;}
         <div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;margin-bottom:12px;">Carga por Estación</div>
         <div id="hist-est"></div>
       </div>
-    </div>
-
-    <!-- ═══ REPORTES ═══ -->
-    <div class="coord-page" id="coord-page-reportes">
-      <div class="page-hdr" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <div><div class="page-title">📋 Reportes por Estación</div></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button id="rpt-btn-pdf" onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:5px;">📄 Descargar PDF</button>
-          <button id="rpt-btn-excel" onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:5px;">📊 Excel con detalle</button>
-          <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
-        </div>
-      </div>
-
-      <!-- Filtros -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;">
-        <select id="rpt-filtro-estacion" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:160px;">
-          <option value="">Todas las estaciones</option>
-        </select>
-        <select id="rpt-filtro-status" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-          <option value="">Todos los status</option>
-          <option value="En Proceso">En Proceso</option>
-          <option value="Planeacion">Planeación</option>
-          <option value="Terminada">Terminada</option>
-        </select>
-        <input type="date" id="rpt-desde" onchange="ftRptRender()" title="Fecha inicio desde" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-        <input type="date" id="rpt-hasta" onchange="ftRptRender()" title="Fecha inicio hasta" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-        <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
-        <button onclick="ftRptLimpiarFiltros()" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:5px 10px;color:var(--text-dim);font-size:.75rem;cursor:pointer;">✕ Limpiar</button>
-      </div>
-
-      <div id="rpt-loading" style="text-align:center;padding:40px;color:var(--dim,#64748b);font-size:.85rem;">⏳ Cargando datos...</div>
-      <div id="rpt-contenido" style="display:none;"></div>
     </div>
 
   </div><!-- coord-main -->
@@ -4202,51 +4147,71 @@ async function ftConfirmExcelLoad() {
   document.getElementById('ft-excel-loading').style.display = 'block';
   document.getElementById('ft-excel-preview').style.display = 'none';
 
+  // Pausa entre escrituras para evitar throttling del Flow
+  const delay = ms => new Promise(res => setTimeout(res, ms));
+
+  // Reintento con backoff exponencial (hasta 3 intentos)
+  async function spEscribirConReintento(lista, fields, itemId, ofSap) {
+    for (var intento = 1; intento <= 3; intento++) {
+      try {
+        return await spEscribir(lista, fields, itemId);
+      } catch(e) {
+        var esThrottle = e.message && (e.message.includes('429') || e.message.includes('503') || e.message.includes('Flow ESCRIBIR'));
+        if (intento < 3 && esThrottle) {
+          console.warn('Throttle OF ' + ofSap + ' intento ' + intento + ', reintentando en ' + (intento * 1200) + 'ms...');
+          await delay(intento * 1200);
+        } else { throw e; }
+      }
+    }
+  }
+
   try {
     const siteId = await getSiteId();
-    // Load existing OFs from SharePoint to detect duplicates
     const existRes = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const existMap = {};
     (existRes.value||[]).forEach(i => { existMap[String(i.fields.Title||i.fields.OF_SAP||'')] = i.id; });
 
     let created = 0, updated = 0, errors = 0;
-    for (const row of _ftPendingExcel) {
+    const errList = [];
+    const loadingEl = document.getElementById('ft-excel-loading');
+
+    for (let idx = 0; idx < _ftPendingExcel.length; idx++) {
+      const row = _ftPendingExcel[idx];
       const ofSap = String(row.OF_SAP || row.of_sap || '').trim();
       if (!ofSap) continue;
-      // Build fields — only Title is guaranteed. Other columns use SP internal names.
-      // Title = OF_SAP value (Title is the renamed key column)
+
+      if (loadingEl) loadingEl.innerHTML =
+        '<div style="padding:16px;text-align:center;font-size:.82rem;color:var(--dim);">⏳ Guardando OF ' + ofSap +
+        ' (' + (idx + 1) + ' de ' + _ftPendingExcel.length + ')...</div>';
+
       const fields = { Title: ofSap };
-      // Add optional columns gracefully — skip if SP doesn't have them
-      // Column internal names as they appear in SharePoint list
-      // (Screenshot confirmed: "Pedido" not "Numero_Pedido", etc.)
       const optFields = {
-        Numero_Articulo: String(row.Numero_Articulo || row.numero_articulo || row['Numero Articulo'] || ''),
-        Descripcion_Articulo: String(row.Descripcion_Articulo || row.descripcion_articulo || row['Descripcion Articulo'] || ''),
-        Pedido: String(row.Numero_Pedido || row.numero_pedido || row.Pedido || row['Numero Pedido'] || ''),
-        Cliente: String(row.Cliente || row.cliente || ''),
-        Prioridad: String(row.Prioridad || row.prioridad || 'Normal'),
-        Rotacion: String(row.Rotacion || row.rotacion || ''),
-        Sub_Articulos: String(row.Sub_Articulos || row.sub_articulos || row['Sub Articulos'] || ''),
+        Numero_Articulo:     String(row.Numero_Articulo || row.numero_articulo || row['Numero Articulo'] || ''),
+        Descripcion_Articulo:String(row.Descripcion_Articulo || row.descripcion_articulo || row['Descripcion Articulo'] || ''),
+        Pedido:              String(row.Numero_Pedido || row.numero_pedido || row.Pedido || row['Numero Pedido'] || ''),
+        Cliente:             String(row.Cliente || row.cliente || ''),
+        Prioridad:           String(row.Prioridad || row.prioridad || 'Normal'),
+        Rotacion:            String(row.Rotacion || row.rotacion || ''),
+        Sub_Articulos:       String(row.Sub_Articulos || row.sub_articulos || row['Sub Articulos'] || ''),
         Status: 'Sin programar',
         Programado_Hoy: false,
       };
-      // Try adding each optional field — if a field name is wrong SP will reject the whole batch
-      // so we merge them all (user must ensure column names match)
       Object.assign(fields, optFields);
+
       try {
         const isNew = !existMap[ofSap];
         let itemId = existMap[ofSap] || null;
 
         if (isNew) {
-          // -- CREAR: nueva OF con todos los campos + Fecha_Carga actual --
           var fechaHoy = new Date();
-          var fechaISO = fechaHoy.getFullYear()+'-'+(String(fechaHoy.getMonth()+1).padStart(2,'0'))+'-'+(String(fechaHoy.getDate()).padStart(2,'0'));
+          var fechaISO = fechaHoy.getFullYear() + '-' +
+            String(fechaHoy.getMonth() + 1).padStart(2, '0') + '-' +
+            String(fechaHoy.getDate()).padStart(2, '0');
           fields.Fecha_Carga = fechaISO;
-          const createRes = await spEscribir('FT_OrdenesFabricacion', fields, null);
+          const createRes = await spEscribirConReintento('FT_OrdenesFabricacion', fields, null, ofSap);
           itemId = createRes && createRes.id ? createRes.id : null;
           created++;
         } else {
-          // -- ACTUALIZAR: OF existente — solo campos del Excel ----------
           const ACTUALIZAR = ['Numero_Articulo', 'Descripcion_Articulo', 'Pedido', 'Cliente', 'Rotacion', 'Sub_Articulos'];
           const updateFields = {};
           for (const key of ACTUALIZAR) {
@@ -4254,16 +4219,26 @@ async function ftConfirmExcelLoad() {
             if (val !== '' && val !== null && val !== undefined) updateFields[key] = val;
           }
           if (Object.keys(updateFields).length > 0) {
-            await spEscribir('FT_OrdenesFabricacion', updateFields, itemId);
+            await spEscribirConReintento('FT_OrdenesFabricacion', updateFields, itemId, ofSap);
           }
           updated++;
         }
-      } catch(e) { errors++; console.warn('Error OF ' + ofSap + ':', e); }
+      } catch(e) {
+        errors++;
+        errList.push(ofSap);
+        console.warn('Error OF ' + ofSap + ':', e);
+        ftErrNotify('Cargar OF ' + ofSap, e, 'FT_OrdenesFabricacion');
+      }
+
+      // Pausa de 350ms entre cada escritura para no saturar el Flow
+      if (idx < _ftPendingExcel.length - 1) await delay(350);
     }
+
     document.getElementById('ft-excel-loading').style.display = 'none';
-    alert('✅ Carga completada:\n' + created + ' OFs nuevas\n' + updated + ' actualizadas\n' + (errors ? errors + ' errores (ver consola)' : ''));
+    var msg = '✅ Carga completada:\n' + created + ' OFs nuevas\n' + updated + ' actualizadas';
+    if (errors) msg += '\n\n⚠️ ' + errors + ' error(es):\nOFs no guardadas: ' + errList.join(', ') + '\n\nIntenta cargarlas de nuevo.';
+    alert(msg);
     ftCancelExcelLoad();
-    // Reload DB from SharePoint
     if (typeof ftLoadDataFromSP === 'function') ftLoadDataFromSP();
   } catch(e) {
     document.getElementById('ft-excel-loading').style.display = 'none';
@@ -4309,10 +4284,10 @@ async function ftSaveProgramacionToSP() {
         fieldsToSave.Fecha_Programacion = of_.fecha_programacion + 'T00:00:00Z';
       }
       await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
-        .catch(e => { console.warn('SP save Programado_Hoy error:', of_.of_sap, e); ftErrNotify('Guardar programación del día', e, 'FT_OrdenesFabricacion'); });
+        .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
-  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); ftErrNotify('Guardar programación', e, 'FT_OrdenesFabricacion'); }
+  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
 }
 
 // -- SP Persistence: Save Prioridad changes --------------------------------
@@ -4339,7 +4314,7 @@ async function ftSavePrioridadToSP() {
     });
     await Promise.all(patches);
     if(errors) console.warn('Prioridades SP: '+saved+' OK, '+errors+' errores');
-  } catch(e) { console.warn('ftSavePrioridadToSP error:', e); ftErrNotify('Guardar prioridad de OF', e, 'FT_OrdenesFabricacion'); }
+  } catch(e) { console.warn('ftSavePrioridadToSP error:', e); }
 }
 
 
@@ -4370,7 +4345,7 @@ async function ftSaveTemplateToSP(art) {
       await spEscribir('FT_Plantillas_Operaciones', fields, null);
     }
     console.log('Template saved to SP:', art);
-  } catch(e) { console.warn('ftSaveTemplateToSP error:', e); ftErrNotify('Guardar plantilla de operaciones', e, 'FT_Plantillas_Operaciones'); }
+  } catch(e) { console.warn('ftSaveTemplateToSP error:', e); }
 }
 
 // ====== GESTION DE ARTICULOS (FT_Articulos SP) ======
@@ -5558,7 +5533,6 @@ async function ftLoadDataFromSP() {
   }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
-    ftErrNotify('Carga inicial de datos SharePoint', e, 'FT_Operaciones');
   }
 }
 
@@ -5588,7 +5562,7 @@ async function ftSaveOpToSP(of_sap, opId) {
       if (found) { op._spId=found.id; await spEscribir('FT_Operaciones', fields, op._spId); }
       else await ftCreateOpInSP(of_sap, op, aof);
     }
-  } catch(e) { ftErrNotify('ftSaveOpToSP', e, 'FT_Operaciones'); }
+  } catch(e) { console.warn('ftSaveOpToSP:', e.message); }
 }
 async function ftCreateOpInSP(of_sap, op, aof) {
   if (!op) return;
@@ -5639,7 +5613,6 @@ async function ftCreateOpInSP(of_sap, op, aof) {
         console.log('✅ Op creada en SP (solo Title):', op.id);
       } catch(e3) {
         console.error('ftCreateOpInSP FATAL:', e3.message);
-        ftErrNotify('ftCreateOpInSP (registro de operación)', e3, 'FT_Operaciones');
         throw e3;
       }
     }
@@ -5684,7 +5657,7 @@ async function ftSaveTimerToSP(key) {
       const res = await spEscribir('FT_Timers', fields, null);
       if (res&&res.id) t._spId=res.id;
     }
-  } catch(e) { ftErrNotify('ftSaveTimerToSP', e, 'FT_Timers'); }
+  } catch(e) { console.warn('ftSaveTimerToSP error:', e); }
 }
 
 // ====== FT_Cola_Estacion — save queue for a given OF's ops ======
@@ -5704,7 +5677,7 @@ async function ftSaveQueueToSP(of_sap) {
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
       });
-    } catch(e){ ftErrNotify('ftSaveQueueToSP (carga existente)', e, 'FT_Cola_Estacion'); }
+    } catch(e){ console.warn('ftSaveQueueToSP: error loading existing items:', e.message); }
 
     // ── Step 2: Restore _queueSpId on all ops from cache ──────────────────
     DB.activeOFs.forEach(function(a){
@@ -5736,9 +5709,9 @@ async function ftSaveQueueToSP(of_sap) {
           var res = await spEscribir('FT_Cola_Estacion', fields, null);
           if(res&&res.id){ op._queueSpId=res.id; window._queueSpIdCache[op.id]=res.id; }
         }
-      } catch(e) { ftErrNotify('ftSaveQueueToSP (operación)', e, 'FT_Cola_Estacion'); }
+      } catch(e) { console.warn('ftSaveQueueToSP op error:', e.message); }
     }
-  } catch(e) { ftErrNotify('ftSaveQueueToSP', e, 'FT_Cola_Estacion'); }
+  } catch(e) { console.warn('ftSaveQueueToSP error:', e.message); }
 }
 
 // ====== FT_Status_Estacion — save station status ======
@@ -5767,7 +5740,7 @@ async function ftSaveStationStatusToSP(estacion) {
         if (found) { ss._spId=found.id; await spEscribir('FT_Status_Estacion', fields, ss._spId); }
       }
     }
-  } catch(e) { ftErrNotify('ftSaveStationStatusToSP', e, 'FT_Status_Estacion'); }
+  } catch(e) { console.warn('ftSaveStationStatusToSP error:', e.message); }
 }
 
 // ====== FT_CalTiempos — save a calibration time record ======
@@ -5790,7 +5763,7 @@ async function ftSaveCalTiempoToSP(key, calData) {
       var res = await spEscribir('FT_CalTiempos', fields, null);
       if (res&&res.id) calData._spId=res.id;
     }
-  } catch(e) { ftErrNotify('ftSaveCalTiempoToSP', e, 'FT_CalTiempos'); }
+  } catch(e) { console.warn('ftSaveCalTiempoToSP error:', e.message); }
 }
 
 // ====== FT_Pedidos — sync pedido status when ops change ======
@@ -5823,8 +5796,8 @@ async function ftSavePedidoStatusToSP(pedido) {
       var found = (existRes.value||[]).find(function(i){ return (i.fields.Title||i.fields.Pedido)===pedido; });
       if (found) { await spEscribir('FT_Pedidos', fields, found.id); }
       else { await spEscribir('FT_Pedidos', fields, null); }
-    } catch(e) { ftErrNotify('ftSavePedidoStatusToSP', e, 'FT_Pedidos'); }
-  } catch(e) { ftErrNotify('ftSavePedidoStatusToSP', e, 'FT_Pedidos'); }
+    } catch(e) { console.warn('ftSavePedidoStatusToSP error:', e.message); }
+  } catch(e) { console.warn('ftSavePedidoStatusToSP outer error:', e.message); }
 }
 
 // -- Load data when page-Fabricaciones is shown --------
@@ -5995,140 +5968,6 @@ function showSyncToast(source, event) {
   setTimeout(function(){el.style.opacity="0"; el.style.transform="translateY(10px)";},2500);
 }
 
-// ══════════════════════════════════════════════════════════════════
-// ── SISTEMA DE NOTIFICACIÓN DE ERRORES SP ─────────────────────────
-// Intercepción no destructiva: sólo notifica, nunca bloquea flujos.
-// ══════════════════════════════════════════════════════════════════
-window._ftErrQueue = [];   // cola de errores pendientes de revisión
-
-// Etiquetas amigables por lista SP
-var _ftErrListaLabel = {
-  'FT_Operaciones':          'Operación de fabricación',
-  'FT_OrdenesFabricacion':   'Orden de fabricación',
-  'FT_Cola_Estacion':        'Cola de estación',
-  'FT_Timers':               'Temporizador',
-  'FT_Status_Estacion':      'Estado de estación',
-  'FT_CalTiempos':           'Calibración de tiempos',
-  'FT_Pedidos':              'Pedido',
-  'FT_Plantillas_Operaciones':'Plantilla de operaciones',
-};
-
-/**
- * ftErrNotify(contexto, error, lista)
- * Llama a esta función desde cualquier catch que hoy solo hace console.warn/error.
- * No lanza excepciones — está diseñada para ser siempre segura.
- *
- * @param {string} contexto  Nombre de la función / acción que falló
- * @param {Error|string} err El error capturado
- * @param {string} [lista]   Nombre de la lista SP afectada (opcional)
- */
-function ftErrNotify(contexto, err, lista) {
-  try {
-    var msg   = err && err.message ? err.message : String(err || 'Error desconocido');
-    var label = (lista && _ftErrListaLabel[lista]) ? _ftErrListaLabel[lista] : (lista || contexto);
-    var ts    = new Date().toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    var entry = { ts: ts, contexto: contexto, lista: lista || '', label: label, msg: msg };
-
-    // Guardar en cola (máx 20)
-    window._ftErrQueue.unshift(entry);
-    if (window._ftErrQueue.length > 20) window._ftErrQueue.pop();
-
-    // Consola siempre (no silenciar — útil para debug)
-    console.error('[SP Error] ' + contexto + (lista ? ' [' + lista + ']' : '') + ':', msg);
-
-    // ── Portal web ───────────────────────────────────────────────
-    // 1. Toast rojo en la zona del coordinador
-    var toastC = document.getElementById('toast-coord');
-    if (toastC) {
-      toastC.style.background  = 'rgba(239,68,68,.18)';
-      toastC.style.borderColor = 'rgba(239,68,68,.35)';
-      toastC.style.color       = '#fca5a5';
-      toastC.textContent = '⚠️ No se guardó: ' + label + ' — ' + msg.substring(0, 70);
-      toastC.style.opacity = '1'; toastC.style.transform = 'translateY(0)';
-      // Mantener visible más tiempo para errores (6s)
-      clearTimeout(toastC._errTimeout);
-      toastC._errTimeout = setTimeout(function() {
-        toastC.style.opacity = '0'; toastC.style.transform = 'translateY(10px)';
-        // Restaurar colores originales después de ocultarse
-        setTimeout(function() {
-          toastC.style.background  = '';
-          toastC.style.borderColor = '';
-          toastC.style.color       = '';
-        }, 500);
-      }, 6000);
-    }
-
-    // 2. Badge rojo en el botón de notificaciones del coordinador
-    var badge = document.getElementById('notif-badge');
-    if (badge) {
-      badge.style.display = 'inline-block';
-      badge.style.background = '#ef4444';
-      var curr = parseInt(badge.textContent) || 0;
-      badge.textContent = curr + 1;
-    }
-    var label2 = document.getElementById('notif-btn-label');
-    if (label2) label2.textContent = '⚠️ Error SP';
-
-    // 3. Agregar al panel de notificaciones del coordinador
-    var container = document.getElementById('coord-notifs');
-    if (container) {
-      var notif = document.createElement('div');
-      notif.style.cssText = 'background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:6px 10px;font-size:.71rem;color:#fca5a5;margin-bottom:5px;line-height:1.4;';
-      notif.innerHTML = '<strong>⚠️ ' + ts + ' — ' + esc(label) + '</strong><br>'
-        + '<span style="color:rgba(252,165,165,.7);font-size:.67rem;">' + esc(msg.substring(0, 120)) + '</span>';
-      // Botón para descartar
-      var btn = document.createElement('button');
-      btn.textContent = '✕';
-      btn.style.cssText = 'float:right;background:none;border:none;color:rgba(252,165,165,.6);cursor:pointer;font-size:.75rem;margin-top:-2px;padding:0 2px;';
-      btn.onclick = function() { notif.remove(); ftErrNotifyUpdateBadge(); };
-      notif.insertBefore(btn, notif.firstChild);
-      container.prepend(notif);
-      if (container.children.length > 10) container.removeChild(container.lastChild);
-    }
-
-    // ── App móvil ─────────────────────────────────────────────────
-    // Banner rojo persistente en la app (se descarta manualmente)
-    _ftErrShowAppBanner(label, msg);
-
-  } catch(ignore) { /* ftErrNotify nunca debe lanzar */ }
-}
-
-function ftErrNotifyUpdateBadge() {
-  var container = document.getElementById('coord-notifs');
-  var errCount  = container ? container.querySelectorAll('div[style*="rgba(239,68,68"]').length : 0;
-  var badge     = document.getElementById('notif-badge');
-  var label2    = document.getElementById('notif-btn-label');
-  if (badge)  { badge.textContent = errCount > 0 ? String(errCount) : '0'; badge.style.display = errCount > 0 ? 'inline-block' : 'none'; }
-  if (label2) { label2.textContent = errCount > 0 ? '⚠️ ' + errCount + ' error(es) SP' : 'Sin notificaciones'; }
-}
-
-function _ftErrShowAppBanner(label, msg) {
-  // El banner vive en #app-content o en un div fijo sobre la app
-  var appContent = document.getElementById('app-content');
-  if (!appContent) return;
-
-  // Crear o reusar el banner de error
-  var banner = document.getElementById('ft-err-app-banner');
-  if (!banner) {
-    banner = document.createElement('div');
-    banner.id = 'ft-err-app-banner';
-    banner.style.cssText = 'position:sticky;top:0;z-index:200;background:rgba(239,68,68,.18);border:1px solid rgba(239,68,68,.35);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:.72rem;color:#fca5a5;line-height:1.4;display:none;';
-    appContent.insertBefore(banner, appContent.firstChild);
-  }
-
-  // Acumular mensajes (mostrar el último + contador)
-  var count = parseInt(banner.dataset.count || '0') + 1;
-  banner.dataset.count = count;
-  banner.style.display = 'block';
-  banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">'
-    + '<div><strong>⚠️ Error al guardar' + (count > 1 ? ' (' + count + ')' : '') + '</strong><br>'
-    + '<span style="font-size:.68rem;color:rgba(252,165,165,.8);">' + esc(label) + ': ' + esc(msg.substring(0, 80)) + '</span></div>'
-    + '<button onclick="this.closest(\'#ft-err-app-banner\').style.display=\'none\';this.closest(\'#ft-err-app-banner\').dataset.count=\'0\';" '
-    + 'style="background:none;border:none;color:rgba(252,165,165,.7);font-size:1rem;cursor:pointer;flex-shrink:0;padding:0;">✕</button>'
-    + '</div>';
-}
-
-// ══════════════════════════════════════════════════════════════════
 // -- Helpers globales ---------------------------------
 var STATIONS=["Sierra Cinta","Laser SS","Laser AC","Laser T160","Corte Laser Tubo","Doblez Planos","Centro de Maquinado","Fresadora CNC","Torno CNC","Torno Convencional","Torno LEO","MIG-A","MIG-B","MIG-C","MIG-D","TIG-A","TIG-B","TIG-C","TIG-D","TIG-E","Equipo Electrónico","Grabado","Rolado","Ensamble","PINTURA","Lavado","Ayudantes"];
 // Station status — persists across session
@@ -6472,7 +6311,7 @@ async function restaurarOrden(sap){
     var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
     var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
     if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
-  }catch(e){ftErrNotify('restaurarOrden', e, 'FT_OrdenesFabricacion');}
+  }catch(e){console.warn('SP restaurarOrden:',e.message);}
   renderProg();
 }
 async function restaurarPedido(pedido){
@@ -6486,7 +6325,7 @@ async function restaurarPedido(pedido){
       var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
       var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
-    }catch(e){ftErrNotify('restaurarProgramacion', e, 'FT_OrdenesFabricacion');}
+    }catch(e){console.warn('SP restaurar:',e.message);}
   }
   renderProg();
 }
@@ -6519,7 +6358,7 @@ async function _ejecutarCancelacionOF(of, aof){
     var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
     var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
     if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
-  } catch(e){ ftErrNotify('cancelarOF', e, 'FT_OrdenesFabricacion'); }
+  } catch(e){ console.warn('SP cancel OF:', e.message); }
   // Persistir en SP — Operaciones
   if(aof && aof.ops){
     for(var i=0;i<aof.ops.length;i++){
@@ -8478,7 +8317,6 @@ function saveOFOps() {
         console.log('✅ saveOFOps: ops guardadas en SP');
       } catch(e) {
         console.error('saveOFOps SP error:', e);
-        ftErrNotify('Guardar operaciones asignadas', e, 'FT_Operaciones');
       }
     })();
   }
@@ -8799,7 +8637,7 @@ appMoveOp = function(sap, idx, dir) {
     of.ops.forEach(function(op,i){
       if(!op._spId) return;
       spEscribir('FT_Operaciones', {Secuencia: i+1}, op._spId)
-        .catch(function(e){ console.warn('MoveOp portal SP:', e.message); ftErrNotify('Reordenar operaciones', e, 'FT_Operaciones'); });
+        .catch(function(e){ console.warn('MoveOp portal SP:', e.message); });
     });
   }
   // Coordinator notification (to supervisor via fireSync)
@@ -9303,7 +9141,7 @@ function saveTplModal(){
               var matched = aof.ops.filter(function(o){return !!o._spId;}).length;
               console.log('🔄 SP ops cargadas para OF '+aof.of_sap+': '+freshRes.value.length+' items, '+matched+'/'+aof.ops.length+' ops con _spId');
             }
-          } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); ftErrNotify('Recargar operaciones SP', reloadErr, 'FT_Operaciones'); }
+          } catch(reloadErr){ console.warn('Reload SP ops error:', reloadErr.message); }
 
           // ── Reorder: match tpl ops to existing SP ops, only PATCH Secuencia ──
           // Use a consumed-copy to handle duplicate names correctly
@@ -9383,7 +9221,6 @@ function saveTplModal(){
         if (typeof renderSeg === 'function') renderSeg();
       } catch(e) {
         console.error('Error sincronizando plantilla a SP:', e.message);
-        ftErrNotify('Sincronizar plantilla de operaciones', e, 'FT_Plantillas_Operaciones');
       }
     }, 500);
   }
@@ -9839,21 +9676,6 @@ function renderSeg(){
           });
           h+='</div>';
         }
-        // ── Botón de fotos — debajo de comentarios, solo en ops terminadas o rechazadas ──
-        if(op.status==='done' || op.calResult==='rechazado') {
-          var fotoKey = aof.of_sap + '__' + op.id;
-          var hasFoto = _coordFotoCache[fotoKey];
-          if(hasFoto === true) {
-            h+='<div style="margin-top:5px;padding-left:14px;">' +
-              '<button onclick="coordVerFotos(\''+esc(aof.of_sap)+'\',\''+esc(op.id)+'\',\''+esc(op.nombre.replace(/'/g,''))+'\');event.stopPropagation()" ' +
-              'title="Ver fotos de esta operación" ' +
-              'style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;' +
-              'padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">' +
-              '📷 Ver fotos</button></div>';
-          } else if(hasFoto === undefined || hasFoto === 'pending') {
-            coordCheckFotos(aof.of_sap, op.id);
-          }
-        }
         h+='</div>';
       });
       h+='</div></div>';
@@ -9894,7 +9716,7 @@ async function movePedidoCierre(pedido){
       var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre'}, item.id);
     }
-  } catch(e){ ftErrNotify('moverPedidoCierre', e, 'FT_Pedidos'); }
+  } catch(e){ console.warn('SP movePedidoCierre:', e.message); }
 }
 async function cerrarPedido(pedido){
   showInfoModal('Cerrar pedido '+pedido,
@@ -9924,7 +9746,7 @@ async function cerrarPedido(pedido){
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
           if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false}, item.id);
         }
-      } catch(e){ ftErrNotify('cerrarPedido', e, 'FT_Pedidos'); }
+      } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }
   );
 }
@@ -10722,7 +10544,7 @@ async function portalSaveColaToSP(estacion){
       try {
         await spEscribir('FT_Operaciones', {Cola: colaNum}, op._spId);
         savedOps++;
-      } catch(e){ ftErrNotify('Cola reordenar (operación)', e, 'FT_Operaciones'); }
+      } catch(e){ console.warn('Cola PATCH FT_Op error:', e.message); }
     }
 
     // PATCH FT_Cola_Estacion.Posicion (never POST — avoid duplicates)
@@ -10730,7 +10552,7 @@ async function portalSaveColaToSP(estacion){
       try {
         await spEscribir('FT_Cola_Estacion', {Posicion: colaNum, Activo: op.status!=='done'}, op._queueSpId);
         savedQueue++;
-      } catch(e){ ftErrNotify('Cola reordenar (posición)', e, 'FT_Cola_Estacion'); }
+      } catch(e){ console.warn('Cola PATCH FT_Cola error:', e.message); }
     }
   }
   console.log('✅ Cola SP — FT_Op: '+savedOps+', FT_Cola: '+savedQueue+'/'+q.length+' ops');
@@ -11096,723 +10918,7 @@ function calTiemEdit(key){
 }
 
 
-// ═══ FABTRACKER — REPORTES POR ESTACIÓN ═══════════════════════════
-var _rptData = { ofs: [], ops: [], loaded: false, loading: false };
-
-async function ftRptLoad() {
-  if (_rptData.loading) return;
-  _rptData.loading = true;
-  var loading  = document.getElementById('rpt-loading');
-  var contenido = document.getElementById('rpt-contenido');
-  if (loading)  { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
-  if (contenido) contenido.style.display = 'none';
-
-  try {
-    var empty = function(){ return {value:[]}; };
-    var res = await Promise.all([
-      flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
-      flowGet('FT_Operaciones', '', 5000).catch(empty)
-    ]);
-
-    // OFs — excluir Cerrado / Pedido Cancelado
-    _rptData.ofs = (res[0].value || []).map(function(i) {
-      var f = i.fields || {};
-      return {
-        id:            i.id,
-        of_sap:        f.OF_SAP || f.Title || '',
-        pedido:        f.Numero_Pedido || f.Pedido || '',
-        cliente:       f.Cliente || '',
-        descripcion:   f.Descripcion_Articulo || '',
-        cantidad:      parseInt(f.Cantidad || 0) || 0,
-        status:        f.Status || 'Sin programar',
-        fecha_prog:    (f.Fecha_Programacion || '').split('T')[0],
-        fecha_entrega: (f.Fecha_Entrega || '').split('T')[0],
-        prioridad:     f.Prioridad || 'Normal'
-      };
-    }).filter(function(of) {
-      var s = (of.status || '').toLowerCase();
-      return s !== 'cerrado' && s !== 'pedido cancelado' && s !== 'cerrada';
-    });
-
-    // Operaciones — incluyendo ayudantes
-    _rptData.ops = (res[1].value || []).map(function(i) {
-      var f = i.fields || {};
-      var ayRaw = f.Ayudantes_JSON || f.Ayudantes || '';
-      var ayudantes = ayRaw ? ayRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
-      return {
-        of_sap:    f.OF_SAP || '',
-        op_id:     f.Op_ID || '',
-        nombre:    f.Nombre || f.Title || '',
-        estacion:  f.Estacion || '',       // puede ser '' para ops sin estación asignada
-        tecnico:   f.Tecnico || '',
-        ayudantes: ayudantes,
-        status:    f.Status || 'pending',
-        qty_total: parseInt(f.Qty_Total || 0) || 0,
-        qty_ok:    parseInt(f.Qty_OK || 0) || 0,
-        secuencia: parseInt(f.Secuencia || 0) || 0
-      };
-    });
-
-    _rptData.loaded = true;
-
-    // Poblar selector de estaciones (sólo estaciones con nombre real)
-    var estacionesUnicas = {};
-    _rptData.ops.forEach(function(op) {
-      if (op.estacion) estacionesUnicas[op.estacion] = true;
-    });
-    var sel = document.getElementById('rpt-filtro-estacion');
-    if (sel) {
-      var prev = sel.value;
-      sel.innerHTML = '<option value="">Todas las estaciones</option>';
-      Object.keys(estacionesUnicas).sort().forEach(function(e) {
-        sel.innerHTML += '<option value="' + e + '"' + (prev === e ? ' selected' : '') + '>' + e + '</option>';
-      });
-      // Agregar opción "Sin estación" al final
-      sel.innerHTML += '<option value="Sin estación"' + (prev === 'Sin estación' ? ' selected' : '') + '>📭 Sin estación</option>';
-    }
-
-    ftRptRender();
-  } catch(e) {
-    console.error('[Reportes] Error al cargar:', e);
-    if (loading) loading.innerHTML = '<span style="color:#f87171;">⚠️ Error al cargar datos. Intenta de nuevo.</span>';
-  } finally {
-    _rptData.loading = false;
-  }
-}
-
-function ftRptFmtFecha(s) {
-  if (!s) return '—';
-  var p = s.split('-');
-  if (p.length < 3) return s;
-  return p[2] + '/' + p[1] + '/' + p[0].slice(2);
-}
-
-// Devuelve true si la fecha (YYYY-MM-DD) es urgente (dentro de 7 días o vencida) con avance < 100%
-function ftRptEsUrgente(fEntrega, pct) {
-  if (!fEntrega || pct >= 100) return false;
-  var hoy    = new Date(); hoy.setHours(0,0,0,0);
-  var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
-  var fecha  = new Date(fEntrega + 'T00:00:00');
-  return fecha <= limite;   // vencida (< hoy) o próxima (hoy..hoy+7)
-}
-
-function ftRptAvanceColor(pct) {
-  if (pct >= 100) return '#4ade80';
-  if (pct >= 60)  return '#60a5fa';
-  if (pct >= 30)  return '#facc15';
-  return '#f87171';
-}
-
-function ftRptStatusPill(opStatus) {
-  if (opStatus === 'Terminada')  return '<span class="rpt-pill rpt-pill-term">Terminada</span>';
-  if (opStatus === 'En Proceso') return '<span class="rpt-pill rpt-pill-proceso">En Proceso</span>';
-  return '<span class="rpt-pill rpt-pill-plan">Planeación</span>';
-}
-
-// ─── Construir estructura de datos unificada para render y exports ──
-function ftRptBuildData() {
-  var ofMap = {};
-  _rptData.ofs.forEach(function(of) { ofMap[of.of_sap] = of; });
-
-  // Agrupar ops por (of_sap × estacion)
-  // IMPORTANTE: ops con estacion=='' se redirigen a 'Sin estación'
-  var opsPorOfEst = {};
-  _rptData.ops.forEach(function(op) {
-    var k = op.of_sap;
-    if (!k || !ofMap[k]) return;
-    var est = op.estacion || 'Sin estación';   // <-- redirigir vacíos
-    if (!opsPorOfEst[k]) opsPorOfEst[k] = {};
-    if (!opsPorOfEst[k][est]) opsPorOfEst[k][est] = [];
-    opsPorOfEst[k][est].push(op);
-  });
-
-  var porEstacion = {};
-
-  // 1. OFs con ops → una fila por (OF × estacion)
-  Object.keys(opsPorOfEst).forEach(function(ofSap) {
-    var of = ofMap[ofSap];
-    if (!of) return;
-
-    Object.keys(opsPorOfEst[ofSap]).forEach(function(est) {
-      var ops   = opsPorOfEst[ofSap][est];
-      var total = ops.length;
-      var term  = ops.filter(function(o) {
-        var s = (o.status || '').toLowerCase();
-        return s === 'done' || s === 'terminada' || s === 'terminado';
-      }).length;
-      var enProc = ops.some(function(o) {
-        var s = (o.status || '').toLowerCase();
-        return s === 'running' || s === 'paused' || s === 'validating';
-      });
-      var pct = total > 0 ? Math.round(term / total * 100) : 0;
-      var opStatus = (pct === 100 && total > 0) ? 'Terminada'
-                   : ((enProc || term > 0)      ? 'En Proceso'
-                                                 : 'Planeación');
-
-      // Operador: técnicos + ayudantes únicos de esta estación
-      var personasSet = {};
-      ops.forEach(function(o) {
-        if (o.tecnico) personasSet[o.tecnico] = true;
-        (o.ayudantes || []).forEach(function(a) { if (a) personasSet[a] = true; });
-      });
-      var operador = Object.keys(personasSet).join(' / ') || '—';
-
-      if (!porEstacion[est]) porEstacion[est] = [];
-      porEstacion[est].push({
-        of: of, pct: pct, opStatus: opStatus, operador: operador,
-        fProg: of.fecha_prog || '', fEntrega: of.fecha_entrega || '',
-        totalOps: total, termOps: term,
-        ops: ops   // guardar para Excel detalle
-      });
-    });
-  });
-
-  // 2. OFs sin ninguna op → 'Sin estación'
-  _rptData.ofs.forEach(function(of) {
-    if (opsPorOfEst[of.of_sap]) return;
-    if (!porEstacion['Sin estación']) porEstacion['Sin estación'] = [];
-    porEstacion['Sin estación'].push({
-      of: of, pct: 0, opStatus: 'Planeación', operador: '—',
-      fProg: of.fecha_prog || '', fEntrega: of.fecha_entrega || '',
-      totalOps: 0, termOps: 0, ops: []
-    });
-  });
-
-  // Ordenar filas de cada estación por F.Entrega descendente (vacías al final)
-  Object.keys(porEstacion).forEach(function(est) {
-    porEstacion[est].sort(function(a, b) {
-      if (!a.fEntrega && !b.fEntrega) return 0;
-      if (!a.fEntrega) return 1;
-      if (!b.fEntrega) return -1;
-      // Descendente: mayor fecha primero — pero aquí queremos ASCENDENTE
-      // (las próximas a vencer van PRIMERO para que sean más visibles)
-      if (a.fEntrega < b.fEntrega) return -1;
-      if (a.fEntrega > b.fEntrega) return 1;
-      return 0;
-    });
-  });
-
-  return { porEstacion: porEstacion };
-}
-
-function ftRptRender() {
-  var loading   = document.getElementById('rpt-loading');
-  var contenido = document.getElementById('rpt-contenido');
-  if (!_rptData.loaded) {
-    if (loading) { loading.style.display = 'block'; loading.innerHTML = '⏳ Cargando datos...'; }
-    return;
-  }
-  if (loading) loading.style.display = 'none';
-  if (!contenido) return;
-  contenido.style.display = 'block';
-
-  // Filtros
-  var filtEst    = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
-  var filtStatus = (document.getElementById('rpt-filtro-status')   || {}).value || '';
-  var filtDesde  = (document.getElementById('rpt-desde')           || {}).value || '';
-  var filtHasta  = (document.getElementById('rpt-hasta')           || {}).value || '';
-  var filtQ      = ((document.getElementById('rpt-buscar')         || {}).value || '').toLowerCase().trim();
-
-  var built      = ftRptBuildData();
-  var porEstacion = built.porEstacion;
-
-  // Aplicar filtros sobre los datos ya construidos
-  var porEstacionFiltrado = {};
-  Object.keys(porEstacion).forEach(function(est) {
-    if (filtEst && est !== filtEst) return;
-    var filas = porEstacion[est].filter(function(r) {
-      if (filtDesde && r.fProg && r.fProg < filtDesde) return false;
-      if (filtHasta && r.fProg && r.fProg > filtHasta) return false;
-      if (filtStatus) {
-        var fs = filtStatus.toLowerCase();
-        if (fs === 'en proceso' && r.opStatus !== 'En Proceso')  return false;
-        if (fs === 'planeacion' && r.opStatus !== 'Planeación')  return false;
-        if (fs === 'terminada'  && r.opStatus !== 'Terminada')   return false;
-      }
-      if (filtQ) {
-        var hay = (r.of.of_sap + ' ' + r.of.pedido + ' ' + r.of.cliente + ' ' + r.of.descripcion + ' ' + r.operador).toLowerCase();
-        if (hay.indexOf(filtQ) < 0) return false;
-      }
-      return true;
-    });
-    if (filas.length) porEstacionFiltrado[est] = filas;
-  });
-
-  var estaciones = Object.keys(porEstacionFiltrado).sort(function(a, b) {
-    if (a === 'Sin estación') return 1;
-    if (b === 'Sin estación') return -1;
-    return a.localeCompare(b);
-  });
-
-  if (!estaciones.length) {
-    contenido.innerHTML = '<div class="rpt-empty">No se encontraron registros con los filtros seleccionados.</div>';
-    return;
-  }
-
-  var iconos = { 'Lavado':'💧','Pintura':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electronico':'⚡','Electronica':'⚡','Sierra':'🪚','Equipo':'🔌' };
-  function iconoEst(e) {
-    if (!e || e === 'Sin estación') return '📭';
-    var k = Object.keys(iconos).find(function(k){ return e.indexOf(k) >= 0; });
-    return k ? iconos[k] : '🏗️';
-  }
-
-  var html = '';
-  estaciones.forEach(function(est) {
-    var rows = porEstacionFiltrado[est];
-    var enProceso  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
-    var terminadas = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-    var avgPct     = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
-
-    html += '<div class="rpt-section" data-estacion="' + est + '">';
-    html += '<div class="rpt-section-hdr">';
-    html += '<div class="rpt-section-title">' + iconoEst(est) + ' ' + (est || 'Sin estación');
-    html += ' <span style="background:rgba(255,255,255,.07);border-radius:20px;padding:1px 8px;font-size:.65rem;font-weight:400;">' + rows.length + ' OFs</span>';
-    if (enProceso)  html += ' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + enProceso + ' en proceso</span>';
-    if (terminadas) html += ' <span style="background:rgba(34,197,94,.12);color:#4ade80;border-radius:20px;padding:1px 8px;font-size:.65rem;">' + terminadas + ' term.</span>';
-    html += '</div>';
-    html += '<div class="rpt-section-meta">Avance prom: <strong>' + avgPct + '%</strong></div>';
-    html += '</div>';
-
-    html += '<div style="overflow-x:auto;"><table class="rpt-table">';
-    html += '<thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th>' +
-      '<th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th>' +
-      '<th>F.Prog</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
-
-    rows.forEach(function(r) {
-      var color   = ftRptAvanceColor(r.pct);
-      var urgente = ftRptEsUrgente(r.fEntrega, r.pct);
-      var fEntregaHtml = urgente
-        ? '<span style="color:#f87171;font-weight:600;">' + ftRptFmtFecha(r.fEntrega) + '</span>'
-        : ftRptFmtFecha(r.fEntrega);
-
-      html += '<tr>';
-      html += '<td class="rpt-of-sap">'  + (r.of.of_sap || '—') + '</td>';
-      html += '<td style="font-size:.68rem;color:var(--dim);">' + (r.of.pedido || 'N/A') + '</td>';
-      html += '<td style="font-size:.7rem;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + (r.of.cliente || '') + '">' + (r.of.cliente || '—') + '</td>';
-      html += '<td class="rpt-desc" style="max-width:180px;" title="' + (r.of.descripcion || '') + '">' + (r.of.descripcion || '—') + '</td>';
-      html += '<td style="text-align:center;">' + (r.of.cantidad || '—') + '</td>';
-      html += '<td>' + ftRptStatusPill(r.opStatus) + '</td>';
-      html += '<td style="font-size:.67rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + r.operador + '">' + r.operador + '</td>';
-      html += '<td style="font-size:.68rem;white-space:nowrap;">' + ftRptFmtFecha(r.fProg) + '</td>';
-      html += '<td style="font-size:.68rem;white-space:nowrap;">' + fEntregaHtml + '</td>';
-      html += '<td><div class="rpt-avance-wrap">' +
-        '<div class="rpt-avance-bar"><div class="rpt-avance-fill" style="width:' + r.pct + '%;background:' + color + ';"></div></div>' +
-        '<span class="rpt-avance-pct" style="color:' + color + ';">' + r.pct + '%</span>' +
-        '</div></td>';
-      html += '</tr>';
-    });
-
-    html += '</tbody></table></div></div>';
-  });
-
-  contenido.innerHTML = html;
-}
-
-function ftRptLimpiarFiltros() {
-  ['rpt-filtro-estacion','rpt-filtro-status','rpt-desde','rpt-hasta','rpt-buscar'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  ftRptRender();
-}
-
-// ─── Exportar PDF ──────────────────────────────────────────────────
-function ftRptExportPDF() {
-  function doExport() {
-    var { jsPDF } = window.jspdf;
-    var doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-    var filtEst = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
-    var now     = new Date().toLocaleDateString('es-MX');
-    var titulo  = 'Programa de Producción — Ordenes de Fabricación';
-    if (filtEst) titulo += ' (' + filtEst + ')';
-
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(titulo, 14, 14);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Generado: ' + now, 14, 20);
-
-    // Usar los mismos datos construidos por ftRptBuildData()
-    var built = ftRptBuildData();
-    var porEstacion = built.porEstacion;
-
-    var estaciones = Object.keys(porEstacion).sort(function(a, b) {
-      if (a === 'Sin estación') return 1;
-      if (b === 'Sin estación') return -1;
-      return a.localeCompare(b);
-    });
-
-    if (filtEst) estaciones = estaciones.filter(function(e){ return e === filtEst; });
-
-    var yOffset = 26;
-    var hoy = new Date(); hoy.setHours(0,0,0,0);
-    var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
-
-    estaciones.forEach(function(est) {
-      var rows    = porEstacion[est];
-      var avgPct  = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length) : 0;
-      var enProc  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
-      var term    = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-      var hdrText = (est || 'Sin estación') + '  ' + rows.length + ' OFs' +
-        (enProc ? '  ' + enProc + ' en proceso' : '') +
-        (term   ? '  ' + term + ' terminadas'   : '');
-      var meta    = 'Avance prom: ' + avgPct + '%';
-
-      if (yOffset > 175) { doc.addPage(); yOffset = 14; }
-
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text(hdrText + '  |  ' + meta, 14, yOffset);
-      yOffset += 4;
-
-      var pdfRows = [];
-      rows.forEach(function(r) {
-        var urgente = ftRptEsUrgente(r.fEntrega, r.pct);
-        pdfRows.push({
-          data: [
-            r.of.of_sap || '',
-            r.of.pedido || 'N/A',
-            (r.of.cliente || '').substring(0, 22),
-            (r.of.descripcion || '').substring(0, 40),
-            r.of.cantidad || '—',
-            r.opStatus,
-            r.operador.substring(0, 20),
-            ftRptFmtFecha(r.fProg),
-            ftRptFmtFecha(r.fEntrega),
-            r.pct + '%'
-          ],
-          urgente: urgente
-        });
-      });
-
-      doc.autoTable({
-        startY: yOffset,
-        head: [['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Entrega','Avance']],
-        body: pdfRows.map(function(r){ return r.data; }),
-        styles:     { fontSize: 6.5, cellPadding: 1.5 },
-        headStyles: { fillColor: [26, 52, 85], textColor: [180, 200, 230], fontStyle: 'bold', fontSize: 6 },
-        columnStyles: {
-          0: { cellWidth: 16 }, 1: { cellWidth: 18 }, 2: { cellWidth: 28 },
-          3: { cellWidth: 54 }, 4: { cellWidth: 10, halign: 'center' },
-          5: { cellWidth: 18 }, 6: { cellWidth: 26 },
-          7: { cellWidth: 14 }, 8: { cellWidth: 14 }, 9: { cellWidth: 12, halign: 'right' }
-        },
-        alternateRowStyles: { fillColor: [240, 244, 250] },
-        margin: { left: 14, right: 14 },
-        theme: 'grid',
-        didParseCell: function(data) {
-          // Colorear F.Entrega en rojo si urgente
-          if (data.column.index === 8 && data.section === 'body') {
-            var rowIdx = data.row.index;
-            if (pdfRows[rowIdx] && pdfRows[rowIdx].urgente) {
-              data.cell.styles.textColor = [239, 68, 68];
-              data.cell.styles.fontStyle = 'bold';
-            }
-          }
-        }
-      });
-
-      yOffset = doc.lastAutoTable.finalY + 6;
-    });
-
-    doc.save('Reporte_FabTracker_' + new Date().toISOString().slice(0,10) + '.pdf');
-  }
-
-  if (window.jspdf && window.jspdf.jsPDF) {
-    doExport();
-  } else {
-    var s1 = document.createElement('script');
-    s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-    s1.onload = function() {
-      var s2 = document.createElement('script');
-      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
-      s2.onload = doExport;
-      document.head.appendChild(s2);
-    };
-    document.head.appendChild(s1);
-  }
-}
-
-// ─── Exportar Excel con detalle colapsable ─────────────────────────
-function ftRptExportExcel() {
-  function doExcel() {
-    var XLSX    = window.XLSX;
-    var wb      = XLSX.utils.book_new();
-    var filtEst = (document.getElementById('rpt-filtro-estacion') || {}).value || '';
-
-    var built = ftRptBuildData();
-    var porEstacion = built.porEstacion;
-
-    var estaciones = Object.keys(porEstacion).sort(function(a, b) {
-      if (a === 'Sin estación') return 1;
-      if (b === 'Sin estación') return -1;
-      return a.localeCompare(b);
-    });
-
-    if (filtEst) estaciones = estaciones.filter(function(e){ return e === filtEst; });
-
-    var hoy    = new Date(); hoy.setHours(0,0,0,0);
-    var limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
-
-    estaciones.forEach(function(est) {
-      var rows   = porEstacion[est];
-      var wsData = [];
-      var rowMeta = [];
-
-      wsData.push(['ESTACIÓN: ' + (est || 'Sin estación')]);
-      rowMeta.push({ outline: 0 });
-      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Entrega','Avance %']);
-      rowMeta.push({ outline: 0 });
-
-      rows.forEach(function(r) {
-        wsData.push([
-          r.of.of_sap   || '',
-          r.of.pedido   || 'N/A',
-          r.of.cliente  || '',
-          r.of.descripcion || '',
-          r.of.cantidad || 0,
-          r.opStatus,
-          r.operador,
-          r.fProg    || '',
-          r.fEntrega || '',
-          r.pct / 100
-        ]);
-        rowMeta.push({ outline: 0, isOf: true, urgente: ftRptEsUrgente(r.fEntrega, r.pct) });
-
-        // Detalle de operaciones colapsable
-        var ops = (r.ops || []).slice().sort(function(a,b){ return a.secuencia - b.secuencia; });
-        ops.forEach(function(op) {
-          var opS    = (op.status || '').toLowerCase();
-          var opLabel = (opS === 'done' || opS === 'terminada') ? 'Terminada' : opS === 'running' ? 'En Proceso' : 'Pendiente';
-          var opOper  = [op.tecnico].concat(op.ayudantes || []).filter(Boolean).join(' / ') || '—';
-          wsData.push([
-            '  → ' + (op.op_id || ''),
-            '',
-            op.nombre || '',
-            opLabel,
-            op.qty_total || '',
-            opOper,
-            '', '', '',
-            (op.qty_ok && op.qty_total) ? (op.qty_ok / op.qty_total) : ''
-          ]);
-          rowMeta.push({ outline: 1 });
-        });
-
-        wsData.push(['']);
-        rowMeta.push({ outline: 0 });
-      });
-
-      var ws = XLSX.utils.aoa_to_sheet(wsData);
-
-      // Formato % columna J (índice 9)
-      var range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-      for (var R = 2; R <= range.e.r; R++) {
-        var ca = XLSX.utils.encode_cell({ r: R, c: 9 });
-        if (ws[ca] && typeof ws[ca].v === 'number') { ws[ca].t = 'n'; ws[ca].z = '0%'; }
-      }
-
-      ws['!cols'] = [{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:10}];
-      ws['!rows'] = rowMeta.map(function(m) { return m.outline === 1 ? { level: 1 } : {}; });
-
-      var shName = (est || 'Sin estacion').replace(/[:\\/\[\]\*\?]/g, '-').substring(0, 31);
-      XLSX.utils.book_append_sheet(wb, ws, shName);
-    });
-
-    // Hoja Resumen
-    var sumData = [['Estación','Total OFs','En Proceso','Terminadas','Avance Prom %']];
-    estaciones.forEach(function(est) {
-      var rows = porEstacion[est] || [];
-      var enP  = rows.filter(function(r){ return r.opStatus === 'En Proceso'; }).length;
-      var term = rows.filter(function(r){ return r.opStatus === 'Terminada'; }).length;
-      var avg  = rows.length ? Math.round(rows.reduce(function(s,r){ return s + r.pct; },0)/rows.length) : 0;
-      sumData.push([est || 'Sin estación', rows.length, enP, term, avg/100]);
-    });
-    var wsSum = XLSX.utils.aoa_to_sheet(sumData);
-    wsSum['!cols'] = [{wch:28},{wch:12},{wch:14},{wch:14},{wch:16}];
-    for (var R = 1; R < sumData.length; R++) {
-      var c = XLSX.utils.encode_cell({r:R, c:4});
-      if (wsSum[c]) { wsSum[c].t = 'n'; wsSum[c].z = '0%'; }
-    }
-    XLSX.utils.book_append_sheet(wb, wsSum, 'Resumen');
-
-    XLSX.writeFile(wb, 'Reporte_FabTracker_' + new Date().toISOString().slice(0,10) + '.xlsx');
-  }
-
-  if (window.XLSX) {
-    doExcel();
-  } else {
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    s.onload = doExcel;
-    document.head.appendChild(s);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-// ── VISOR DE FOTOS — Portal Coordinador (Tiempo Real) ─────────────
-// Carga el listado de fotos desde SharePoint Document Library y
-// las muestra en un modal lightbox. Usa el token Graph ya existente.
-// ══════════════════════════════════════════════════════════════════
-
-/**
- * Abre el visor de fotos para una OF + operación específica.
- * Se llama desde el ícono 📷 en la lista de operaciones de renderSeg().
- */
-// ══════════════════════════════════════════════════════════════════
-// ── VISOR DE FOTOS — Portal Coordinador (Tiempo Real) ─────────────
-// ══════════════════════════════════════════════════════════════════
-
-async function coordVerFotos(of_sap, op_id, op_nombre) {
-  var modal = document.getElementById('coord-foto-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'coord-foto-modal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
-    modal.innerHTML = '<div style="background:#0f1623;border:1px solid rgba(255,255,255,.12);border-radius:12px;width:min(90vw,680px);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;"><div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);"><div id="coord-foto-title" style="font-size:.88rem;font-weight:600;"></div><button onclick="document.getElementById(\'coord-foto-modal\').style.display=\'none\'" style="background:none;border:none;color:var(--dim);font-size:1.2rem;cursor:pointer;padding:2px 6px;">✕</button></div><div id="coord-foto-body" style="overflow-y:auto;padding:14px;flex:1;"></div></div>';
-    modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
-    document.body.appendChild(modal);
-  }
-
-  modal.style.display = 'flex';
-  document.getElementById('coord-foto-title').innerHTML =
-    '📷 Fotos — <span style="color:var(--accent-l);">OF ' + esc(of_sap) + '</span>' +
-    ' <span style="font-weight:400;color:var(--dim);font-size:.76rem;">· ' + esc(op_nombre) + '</span>';
-  document.getElementById('coord-foto-body').innerHTML =
-    '<div style="text-align:center;padding:24px;color:var(--dim);font-size:.8rem;">⏳ Cargando fotos...</div>';
-
-  try {
-    var siteId = await getSiteId();
-    var items = [];
-
-    // Paso 1: listar subcarpetas de FT_Fotos/{of_sap}/
-    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
-    var foldersRes = await graphGet(
-      'sites/' + siteId + '/drive/root:/' + ofSeg + ':/children?$select=name,id,folder&$top=50'
-    ).catch(function() { return null; });
-
-    if (foldersRes && foldersRes.value && foldersRes.value.length) {
-      var subFolders = foldersRes.value.filter(function(f) { return f.folder; });
-
-      // Paso 2: intentar coincidencia exacta primero, luego parcial, luego todas
-      var targetFolder = subFolders.find(function(f) { return f.name === op_id; })
-        || subFolders.find(function(f) { return f.name.indexOf(op_id) >= 0 || op_id.indexOf(f.name) >= 0; });
-
-      var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
-
-      for (var fi = 0; fi < foldersToSearch.length; fi++) {
-        var filesRes = await graphGet(
-          'sites/' + siteId + '/drive/items/' + foldersToSearch[fi].id +
-          '/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime'
-        ).catch(function() { return null; });
-        if (filesRes && filesRes.value) {
-          filesRes.value.filter(function(i) { return i.file; }).forEach(function(f) {
-            f._folder = foldersToSearch[fi].name;
-            items.push(f);
-          });
-        }
-      }
-    }
-
-    if (!items.length) {
-      document.getElementById('coord-foto-body').innerHTML =
-        '<div style="text-align:center;padding:32px;color:var(--dim);font-size:.82rem;">' +
-        '📭 No hay fotos registradas para esta operación.<br>' +
-        '<span style="font-size:.68rem;opacity:.55;">Ruta buscada: FT_Fotos/' + of_sap + '/</span></div>';
-      return;
-    }
-
-    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">';
-    items.forEach(function(item) {
-      var downloadUrl = item['@microsoft.graph.downloadUrl'] || item.webUrl;
-      var tipo = item.name.indexOf('terminada') >= 0 ? '✅ Terminada' :
-                 item.name.indexOf('rechazo')   >= 0 ? '❌ Rechazo calidad' : '📷 Foto';
-      var fm = item.name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
-      var fechaStr = fm ? fm[3]+'/'+fm[2]+'/'+fm[1].slice(2)+' '+fm[4]+':'+fm[5] : item.name;
-      html += '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;cursor:pointer;" ' +
-        'onclick="coordFotoZoom(\''+downloadUrl.replace(/'/g,'%27')+'\',\''+esc(tipo)+'\')">' +
-        '<div style="position:relative;padding-top:72%;background:#0a1020;overflow:hidden;">' +
-        '<img src="'+downloadUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'">' +
-        '<div style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.72rem;">No se pudo cargar</div></div>' +
-        '<div style="padding:6px 8px;">' +
-        '<div style="font-size:.7rem;font-weight:600;color:var(--accent-l);">'+tipo+'</div>' +
-        '<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">'+fechaStr+'</div>' +
-        '<a href="'+item.webUrl+'" target="_blank" style="font-size:.64rem;color:var(--accent-l);text-decoration:none;opacity:.7;" onclick="event.stopPropagation()">↗ Abrir en SP</a>' +
-        '</div></div>';
-    });
-    html += '</div><div style="margin-top:10px;font-size:.7rem;color:var(--dim);text-align:right;">' +
-      items.length + ' foto' + (items.length > 1 ? 's' : '') + '</div>';
-    document.getElementById('coord-foto-body').innerHTML = html;
-
-  } catch(e) {
-    document.getElementById('coord-foto-body').innerHTML =
-      '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: ' + esc(e.message) + '</div>';
-    console.error('[coordVerFotos]', e);
-  }
-}
-
-function coordFotoZoom(url, titulo) {
-  var ex = document.getElementById('coord-foto-zoom'); if (ex) ex.remove();
-  var z = document.createElement('div');
-  z.id = 'coord-foto-zoom';
-  z.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-out;';
-  z.innerHTML = '<div style="font-size:.78rem;color:rgba(255,255,255,.6);">'+titulo+' <span style="opacity:.5;font-size:.7rem;">(click para cerrar)</span></div>' +
-    '<img src="'+url+'" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" onerror="this.alt=\'No se pudo cargar\'">';
-  z.onclick = function() { z.remove(); };
-  document.body.appendChild(z);
-}
-
-var _coordFotoCache = {};
-
-async function coordCheckFotos(of_sap, op_id) {
-  var key = of_sap + '__' + op_id;
-  if (_coordFotoCache[key] !== undefined) return;
-  _coordFotoCache[key] = 'pending';
-  try {
-    var siteId = await getSiteId();
-    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
-    var res = await graphGet(
-      'sites/' + siteId + '/drive/root:/' + ofSeg + ':/children?$select=name,id,folder&$top=50'
-    ).catch(function() { return null; });
-
-    if (!res || !res.value || !res.value.length) {
-      _coordFotoCache[key] = false; return;
-    }
-
-    var subFolders = res.value.filter(function(f) { return f.folder; });
-
-    // Calcular nombres candidatos para esta operación:
-    // 1. op_id exacto  2. op_id parcial  3. nombre sanitizado (para ops op_app_*)
-    var candidateNames = [op_id];
-    var aof = DB.activeOFs.find(function(a) { return a.of_sap === of_sap; });
-    if (aof) {
-      var op = aof.ops.find(function(o) { return o.id === op_id; });
-      if (op && op.nombre) {
-        candidateNames.push('op_' + op.nombre.replace(/[^a-zA-Z0-9_\-]/g, '_').substring(0, 40));
-      }
-    }
-
-    var target = subFolders.find(function(f) {
-      return candidateNames.some(function(c) {
-        return f.name === c || f.name.indexOf(c) >= 0 || c.indexOf(f.name) >= 0;
-      });
-    });
-
-    if (!target) { _coordFotoCache[key] = false; return; }
-
-    var filesRes = await graphGet(
-      'sites/' + siteId + '/drive/items/' + target.id + '/children?$select=id,file&$top=1'
-    ).catch(function() { return null; });
-
-    _coordFotoCache[key] = !!(filesRes && filesRes.value && filesRes.value.some(function(i) { return i.file; }));
-    if (_coordFotoCache[key]) renderSeg();
-  } catch(e) {
-    _coordFotoCache[key] = false;
-  }
-}
-
-// ─── Auto-refresh running timers every 60s -----------------
+// -- Auto-refresh running timers every 60s -----------------
 setInterval(function(){
   var hasRunning = Object.values(DB.timers).some(function(t){return t&&t.running;});
   if(hasRunning) renderApp();
