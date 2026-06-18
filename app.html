@@ -4499,6 +4499,7 @@ appConfirmValCal = function() {
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appNtfyNotificar('val_solicitada', {of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion, nota:note}).catch(function(){});
   closeAppModal('app-modal-valcal'); renderApp();
   fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
@@ -5148,6 +5149,7 @@ appConfirmValCal = function(){
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appNtfyNotificar('val_solicitada', {of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion, nota:note}).catch(function(){});
   closeAppModal('app-modal-valcal'); renderApp();
   _basefireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
@@ -10630,6 +10632,7 @@ appConfirmValCal = function() {
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appNtfyNotificar('val_solicitada', {of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion, nota:note}).catch(function(){});
   closeAppModal('app-modal-valcal'); renderApp();
   fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
@@ -11306,6 +11309,8 @@ appConfirmValCal = function(){
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  appNtfyNotificar('val_solicitada', {of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion, nota:note}).catch(function(){});
+  appPlayNotifSound('calidad');
   closeAppModal('app-modal-valcal'); renderApp();
   console.log('[ValCal] _spId='+op._spId+' status='+op.status);
   appSaveOpToSP(ctx.of_sap, ctx.op_id)
