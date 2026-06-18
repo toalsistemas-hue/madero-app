@@ -6425,8 +6425,13 @@ async function appInitMsal() {
     var b = document.getElementById('app-login-btn');
     var t = document.getElementById('app-login-status');
     if (s) s.style.display = 'flex';
-    if (b) b.disabled = false;
     if (t) t.textContent = msg || '';
+    // Check connectivity — disable login button if offline
+    var isOnline = navigator.onLine;
+    if (b) b.disabled = !isOnline;
+    if (!isOnline && t && !msg) {
+      t.textContent = '📶 Sin internet — conecta para iniciar sesión';
+    }
   }
   function loginDbg(msg, isError) {
     console.log('[LoginDebug]', msg);
@@ -6523,9 +6528,15 @@ async function appInitMsal() {
     showLogin('');
   } catch(e) {
     loginDbg('Fatal init error: ' + (e.message || e), true);
-    document.getElementById('app-login-btn').disabled = false;
+    var _eStr = (e.message || e.errorCode || '').toLowerCase();
+    var _isOfflineErr = _eStr.indexOf('endpoint') >= 0 || _eStr.indexOf('network') >= 0 ||
+                        _eStr.indexOf('openid') >= 0 || _eStr.indexOf('could not resolve') >= 0;
+    var _offlineMsg = (!navigator.onLine || _isOfflineErr)
+      ? '📶 Sin internet — conecta para iniciar sesión'
+      : 'Error al inicializar. Intenta de nuevo.';
     document.getElementById('app-login-screen').style.display = 'flex';
-    document.getElementById('app-login-status').textContent = '';
+    document.getElementById('app-login-btn').disabled = (!navigator.onLine || _isOfflineErr);
+    document.getElementById('app-login-status').textContent = _offlineMsg;
   }
 }
 
@@ -6573,6 +6584,11 @@ async function appLoginSuccess() {
 async function appDoLogin() {
   const btn = document.getElementById('app-login-btn');
   const status = document.getElementById('app-login-status');
+  // Guard: can't login without internet
+  if (!navigator.onLine) {
+    status.textContent = '📶 Sin internet — conecta para iniciar sesión';
+    return;
+  }
   if (!appMsalInstance) {
     status.textContent = 'Inicializando...';
     await appInitMsal();
@@ -7802,6 +7818,28 @@ function applyAppUserProfile() {
 async function appValidateRole() {
   return await appLoadUserProfile();
 }
+
+// Listen for connectivity changes — update login button in real time
+window.addEventListener('online', function() {
+  var btn    = document.getElementById('app-login-btn');
+  var status = document.getElementById('app-login-status');
+  var login  = document.getElementById('app-login-screen');
+  if (login && login.style.display !== 'none') {
+    if (btn) btn.disabled = false;
+    if (status && status.textContent.indexOf('Sin internet') >= 0) {
+      status.textContent = '';
+    }
+  }
+});
+window.addEventListener('offline', function() {
+  var btn    = document.getElementById('app-login-btn');
+  var status = document.getElementById('app-login-status');
+  var login  = document.getElementById('app-login-screen');
+  if (login && login.style.display !== 'none') {
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = '📶 Sin internet — conecta para iniciar sesión';
+  }
+});
 
 // Init
 (function() {
