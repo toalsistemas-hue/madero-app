@@ -1630,6 +1630,19 @@ tr:last-child td{border-bottom:none;}
             <label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;">
               <input type="checkbox" id="ft-tec-activo" checked> Activo
             </label>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">
+                PIN Monitor 🔢
+                <span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — 4 dígitos numéricos</span>
+              </label>
+              <input class="form-input" id="ft-tec-pin" placeholder="Ej: 1234" maxlength="4"
+                style="width:120px;font-family:monospace;letter-spacing:.2em;font-size:1rem;"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)">
+              <div style="font-size:.67rem;color:var(--dim);margin-top:4px;">
+                El operador usará este PIN en el Monitor de Estación para iniciar y concluir operaciones.
+                Si se deja vacío, el operador podrá crear su propio PIN la primera vez.
+              </div>
+            </div>
           </div>
           <div id="ft-tec-sp-id" style="display:none;"></div>
           <div class="coord-modal-actions">
@@ -1677,6 +1690,7 @@ tr:last-child td{border-bottom:none;}
         <button class="cfg-tab-btn cfg-tab-active" id="cfg-tab-usuarios" onclick="cfgShowTab('usuarios')">👤 Usuarios</button>
         <button class="cfg-tab-btn" id="cfg-tab-menu" onclick="cfgShowTab('menu')">🗂️ Módulos y Accesos</button>
         <button class="cfg-tab-btn" id="cfg-tab-sesiones" onclick="cfgShowTab('sesiones')">🟢 Sesiones Activas</button>
+        <button class="cfg-tab-btn" id="cfg-tab-monitor" onclick="cfgShowTab('monitor')">📺 Monitor Config</button>
         <button class="cfg-tab-btn" id="cfg-tab-usuarios-movil" onclick="cfgShowTab('usuarios-movil')">📱 Usuarios App Móvil</button>
         <button class="cfg-tab-btn" id="cfg-tab-accesos-movil" onclick="cfgShowTab('accesos-movil')">🖥️ Pantallas y Accesos Móvil</button>
       </div>
@@ -1878,6 +1892,41 @@ tr:last-child td{border-bottom:none;}
               <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">Cargando…</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- TAB: MONITOR CONFIG -->
+      <div id="cfg-view-monitor" style="display:none;">
+        <div style="display:flex;flex-direction:column;gap:20px;max-width:480px;">
+
+          <!-- Admin PIN -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;">
+            <div style="font-weight:700;font-size:.88rem;margin-bottom:4px;">🔐 PIN de Administrador del Monitor</div>
+            <div style="font-size:.75rem;color:var(--dim);margin-bottom:14px;">
+              Este PIN de 6 dígitos se requiere para desbloquear la configuración del Monitor de Estación en las tablets.
+              Por defecto: <code style="background:rgba(255,255,255,.08);padding:1px 6px;border-radius:4px;">123456</code>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+              <input class="form-input" id="cfg-monitor-admin-pin" type="password"
+                placeholder="6 dígitos numéricos" maxlength="6"
+                style="width:160px;font-family:monospace;letter-spacing:.2em;font-size:1rem;"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,6)">
+              <button class="btn btn-primary btn-sm" onclick="cfgSaveMonitorAdminPin()">💾 Guardar PIN</button>
+            </div>
+            <div id="cfg-monitor-pin-status" style="font-size:.72rem;color:var(--dim);margin-top:8px;"></div>
+          </div>
+
+          <!-- Info -->
+          <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.2);border-radius:var(--r);padding:14px;">
+            <div style="font-size:.78rem;color:#58a6ff;font-weight:600;margin-bottom:6px;">ℹ️ Cómo funciona el Monitor</div>
+            <ul style="font-size:.75rem;color:var(--dim);line-height:1.8;padding-left:16px;margin:0;">
+              <li>Los PINs de operadores se asignan en <b>Fabricaciones → Técnicos → Editar</b></li>
+              <li>Si un operador no tiene PIN, podrá crear uno la primera vez que use el monitor</li>
+              <li>El PIN de Admin se almacena en <b>localStorage de cada tablet</b> — debe configurarse en cada dispositivo</li>
+              <li>Para cambiar el PIN en una tablet, abre el monitor, desbloquea con el PIN actual y vuelve a configurar</li>
+            </ul>
+          </div>
+
         </div>
       </div>
 
@@ -3231,7 +3280,7 @@ var CFG = { usuarios:[], puestos:[], modulos:[], submodulos:[], pantallas:[], cu
 // ── TAB NAVIGATION ────────────────────────────────────────────────
 function cfgShowTab(tab) {
   CFG.currentTab = tab;
-  ['usuarios','menu','sesiones','usuarios-movil','accesos-movil'].forEach(function(t) {
+  ['usuarios','menu','sesiones','usuarios-movil','accesos-movil','monitor'].forEach(function(t) {
     var el = document.getElementById('cfg-view-'+t); var btn = document.getElementById('cfg-tab-'+t);
     if (el) el.style.display = (t===tab)?'':'none';
     if (btn) btn.classList.toggle('cfg-tab-active', t===tab);
@@ -4879,6 +4928,14 @@ function ftOpenTecnicoFromData(spId, nombre, puesto, ntfy, activo) {
   document.getElementById('ft-tec-ntfy').value  = ntfy   || '';
   document.getElementById('ft-tec-activo').checked = activo !== false;
   document.getElementById('ft-tec-sp-id').textContent = spId || '';
+  // Load PIN if available
+  var pinEl = document.getElementById('ft-tec-pin');
+  if (pinEl) pinEl.value = '';
+  // Try to find PIN from cache
+  if (spId && window._ftTecnicosCache) {
+    var tec = window._ftTecnicosCache.find(function(t){ return t.id==spId; });
+    if (tec && pinEl) pinEl.value = tec.PIN_Monitor || '';
+  }
   openCModal('ft-modal-tecnico');
 }
 
@@ -4887,10 +4944,12 @@ async function ftSaveTecnico() {
   const puesto = document.getElementById('ft-tec-puesto').value.trim();
   const activo = document.getElementById('ft-tec-activo').checked;
   const ntfy   = (document.getElementById('ft-tec-ntfy').value || '').trim().toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+  const pinEl  = document.getElementById('ft-tec-pin');
+  const pin    = pinEl ? pinEl.value.trim().replace(/[^0-9]/g,'').slice(0,4) : '';
   if (!nombre) { alert('El nombre es requerido.'); return; }
   try {
     const siteId = await getSiteId();
-    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy };
+    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy, PIN_Monitor: pin };
     if (_ftEditTecId) {
       await spEscribir('FT_Tecnicos', fields, _ftEditTecId);
     } else {
@@ -4898,7 +4957,6 @@ async function ftSaveTecnico() {
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);
-    // Actualizar caché ntfy para que las notificaciones usen el canal correcto de inmediato
     if (!window._ntfyCanales) window._ntfyCanales = {};
     if (ntfy) window._ntfyCanales[nombre] = ntfy;
     else delete window._ntfyCanales[nombre];
@@ -5582,7 +5640,7 @@ async function ftLoadDataFromSP() {
                     var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
                     if(op){
                       op._queueSpId=c.id;
-                      if(op.status!=='running'&&op.status!=='paused'&&op.status!=='validating')
+                      if(op.status!=='running'&&op.status!=='paused'&&op.status!=='validating'&&op.status!=='op_concluded')
                         op.cola=parseInt(c.fields.Posicion||0)||0;
                     }
                   }
@@ -5870,7 +5928,7 @@ async function ftSaveQueueToSP(of_sap) {
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
-      var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating')
+      var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded')
                     ? 0 : (op.cola || 0);
       var fields = {
         Title:     op.estacion || of_sap,
@@ -6833,8 +6891,8 @@ function renderSeg(){
       // Mini ops list
       var h2="<div style='display:flex;flex-wrap:wrap;gap:4px;'>";
       aof.ops.forEach(function(op){
-        var col={done:"var(--green)",running:"var(--accent-l)",paused:"var(--yellow)",validating:"var(--purple)",pending:"var(--muted)"}[op.status]||"var(--muted)";
-        var ico={done:"✓",running:"▶",paused:"⏸",validating:"🔍",pending:"○"}[op.status]||"○";
+        var col={done:"var(--green)",running:"var(--accent-l)",paused:"var(--yellow)",validating:"var(--purple)",pending:"var(--muted)",op_concluded:"#f59e0b"}[op.status]||"var(--muted)";
+        var ico={done:"✓",running:"▶",paused:"⏸",validating:"🔍",pending:"○",op_concluded:"⏳"}[op.status]||"○";
         h2+="<span style='background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:.68rem;color:"+col+";white-space:nowrap;' title='"+esc(op.nombre)+"'>"+ico+" "+esc(op.nombre.substring(0,18))+(op.status==="running"?"<span style='font-family:\"DM Mono\",monospace;margin-left:4px;font-size:.6rem;color:var(--green);'>"+fmtM(getEl("14489_"+op.id))+"</span>":"")+"</span>";
       });
       h2+="</div>";
@@ -8381,8 +8439,8 @@ function openOFOpsModal(sap) {
   var h = '';
   aof.ops.forEach(function(op, i){
     var ayudantes = op.ayudantes || [];
-    var statusColor = op.status==='done'?'var(--green)':op.status==='running'?'var(--accent)':op.status==='paused'?'var(--yellow)':'var(--dim)';
-    var statusLabel = {done:'✅ Terminada',running:'▶ En curso',paused:'⏸ Pausada',pending:'⏳ Pendiente',validating:'🔍 Validando'}[op.status]||op.status;
+    var statusColor = op.status==='done'?'var(--green)':op.status==='running'?'var(--accent)':op.status==='paused'?'var(--yellow)':op.status==='op_concluded'?'#f59e0b':'var(--dim)';
+    var statusLabel = {done:'✅ Terminada',running:'▶ En curso',paused:'⏸ Pausada',pending:'⏳ Pendiente',validating:'🔍 Validando',op_concluded:'⏳ Concluida por Operador'}[op.status]||op.status;
 
     h += '<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;">';
 
@@ -8393,6 +8451,14 @@ function openOFOpsModal(sap) {
     h += '<div style="font-size:.7rem;color:var(--dim);">'+esc(op.estacion)+'</div></div>';
     h += '<div style="font-size:.68rem;color:'+statusColor+';font-weight:600;">'+statusLabel+'</div>';
     h += '</div>';
+    if(op.status==='op_concluded'){
+      h += '<div style="margin:0 0 10px;padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:.75rem;color:#f59e0b;display:flex;justify-content:space-between;align-items:center;gap:8px;">';
+      h += '<span>⏳ Operador concluyó — aguarda tu confirmación</span>';
+      h += '<div style="display:flex;gap:6px;">';
+      h += '<button class="btn btn-sm" style="background:#22c55e;color:#000;border:none;font-weight:600;" onclick="coordConfirmOpConclusion(\''+aof.of_sap+'\',\''+op.id+'\');">✓ Confirmar</button>';
+      h += '<button class="btn btn-sm btn-ghost" onclick="coordRevertOpConclusion(\''+aof.of_sap+'\',\''+op.id+'\');">↩ Devolver</button>';
+      h += '</div></div>';
+    }
 
     // Row: técnico + piezas
     h += '<div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;">';
@@ -11490,6 +11556,53 @@ async function cfgMovilModalSave() {
     alert('Error: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  }
+}
+
+
+// ── Monitor: Coordinator confirms/reverts op_concluded from portal ────
+async function coordConfirmOpConclusion(ofSap, opId) {
+  var aof = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op  = aof ? aof.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+  op.status = 'done';
+  op.fin    = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  renderSeg(); renderApp();
+  try {
+    await flowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), { Status: 'done', Fin: op.fin });
+    showToast('✅ Operación confirmada como terminada.', 'success');
+  } catch(e) { showToast('Error al guardar: '+e.message, 'error'); }
+}
+
+async function coordRevertOpConclusion(ofSap, opId) {
+  var aof = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op  = aof ? aof.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+  op.status = 'running';
+  op.fin    = null;
+  renderSeg(); renderApp();
+  try {
+    await flowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), { Status: 'running', Fin: '' });
+    showToast('↩ Operación devuelta a En curso.', 'info');
+  } catch(e) { showToast('Error al guardar: '+e.message, 'error'); }
+}
+
+
+function cfgSaveMonitorAdminPin() {
+  var pin = (document.getElementById('cfg-monitor-admin-pin').value||'').trim();
+  var status = document.getElementById('cfg-monitor-pin-status');
+  if (pin.length !== 6 || !/^[0-9]{6}$/.test(pin)) {
+    if (status) status.textContent = '⚠️ El PIN debe ser exactamente 6 dígitos numéricos.';
+    status.style.color = '#ef4444';
+    return;
+  }
+  // Store in localStorage — admin must set this on each tablet
+  localStorage.setItem('monitor_admin_pin', pin);
+  document.getElementById('cfg-monitor-admin-pin').value = '';
+  if (status) {
+    status.textContent = '✅ PIN guardado en este dispositivo. Repite en cada tablet.';
+    status.style.color = '#22c55e';
+    setTimeout(function(){ if(status) status.textContent = ''; }, 4000);
   }
 }
 
