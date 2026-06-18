@@ -12477,7 +12477,6 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js')
       .then(function(reg) {
         console.log('SW registrado:', reg.scope);
-        // Si hay un SW en espera, activarlo inmediatamente
         if (reg.waiting) {
           reg.waiting.postMessage({ type: 'SKIP_WAITING' });
         }
@@ -12491,25 +12490,18 @@ if ('serviceWorker' in navigator) {
             });
           }
         });
-        // Verificar actualizacion
         reg.update();
       })
       .catch(function(err) { console.log('SW error:', err); });
-    // Cuando SW nuevo toma control → recargar para usar el HTML nuevo
+
+    // Solo recargar si el SW cambia (nuevo deploy)
     navigator.serviceWorker.addEventListener('controllerchange', function() {
       console.log('SW nuevo activo, recargando...');
       window.location.reload(true);
     });
   });
-  // Limpiar caches viejos al arrancar (garantiza que siempre se use el HTML del servidor)
-  if (window.caches) {
-    caches.keys().then(function(names) {
-      names.forEach(function(name) {
-        caches.delete(name);
-        console.log('Cache eliminado:', name);
-      });
-    });
-  }
+  // NOTA: NO borrar caches aquí — el SW gestiona su propio ciclo de vida
+  // Borrarlos aquí destruye el caché offline antes de que pueda usarse
 }
 
 
