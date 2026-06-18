@@ -1893,16 +1893,17 @@ async function appShowLauncher() {
   launcher.style.display = 'flex';
 
   // Mostrar info del usuario
-  // Prefer: FT_UsuariosMovil Nombre > portal Usuarios Nombre > (not Azure AD name)
+  // ONLY use APP_USER_PROFILE.nombre (from SP Usuarios or FT_UsuariosMovil)
+  // NEVER use appCurrentUser.nombre (Azure AD display name — can be "Pedidos Especiales")
   var userEl = document.getElementById('launcher-user');
   var _nombre = (APP_USER_PROFILE && APP_USER_PROFILE.nombre) || '';
-  // Avoid showing the Azure AD service-account display name (e.g. "Pedidos Especiales")
-  // by only using APP_USER_PROFILE.nombre which comes from SP Usuarios.NombreCompleto
-  if (!_nombre && appCurrentUser) _nombre = appCurrentUser.email || '';
-  if (userEl) userEl.textContent = APP_USER_PROFILE ? (APP_USER_PROFILE.puesto || APP_USER_PROFILE.nombre || '') : '';
-  // Nombre en el título de bienvenida — use first word of real name
+  var _puesto = (APP_USER_PROFILE && APP_USER_PROFILE.puesto) || '';
+  // If nombre looks like an email, use only the local part before @
+  if (_nombre.indexOf('@') >= 0) _nombre = _nombre.split('@')[0];
+  if (userEl) userEl.textContent = _puesto || _nombre;
+  // Bienvenido title — first word of real name
   var welcomeEl = document.getElementById('launcher-welcome-name');
-  if (welcomeEl && _nombre) {
+  if (welcomeEl) {
     var _firstName = _nombre.split(' ')[0] || _nombre;
     welcomeEl.textContent = _firstName;
   }
@@ -7446,9 +7447,68 @@ async function appLoadUserProfile() {
     });
     if (!userItem) {
       console.warn('Usuario no encontrado en lista Usuarios:', email);
-      // Fallback: allow access with default supervisor role for known domain
-      if (email.endsWith('@maderoequipos.com')) {
-        APP_USER_PROFILE = { nombre: appCurrentUser.nombre, email: email, puestoID: 'Supervisor', role: 'supervisor', esAdmin: false, nombre_ini: (appCurrentUser.nombre||email).slice(0,2).toUpperCase() };
+      // Try FT_UsuariosMovil directly — this user may only have mobile access
+      try {
+        var _movilOnlyAll = await appGraphGet(
+          'sites/'+siteId+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'
+        );
+        var _movilOnlyMatch = (_movilOnlyAll.value||[]).find(function(i){
+          return (i.fields.Email||'').toLowerCase() === email.toLowerCase();
+        });
+        if (_movilOnlyMatch) {
+          var _mof = _movilOnlyMatch.fields;
+          if (_mof.Activo_App === false) throw new Error('Usuario sin acceso a la app móvil.');
+          // Build profile from FT_UsuariosMovil data
+          var _moNombre = _mof.Nombre || _mof.Title || email;
+          APP_USER_PROFILE = {
+            nombre:       _moNombre,
+            nombre_ini:   _moNombre.split(' ').map(function(x){return x[0]||'';}).join('').slice(0,2).toUpperCase(),
+            email:        email,
+            puestoID:     '',
+            puesto:       '',
+            role:         'readonly',
+            roles:        ['readonly'],
+            esAdmin:      false,
+            puestoMovilID: _mof.PuestoMovilID || null,
+            canal_ntfy:   _mof.Canal_Ntfy || null,
+          };
+          // Resolve role from FT_PuestosMovil
+          if (APP_USER_PROFILE.puestoMovilID) {
+            var _pmAll = await appGraphGet(
+              'sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'
+            );
+            var _pmMatch = (_pmAll.value||[]).find(function(i){
+              return (i.fields.PuestoID||'') === APP_USER_PROFILE.puestoMovilID;
+            });
+            if (_pmMatch) {
+              var _pNombre = _pmMatch.fields.Nombre || _pmMatch.fields.Title || APP_USER_PROFILE.puestoMovilID;
+              var _roles = puestoToAppRoles(_pNombre);
+              if (!_roles.length) _roles = puestoToAppRoles(APP_USER_PROFILE.puestoMovilID);
+              if (_roles.length) {
+                APP_USER_PROFILE.roles = _roles;
+                APP_USER_PROFILE.role  = _roles[0];
+                APP_USER_PROFILE.puesto = _pNombre;
+              } else {
+                APP_USER_PROFILE.puesto = _pNombre;
+              }
+              console.log('[AppProfile] Mobile-only user:', _moNombre, '| puesto:', _pNombre, '| roles:', APP_USER_PROFILE.roles);
+            }
+          }
+          applyAppUserProfile();
+          return APP_USER_PROFILE;
+        }
+      } catch(movilOnlyErr) {
+        if (movilOnlyErr.message && movilOnlyErr.message.includes('sin acceso')) throw movilOnlyErr;
+        console.warn('[AppProfile] FT_UsuariosMovil fallback error:', movilOnlyErr.message);
+      }
+      // Last resort: allow @maderoequipos.com with readonly (not supervisor)
+      if (email.endsWith('@maderoequipos.com') || email.endsWith('@maderoequipos.microsoftonline.com')) {
+        APP_USER_PROFILE = {
+          nombre: email.split('@')[0], email: email,
+          puestoID: '', puesto: '', role: 'readonly', roles: ['readonly'],
+          esAdmin: false, nombre_ini: email.slice(0,2).toUpperCase(),
+          puestoMovilID: null, canal_ntfy: null,
+        };
         applyAppUserProfile();
         return APP_USER_PROFILE;
       }
