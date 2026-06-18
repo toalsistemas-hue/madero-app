@@ -460,6 +460,18 @@ tr:last-child td{border-bottom:none;}
 
   <div class="app-login-note">Usa tu cuenta @maderoequipos.com para acceder.</div>
   <div style="margin-top:20px;font-size:.65rem;color:rgba(255,255,255,.2);letter-spacing:.05em;">v1.0.0</div>
+
+  <!-- Debug log panel — visible solo cuando hay errores de login -->
+  <div id="login-debug-panel" style="display:none;margin-top:16px;width:100%;
+       background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);border-radius:8px;
+       padding:10px 12px;text-align:left;max-height:180px;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+      <span style="font-size:.65rem;color:rgba(255,255,255,.35);font-weight:600;">DEBUG LOG</span>
+      <button onclick="document.getElementById('login-debug-panel').style.display='none'"
+        style="background:none;border:none;color:rgba(255,255,255,.3);font-size:.7rem;cursor:pointer;">✕</button>
+    </div>
+    <div id="login-debug-log" style="font-size:.62rem;color:#4ade80;font-family:monospace;line-height:1.6;"></div>
+  </div>
 </div>
 
 
@@ -6405,102 +6417,109 @@ function appGetRedirectUri() {
 }
 
 async function appInitMsal() {
+  function showLogin(msg) {
+    var s = document.getElementById('app-login-screen');
+    var b = document.getElementById('app-login-btn');
+    var t = document.getElementById('app-login-status');
+    if (s) s.style.display = 'flex';
+    if (b) b.disabled = false;
+    if (t) t.textContent = msg || '';
+  }
+  function loginDbg(msg, isError) {
+    console.log('[LoginDebug]', msg);
+    var panel = document.getElementById('login-debug-panel');
+    var log   = document.getElementById('login-debug-log');
+    if (!panel || !log) return;
+    panel.style.display = 'block';
+    var line = document.createElement('div');
+    var ts = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    line.style.color = isError ? '#f87171' : '#4ade80';
+    line.textContent = ts + ' ' + msg;
+    log.appendChild(line);
+    panel.scrollTop = panel.scrollHeight;
+  }
   try {
     var redirectUri = appGetRedirectUri();
+    loginDbg('Init — redirectUri: ' + redirectUri);
     var msalConfig = {
       auth: {
-        clientId: APP_CONFIG.clientId,
-        authority: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
-        redirectUri: redirectUri,
-        navigateToLoginRequestUrl: true,
-        knownAuthorities: ['login.microsoftonline.com'],
+        clientId:                  APP_CONFIG.clientId,
+        authority:                 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
+        redirectUri:               redirectUri,
+        navigateToLoginRequestUrl: false,  // MUST be false — true causes double-reload in PWA
+        knownAuthorities:          ['login.microsoftonline.com'],
+        postLogoutRedirectUri:     redirectUri,
       },
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
-      system: { loadFrameTimeout: 10000, windowHashTimeout: 15000, iframeHashTimeout: 10000 }
+      cache:  { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+      system: { loadFrameTimeout: 10000, windowHashTimeout: 60000, iframeHashTimeout: 10000 }
     };
     appMsalInstance = new msal.PublicClientApplication(msalConfig);
-    try {
-      await Promise.race([
-        appMsalInstance.initialize(),
-        new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 8000); })
-      ]);
-    } catch(e) { console.warn('MSAL init timeout, continuing:', e.message); }
+    await appMsalInstance.initialize();
+    loginDbg('MSAL initialized OK');
 
-    // Check if we're returning from a redirect login OR logout
+    // ── Step 1: Handle redirect response (coming back from Microsoft login page) ──
     var redirect = null;
     try {
       redirect = await appMsalInstance.handleRedirectPromise();
-      if (redirect) {
-        console.log('[MSAL] handleRedirectPromise OK — account:', redirect.account ? redirect.account.username : 'null');
-      }
     } catch(hrpErr) {
-      console.warn('[MSAL] handleRedirectPromise error:', hrpErr.message || hrpErr.errorCode || hrpErr);
-      // If it's a hash/state error, clear the hash and show login cleanly
-      if (window.location.hash) {
-        try { window.history.replaceState(null, '', window.location.pathname); } catch(e2) {}
-      }
-      document.getElementById('app-login-screen').style.display = 'flex';
-      document.getElementById('app-login-btn').disabled = false;
-      document.getElementById('app-login-status').textContent = 'Error de autenticación — intenta de nuevo.';
+      loginDbg('handleRedirectPromise ERROR: ' + (hrpErr.errorCode || hrpErr.message), true);
+      // Clear bad state and show login fresh
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch(e2) {}
+      showLogin('Error de autenticación. Intenta de nuevo.');
       return;
     }
 
     if (redirect && redirect.accessToken) {
-      // Successfully returned from redirect login
+      loginDbg('Login redirect OK: ' + redirect.account.username);
       appToken = redirect.accessToken;
-      appCurrentUser = { email: redirect.account.username.toLowerCase(), nombre: redirect.account.name || redirect.account.username };
+      appCurrentUser = {
+        email:  redirect.account.username.toLowerCase(),
+        nombre: redirect.account.name || redirect.account.username
+      };
       await appLoginSuccess();
       return;
     }
 
-    // handleRedirectPromise returned null but we have a hash — MSAL discarded it
-    // This happens when redirectUri doesn't match exactly. Try to recover.
-    if (!redirect && window.location.hash && window.location.hash.indexOf('code=') >= 0) {
-      console.warn('[MSAL] Got auth code in URL but handleRedirectPromise returned null — redirectUri mismatch?');
-      console.warn('[MSAL] Current URL:', window.location.href);
-      console.warn('[MSAL] Configured redirectUri:', appGetRedirectUri());
-      document.getElementById('app-login-status').textContent = 'Error de configuración — contacta al administrador.';
-      document.getElementById('app-login-screen').style.display = 'flex';
-      document.getElementById('app-login-btn').disabled = false;
-      try { window.history.replaceState(null, '', window.location.pathname); } catch(e2) {}
-      return;
-    }
-
-    // Skip silent token if force login flag is set (user just logged out)
+    // ── Step 2: Skip silent token if user just logged out ──
     if (localStorage.getItem('msal_force_login') === '1') {
-      document.getElementById('app-login-screen').style.display = 'flex';
-      document.getElementById('app-login-btn').disabled = false;
-      document.getElementById('app-login-status').textContent = '';
+      showLogin('');
       return;
     }
 
-    // Check for existing cached session (already logged in before)
-    var accounts = appMsalInstance ? appMsalInstance.getAllAccounts() : [];
+    // ── Step 3: Try silent token for existing session ──
+    var accounts = appMsalInstance.getAllAccounts();
+    loginDbg('Cached accounts: ' + accounts.length);
     if (accounts.length > 0) {
       try {
         var silent = await Promise.race([
-          appMsalInstance.acquireTokenSilent({ account: accounts[0], scopes: APP_CONFIG.scopes }),
-          new Promise(function(_,rej){ setTimeout(function(){ rej(new Error('timeout')); }, 3000); })
+          appMsalInstance.acquireTokenSilent({
+            account: accounts[0],
+            scopes:  APP_CONFIG.scopes
+          }),
+          new Promise(function(_, rej) {
+            setTimeout(function() { rej(new Error('silent-timeout')); }, 4000);
+          })
         ]);
         if (silent && silent.accessToken) {
+          loginDbg('Silent token OK: ' + silent.account.username);
           appToken = silent.accessToken;
-          appCurrentUser = { email: silent.account.username.toLowerCase(), nombre: silent.account.name || silent.account.username };
+          appCurrentUser = {
+            email:  silent.account.username.toLowerCase(),
+            nombre: silent.account.name || silent.account.username
+          };
           await appLoginSuccess();
           return;
         }
-      } catch(e) {
-        console.warn('Silent token failed:', e.message || e.errorCode);
-        // Clear stale account and show login
-        try { await appMsalInstance.clearCache(); } catch(ce) {}
+      } catch(silentErr) {
+        loginDbg('Silent token failed: ' + (silentErr.message || silentErr.errorCode), true);
+        try { appMsalInstance.clearCache(); } catch(ce) {}
       }
     }
 
-    // No session — show login screen
-    document.getElementById('app-login-screen').style.display = 'flex';
-    document.getElementById('app-login-btn').disabled = false;
-    document.getElementById('app-login-status').textContent = '';
+    // ── Step 4: No session — show login ──
+    showLogin('');
   } catch(e) {
-    console.warn('appInitMsal error:', e.message);
+    loginDbg('Fatal init error: ' + (e.message || e), true);
     document.getElementById('app-login-btn').disabled = false;
     document.getElementById('app-login-screen').style.display = 'flex';
     document.getElementById('app-login-status').textContent = '';
