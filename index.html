@@ -11117,343 +11117,116 @@ function calTiemEdit(key){
 
 
 // ══════════════════════════════════════════════════════════════════
-// ── NTFY.SH — Notificaciones push a técnicos ──────────────────────
+// ── NTFY.SH — Notificaciones push por puesto (FT_UsuariosMovil) ───
 // ══════════════════════════════════════════════════════════════════
 
+// Roles que reciben cada tipo de evento
+var _NTFY_ROLES_COORD   = ['supervisor', 'calidad_tiem'];   // Sup. Prod. + Analista Calidad
+var _NTFY_ROLES_CALIDAD = ['calidad_lin'];                   // Jefe de Control de Calidad
+var _NTFY_ROLES_SUPER   = ['supervisor'];                    // Solo Supervisor de Producción
+
 var _ntfyMensajes = {
-  prog_updated:     { titulo: '📅 Programación actualizada',  cuerpo: 'El Coordinador actualizó la programación para hoy.',          prioridad: 'default' },
-  prio_updated:     { titulo: '⚡ Prioridades actualizadas',  cuerpo: 'El Coordinador actualizó las prioridades de fabricación.',     prioridad: 'high'    },
-  template_updated: { titulo: '📋 Plantilla actualizada',     cuerpo: 'Se actualizó la plantilla de operaciones.',                   prioridad: 'default' },
-  ops_assigned:     { titulo: '👷 Operaciones asignadas',     cuerpo: 'El Coordinador te asignó operaciones en una orden.',          prioridad: 'high'    },
-  queue_reordered:  { titulo: '≡ Cola reordenada',            cuerpo: 'El Coordinador reordenó la cola de tu estación.',             prioridad: 'default' },
+  prog_updated:     { titulo: '📅 Programación actualizada',  cuerpo: 'El Coordinador actualizó la programación de producción.',  prioridad: 'default', roles: _NTFY_ROLES_COORD   },
+  prio_updated:     { titulo: '⚡ Prioridades actualizadas',  cuerpo: 'El Coordinador actualizó las prioridades de fabricación.', prioridad: 'high',    roles: _NTFY_ROLES_COORD   },
+  template_updated: { titulo: '📋 Plantilla actualizada',     cuerpo: 'Se actualizó la plantilla de operaciones.',                prioridad: 'default', roles: _NTFY_ROLES_COORD   },
+  ops_assigned:     { titulo: '👷 Operaciones asignadas',     cuerpo: 'El Coordinador programó operaciones en producción.',       prioridad: 'high',    roles: _NTFY_ROLES_COORD   },
+  queue_reordered:  { titulo: '≡ Cola reordenada',            cuerpo: 'El Coordinador reordenó la cola de producción.',           prioridad: 'default', roles: _NTFY_ROLES_COORD   },
+  val_solicitada:   { titulo: '🔍 Validación de Calidad',     cuerpo: '',                                                        prioridad: 'high',    roles: _NTFY_ROLES_CALIDAD },
+  cal_liberada:     { titulo: '✅ Operación liberada',        cuerpo: '',                                                        prioridad: 'high',    roles: _NTFY_ROLES_SUPER   },
+  cal_rechazada:    { titulo: '⚠️ Operación rechazada',       cuerpo: '',                                                        prioridad: 'high',    roles: _NTFY_ROLES_SUPER   },
 };
 
+// Caché: { 'supervisor': ['canal1'], 'calidad_lin': ['canal2'], ... }
+var _ntfyCanalesPorRol = {};
+var _ntfyCanalesLoaded = false;
+
+// Función que mapea nombre de puesto → array de roles (igual que en app.html)
+function _ntfyPuestoARoles(nombre) {
+  var n = (nombre||'').toLowerCase();
+  if (n.includes('supervisor pro') || n.includes('sup_pro_analista')) return ['supervisor','calidad_tiem'];
+  if (n.includes('supervisor') || n.includes('sup_pro'))              return ['supervisor'];
+  if (n.includes('jefe de control') || n.includes('jefe_calidad') || n.includes('calidad_lin')) return ['calidad_lin'];
+  if (n.includes('analista') || n.includes('analista_calidad') || n.includes('cal_tiem'))       return ['calidad_tiem'];
+  return [];
+}
+
+// Cargar canales desde FT_UsuariosMovil (una vez por sesión, se invalida al guardar usuarios)
+async function ntfyCargarCanales() {
+  if (_ntfyCanalesLoaded) return;
+  try {
+    var siteId = await getSiteId();
+    var [usrRes, pstRes] = await Promise.all([
+      graphGet('sites/'+siteId+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'),
+      graphGet('sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
+    ]);
+    var usuarios = (usrRes.value||[]).map(function(i){ return i.fields; });
+    var puestos  = (pstRes.value||[]).map(function(i){ return i.fields; });
+
+    // PuestoID → roles[]
+    var puestoRolMap = {};
+    puestos.forEach(function(p){
+      if (p.PuestoID) puestoRolMap[p.PuestoID] = _ntfyPuestoARoles(p.Nombre||p.Title||p.PuestoID);
+    });
+
+    // Build role → [canales]
+    _ntfyCanalesPorRol = {};
+    usuarios.forEach(function(u){
+      if (!u.Canal_Ntfy || u.Activo_App === false) return;
+      var roles = puestoRolMap[u.PuestoMovilID] || [];
+      roles.forEach(function(rol){
+        if (!_ntfyCanalesPorRol[rol]) _ntfyCanalesPorRol[rol] = [];
+        if (_ntfyCanalesPorRol[rol].indexOf(u.Canal_Ntfy) < 0)
+          _ntfyCanalesPorRol[rol].push(u.Canal_Ntfy);
+      });
+    });
+
+    _ntfyCanalesLoaded = true;
+    console.log('[ntfy] Canales por rol:', JSON.stringify(_ntfyCanalesPorRol));
+  } catch(e) {
+    console.warn('[ntfy] Error cargando canales:', e.message);
+  }
+}
+
+// Enviar a un canal ntfy
 async function ntfySend(canal, titulo, cuerpo, prioridad) {
   if (!canal) return;
   try {
     await fetch('https://ntfy.sh/' + canal, {
       method: 'POST',
-      headers: { 'Title': titulo, 'Priority': prioridad || 'default', 'Tags': 'factory,bell' },
+      headers: { 'Title': titulo, 'Priority': prioridad||'default', 'Tags': 'factory,bell' },
       body: cuerpo
     });
-    console.log('[ntfy] Enviado a:', canal, '—', titulo);
+    console.log('[ntfy] ✓', canal, '—', titulo);
   } catch(e) { console.warn('[ntfy] Error:', canal, e.message); }
 }
 
+// Enviar a todos los usuarios de los roles indicados
+async function ntfySendARoles(roles, titulo, cuerpo, prioridad) {
+  await ntfyCargarCanales();
+  var enviados = {};
+  roles.forEach(function(rol){
+    (_ntfyCanalesPorRol[rol]||[]).forEach(function(canal){
+      if (!enviados[canal]) {
+        enviados[canal] = true;
+        ntfySend(canal, titulo, cuerpo, prioridad).catch(function(){});
+      }
+    });
+  });
+}
+
+// Notificar por evento del coordinador
 async function ntfyNotificarEvento(evento, data) {
   var m = _ntfyMensajes[evento];
-  if (!m || !window._ntfyCanales) return;
-  var canales  = window._ntfyCanales;
-  var destinos = [];
-
+  if (!m) return;
+  var titulo = m.titulo, cuerpo = m.cuerpo, prioridad = m.prioridad, roles = m.roles || _NTFY_ROLES_COORD;
   if (evento === 'ops_assigned' && data && data.of_sap) {
-    // Solo técnicos de esa OF
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === data.of_sap; });
-    if (aof) {
-      var tecSet = {};
-      (aof.ops||[]).forEach(function(op){
-        if (op.tecnico) tecSet[op.tecnico] = true;
-        (op.ayudantes||[]).forEach(function(a){ if(a) tecSet[a] = true; });
-      });
-      Object.keys(tecSet).forEach(function(tec){ if (canales[tec]) destinos.push(canales[tec]); });
-      m = { titulo: '👷 Operaciones asignadas — OF ' + data.of_sap,
-            cuerpo: 'Se te asignaron operaciones en: ' + ((aof.descripcion||'').substring(0,60)||data.of_sap),
-            prioridad: 'high' };
-    }
-  } else {
-    // Todos los técnicos con canal configurado
-    Object.keys(canales).forEach(function(tec){ destinos.push(canales[tec]); });
+    titulo = '👷 Operaciones asignadas — OF ' + data.of_sap;
+    cuerpo = 'Se programaron operaciones en: ' + ((aof&&aof.descripcion)||data.of_sap);
   }
-
-  destinos.forEach(function(c){ ntfySend(c, m.titulo, m.cuerpo, m.prioridad).catch(function(){}); });
+  await ntfySendARoles(roles, titulo, cuerpo, prioridad);
 }
 
-
-// ══════════════════════════════════════════════════════════════════
-// ── CONFIGURACIÓN APP MÓVIL — Pantallas, Puestos y Usuarios ────────
-// Listas SP: FT_PantallasMovil, FT_PuestosMovil, FT_UsuariosMovil
-// Completamente separadas de las listas del portal web.
-// ══════════════════════════════════════════════════════════════════
-
-// ── Caché local ───────────────────────────────────────────────────
-var _cfgMovil = {
-  pantallas: [], puestos: [], usuarios: [],
-  subTab: 'pantallas-movil'
-};
-
-// ── Tab load handlers ─────────────────────────────────────────────
-async function cfgLoadUsuariosMovil() {
-  var tbody = document.getElementById('cfg-movil-usr-tbody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">⏳ Cargando…</td></tr>';
-  try {
-    var sid = await getSiteId();
-    var [usrRes, pstRes] = await Promise.all([
-      graphGet('sites/'+sid+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'),
-      graphGet('sites/'+sid+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
-    ]);
-    _cfgMovil.usuarios = (usrRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
-    _cfgMovil.puestos  = (pstRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
-    // Populate puesto filter
-    var sel = document.getElementById('cfg-movil-usr-filter-puesto');
-    if (sel) {
-      sel.innerHTML = '<option value="">Todos los puestos</option>' +
-        _cfgMovil.puestos.map(function(p){ return '<option value="'+p.PuestoID+'">'+p.Nombre+'</option>'; }).join('');
-    }
-    cfgRenderUsuariosMovil(_cfgMovil.usuarios);
-  } catch(e) {
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:#ef4444;">'+
-      'Error: '+e.message+'<br><small>Las listas FT_UsuariosMovil / FT_PuestosMovil deben crearse primero en SharePoint.</small></td></tr>';
-  }
-}
-
-function cfgFilterUsuariosMovil() {
-  var q    = (document.getElementById('cfg-movil-usr-search')||{}).value||'';
-  var pst  = (document.getElementById('cfg-movil-usr-filter-puesto')||{}).value||'';
-  var act  = (document.getElementById('cfg-movil-usr-filter-activo')||{}).value||'';
-  var list = _cfgMovil.usuarios.filter(function(u) {
-    if (q   && !(u.Nombre+u.Email+'').toLowerCase().includes(q.toLowerCase())) return false;
-    if (pst && u.PuestoMovilID !== pst) return false;
-    if (act === '1' && u.Activo === false) return false;
-    if (act === '0' && u.Activo !== false) return false;
-    return true;
-  });
-  cfgRenderUsuariosMovil(list);
-}
-
-function cfgRenderUsuariosMovil(list) {
-  var tbody = document.getElementById('cfg-movil-usr-tbody');
-  if (!tbody) return;
-  if (!list.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-mid);">Sin usuarios registrados.</td></tr>';
-    return;
-  }
-  var rolLabels = { supervisor:'Supervisor de Línea', calidad_lin:'Inspector Calidad', calidad_tiem:'Analista Tiempos' };
-  tbody.innerHTML = list.map(function(u) {
-    var puestNom = (_cfgMovil.puestos.find(function(p){ return p.PuestoID===u.PuestoMovilID; })||{}).Nombre || u.PuestoMovilID || '—';
-    var rolLabel = rolLabels[u.RolApp] || u.RolApp || '—';
-    var activo   = u.Activo_App !== false;
-    return '<tr style="border-bottom:1px solid var(--border-color);">' +
-      '<td style="padding:10px 14px;font-weight:600;">'+(u.Nombre||u.Title||'')+'</td>' +
-      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(u.Email||'')+'</td>' +
-      '<td style="padding:10px 14px;font-size:.78rem;">'+(puestNom)+'</td>' +
-
-      '<td style="padding:10px 14px;text-align:center;font-size:.75rem;">'+(u.Canal_Ntfy?'<span style="color:#22c55e;">ntfy.sh/'+u.Canal_Ntfy+'</span>':'<span style="color:var(--text-mid);">—</span>')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;"><span style="background:rgba('+(activo?'34,197,94':'239,68,68')+',.1);color:'+(activo?'#22c55e':'#ef4444')+';border-radius:5px;padding:2px 8px;font-size:.72rem;">'+(activo?'Activo':'Inactivo')+'</span></td>' +
-      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenUsuarioMovilModal(\''+u._id+'\')">✏ Editar</button></td>' +
-      '</tr>';
-  }).join('');
-}
-
-async function cfgLoadAccesosMovil() {
-  cfgShowSubTabMovil(_cfgMovil.subTab || 'pantallas-movil');
-  var sid = await getSiteId().catch(function(){return null;});
-  if (!sid) return;
-  try {
-    var [panRes, pstRes] = await Promise.all([
-      graphGet('sites/'+sid+'/lists/FT_PantallasMovil/items?$expand=fields&$top=100'),
-      graphGet('sites/'+sid+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
-    ]);
-    _cfgMovil.pantallas = (panRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
-    _cfgMovil.puestos   = (pstRes.value||[]).map(function(i){ return Object.assign({_id:i.id},i.fields); });
-    cfgRenderPantallasMovil();
-    cfgRenderPuestosMovil();
-  } catch(e) {
-    var tb = document.getElementById('cfg-pan-movil-tbody');
-    if (tb) tb.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#ef4444;">'+
-      'Error: '+e.message+'<br><small>Crear las listas FT_PantallasMovil y FT_PuestosMovil en SharePoint primero.</small></td></tr>';
-  }
-}
-
-function cfgShowSubTabMovil(sub) {
-  _cfgMovil.subTab = sub;
-  ['pantallas-movil','puestos-movil'].forEach(function(s){
-    var el  = document.getElementById('cfg-view-'+s);
-    var btn = document.getElementById('cfg-stab-'+s);
-    if (el)  el.style.display = s===sub ? 'block' : 'none';
-    if (btn) { btn.classList.toggle('cfg-subtab-active', s===sub); }
-  });
-}
-
-function cfgRenderPantallasMovil() {
-  var tbody = document.getElementById('cfg-pan-movil-tbody');
-  if (!tbody) return;
-  if (!_cfgMovil.pantallas.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Sin pantallas registradas.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = _cfgMovil.pantallas.map(function(p) {
-    return '<tr style="border-bottom:1px solid var(--border-color);">' +
-      '<td style="padding:10px 14px;font-weight:600;">'+(p.Nombre||p.Title||'')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;font-size:1.4rem;">'+(p.Icono_App||p.Icono||'📱')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;font-family:monospace;font-size:.78rem;background:rgba(255,255,255,.03);">'+(p.PantallaID||'')+'</td>' +
-      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(p.Descripcion||'')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenPantallaMovilModal(\''+p._id+'\')">✏ Editar</button></td>' +
-      '</tr>';
-  }).join('');
-}
-
-function cfgRenderPuestosMovil() {
-  var tbody = document.getElementById('cfg-pst-movil-tbody');
-  if (!tbody) return;
-  if (!_cfgMovil.puestos.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-mid);">Sin puestos registrados.</td></tr>';
-    return;
-  }
-  var rolLabels = { supervisor:'Supervisor', calidad_lin:'Inspector Calidad', calidad_tiem:'Analista Tiempos' };
-  tbody.innerHTML = _cfgMovil.puestos.map(function(p) {
-    var pans = [];
-    try { pans = JSON.parse(p.Pantallas||'[]'); } catch(e){}
-    var panNames = pans.map(function(pid){
-      var pan = _cfgMovil.pantallas.find(function(x){ return x.PantallaID===pid; });
-      return pan ? pan.Nombre : pid;
-    }).join(', ');
-    return '<tr style="border-bottom:1px solid var(--border-color);">' +
-      '<td style="padding:10px 14px;font-weight:600;">'+(p.Nombre||p.Title||'')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;font-family:monospace;font-size:.78rem;">'+(p.PuestoID||'')+'</td>' +
-
-      '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(panNames||'Sin pantallas')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenPuestoMovilModal(\''+p._id+'\')">✏ Editar</button></td>' +
-      '</tr>';
-  }).join('');
-}
-
-// ── Modals for create/edit ────────────────────────────────────────
-function cfgOpenPantallaMovilModal(spId) {
-  var p = spId ? _cfgMovil.pantallas.find(function(x){return x._id===spId;}) : null;
-  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre</label><input class="form-input" id="cfgpm-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Icono (emoji)</label><input class="form-input" id="cfgpm-icono" value="'+(p?p.Icono_App||p.Icono||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PantallaID <span style="font-size:.65rem;">(sin espacios)</span></label><input class="form-input" id="cfgpm-pid" value="'+(p?p.PantallaID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Descripción</label><input class="form-input" id="cfgpm-desc" value="'+(p?p.Descripcion||'':'')+'"></div>' +
-    '</div>';
-  showCfgMovilModal('🖥️ '+(spId?'Editar':'Nueva')+' Pantalla Móvil', html, async function(){
-    var fields = {
-      Title:      document.getElementById('cfgpm-nombre').value.trim(),
-      Nombre:     document.getElementById('cfgpm-nombre').value.trim(),
-      Icono_App:  document.getElementById('cfgpm-icono').value.trim(),
-      PantallaID: document.getElementById('cfgpm-pid').value.trim(),
-      Descripcion:document.getElementById('cfgpm-desc').value.trim(),
-    };
-    if (!fields.Nombre || !fields.PantallaID) { alert('Nombre y PantallaID son requeridos.'); return; }
-    var sid = await getSiteId();
-    if (spId) await graphPatch('sites/'+sid+'/lists/FT_PantallasMovil/items/'+spId+'/fields', fields);
-    else      await graphPost('sites/'+sid+'/lists/FT_PantallasMovil/items', {fields:fields});
-    closeCfgMovilModal();
-    cfgLoadAccesosMovil();
-  });
-}
-
-function cfgOpenPuestoMovilModal(spId) {
-  var p = spId ? _cfgMovil.puestos.find(function(x){return x._id===spId;}) : null;
-  var curPans = [];
-  try { curPans = JSON.parse(p&&p.Pantallas||'[]'); } catch(e){}
-  var panChecks = _cfgMovil.pantallas.map(function(pan){
-    var chk = curPans.indexOf(pan.PantallaID)>=0?' checked':'';
-    return '<label style="display:flex;align-items:center;gap:7px;font-size:.8rem;cursor:pointer;">' +
-      '<input type="checkbox" value="'+pan.PantallaID+'" class="cfgpm-pan-check"'+chk+'> ' +
-      (pan.Icono_App||pan.Icono||'')+ ' '+pan.Nombre+'</label>';
-  }).join('');
-  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre del Puesto</label>' +
-    '<input class="form-input" id="cfgpm-pst-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PuestoID <span style="font-size:.65rem;">(sin espacios)</span></label>' +
-    '<input class="form-input" id="cfgpm-pst-pid" value="'+(p?p.PuestoID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:8px;">Pantallas asignadas</label>' +
-    '<div style="display:flex;flex-direction:column;gap:6px;">'+(panChecks||'<span style="font-size:.78rem;color:var(--dim);">Sin pantallas disponibles — créalas primero.</span>')+'</div>' +
-    '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:6px;font-size:.7rem;color:var(--dim);">' +
-    '💡 El rol en la app se asigna automáticamente según el nombre del puesto.' +
-    '</div></div>' +
-    '</div>';
-  showCfgMovilModal('🏷️ '+(spId?'Editar':'Nuevo')+' Puesto Móvil', html, async function(){
-    var nombre = document.getElementById('cfgpm-pst-nombre').value.trim();
-    var pid    = document.getElementById('cfgpm-pst-pid').value.trim();
-    var pans   = Array.from(document.querySelectorAll('.cfgpm-pan-check:checked')).map(function(c){return c.value;});
-    if (!nombre||!pid) { alert('Nombre y PuestoID son requeridos.'); return; }
-    // RolApp se determina automáticamente desde el nombre del puesto
-    var fields = { Title: nombre, Nombre: nombre, PuestoID: pid, Pantallas: JSON.stringify(pans) };
-    var sid = await getSiteId();
-    if (spId) await graphPatch('sites/'+sid+'/lists/FT_PuestosMovil/items/'+spId+'/fields', fields);
-    else      await graphPost('sites/'+sid+'/lists/FT_PuestosMovil/items', {fields:fields});
-    closeCfgMovilModal();
-    cfgLoadAccesosMovil();
-  });
-}
-
-function cfgOpenUsuarioMovilModal(spId) {
-  var u = spId ? _cfgMovil.usuarios.find(function(x){return x._id===spId;}) : null;
-  var pstOpts = _cfgMovil.puestos.map(function(p){
-    var sel = u&&u.PuestoMovilID===p.PuestoID?' selected':'';
-    return '<option value="'+p.PuestoID+'"'+sel+'>'+p.Nombre+'</option>';
-  }).join('');
-  var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre completo</label><input class="form-input" id="cfgum-nombre" value="'+(u?u.Nombre||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Email @maderoequipos.com</label><input class="form-input" id="cfgum-email" type="email" value="'+(u?u.Email||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Puesto Móvil</label><select class="form-input" id="cfgum-puesto"><option value="">Sin puesto</option>'+pstOpts+'</select></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Canal ntfy 🔔<span style="font-size:.65rem;color:var(--dim);font-weight:400;"> — notificaciones con pantalla bloqueada</span></label>' +
-    '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:.75rem;color:var(--dim);">ntfy.sh/</span><input class="form-input" id="cfgum-ntfy" value="'+(u?u.Canal_Ntfy||'':'')+'" placeholder="madero-juan-garcia" oninput="this.value=this.value.replace(/[^a-z0-9\\-_]/g,\'\').toLowerCase()" style="flex:1;"></div></div>' +
-    '<label style="display:flex;align-items:center;gap:8px;font-size:.8rem;cursor:pointer;"><input type="checkbox" id="cfgum-activo" '+((!u||u.Activo_App!==false)?'checked':'')+'>Activo</label>' +
-    '</div>';
-  showCfgMovilModal('👤 '+(spId?'Editar':'Nuevo')+' Usuario App Móvil', html, async function(){
-    var nombre = document.getElementById('cfgum-nombre').value.trim();
-    var email  = document.getElementById('cfgum-email').value.trim().toLowerCase();
-    var puesto = document.getElementById('cfgum-puesto').value;
-    var ntfy   = document.getElementById('cfgum-ntfy').value.trim().toLowerCase();
-    var activo = document.getElementById('cfgum-activo').checked;
-    if (!nombre||!email) { alert('Nombre y email son requeridos.'); return; }
-    // Get RolApp from selected puesto
-    var puestoObj = _cfgMovil.puestos.find(function(p){return p.PuestoID===puesto;});
-    var rolApp = puestoObj ? puestoObj.RolApp||'' : '';
-    var fields = { Title: nombre, Nombre: nombre, Email: email, PuestoMovilID: puesto, Canal_Ntfy: ntfy, Activo_App: activo };
-    var sid = await getSiteId();
-    if (spId) await graphPatch('sites/'+sid+'/lists/FT_UsuariosMovil/items/'+spId+'/fields', fields);
-    else      await graphPost('sites/'+sid+'/lists/FT_UsuariosMovil/items', {fields:fields});
-    closeCfgMovilModal();
-    cfgLoadUsuariosMovil();
-  });
-}
-
-// ── Shared modal helper ───────────────────────────────────────────
-var _cfgMovilModalCb = null;
-function showCfgMovilModal(titulo, html, onSave) {
-  _cfgMovilModalCb = onSave;
-  var m = document.getElementById('cfg-movil-modal');
-  if (!m) {
-    m = document.createElement('div');
-    m.id = 'cfg-movil-modal';
-    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);';
-    m.innerHTML = '<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);width:min(480px,92vw);max-height:88vh;overflow-y:auto;padding:20px;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<h3 id="cfgmm-title" style="font-size:.95rem;font-weight:700;"></h3>' +
-      '<button onclick="closeCfgMovilModal()" style="background:none;border:none;color:var(--dim);font-size:1.2rem;cursor:pointer;">✕</button></div>' +
-      '<div id="cfgmm-body"></div>' +
-      '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">' +
-      '<button class="btn btn-ghost" onclick="closeCfgMovilModal()">Cancelar</button>' +
-      '<button class="btn btn-primary" onclick="cfgMovilModalSave()">💾 Guardar</button></div></div>';
-    m.addEventListener('click', function(e){ if(e.target===m) closeCfgMovilModal(); });
-    document.body.appendChild(m);
-  }
-  document.getElementById('cfgmm-title').textContent = titulo;
-  document.getElementById('cfgmm-body').innerHTML = html;
-  m.style.display = 'flex';
-}
-function closeCfgMovilModal() {
-  var m = document.getElementById('cfg-movil-modal');
-  if (m) m.style.display = 'none';
-  _cfgMovilModalCb = null;
-}
-async function cfgMovilModalSave() {
-  if (!_cfgMovilModalCb) return;
-  var btn = document.querySelector('#cfg-movil-modal .btn-primary');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
-  try {
-    await _cfgMovilModalCb();
-  } catch(e) {
-    alert('Error: ' + e.message);
-  } finally {
-    // Siempre resetear el botón al terminar (éxito o error)
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
-  }
-}
 
 // -- Auto-refresh running timers every 60s -----------------
 setInterval(function(){

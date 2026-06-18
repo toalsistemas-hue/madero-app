@@ -2012,6 +2012,82 @@ function appLaunchPantalla(pantallaID) {
   alert('Módulo "' + pantallaID + '" próximamente.');
 }
 
+
+// ── Ntfy desde la app móvil ───────────────────────────────────────
+// Mensajes de eventos de la app hacia otros usuarios
+var _APP_NTFY_MENSAJES = {
+  val_solicitada: { titulo: '🔍 Validación de Calidad solicitada', prioridad: 'high' },
+  cal_liberada:   { titulo: '✅ Calidad: Operación liberada',       prioridad: 'high' },
+  cal_rechazada:  { titulo: '⚠️ Calidad: Operación rechazada',      prioridad: 'high' },
+};
+
+// Roles que deben recibir cada evento (desde la app)
+var _APP_NTFY_DEST_ROLES = {
+  val_solicitada: ['calidad_lin'],            // → Jefe de Control de Calidad
+  cal_liberada:   ['supervisor'],             // → Supervisor de Producción
+  cal_rechazada:  ['supervisor'],             // → Supervisor de Producción
+};
+
+async function appNtfyNotificar(evento, data) {
+  var m = _APP_NTFY_MENSAJES[evento];
+  if (!m) return;
+  var destRoles = _APP_NTFY_DEST_ROLES[evento] || [];
+  if (!destRoles.length) return;
+
+  // Load destination canals from FT_UsuariosMovil via SP
+  try {
+    var siteId = await appGetSiteId();
+    var [usrRes, pstRes] = await Promise.all([
+      appGraphGet('sites/'+siteId+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'),
+      appGraphGet('sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
+    ]);
+    var usuarios = (usrRes.value||[]).map(function(i){ return i.fields; });
+    var puestos  = (pstRes.value||[]).map(function(i){ return i.fields; });
+
+    // PuestoID → roles (same logic as portal)
+    var puestoRolMap = {};
+    puestos.forEach(function(p){
+      if (!p.PuestoID) return;
+      var n = (p.Nombre||p.Title||'').toLowerCase();
+      var roles = [];
+      if (n.includes('supervisor pro')) roles = ['supervisor','calidad_tiem'];
+      else if (n.includes('supervisor')) roles = ['supervisor'];
+      else if (n.includes('jefe de control') || n.includes('jefe_calidad')) roles = ['calidad_lin'];
+      else if (n.includes('analista')) roles = ['calidad_tiem'];
+      puestoRolMap[p.PuestoID] = roles;
+    });
+
+    // Find canals for destination roles
+    var enviados = {};
+    usuarios.forEach(function(u){
+      if (!u.Canal_Ntfy || u.Activo_App === false) return;
+      var roles = puestoRolMap[u.PuestoMovilID] || [];
+      var tieneDestRol = roles.some(function(r){ return destRoles.indexOf(r) >= 0; });
+      if (!tieneDestRol || enviados[u.Canal_Ntfy]) return;
+      enviados[u.Canal_Ntfy] = true;
+
+      // Build message body
+      var cuerpo = m.titulo;
+      if (data) {
+        if (data.of_sap)    cuerpo += '\nOF: ' + data.of_sap;
+        if (data.op_nombre) cuerpo += '\nOp: ' + data.op_nombre;
+        if (data.estacion)  cuerpo += '\nEstación: ' + data.estacion;
+        if (data.nota)      cuerpo += '\nNota: ' + data.nota;
+        if (data.resultado) cuerpo += '\nResultado: ' + (data.resultado === 'liberado' ? '✅ Liberado' : '❌ Rechazado');
+      }
+
+      fetch('https://ntfy.sh/' + u.Canal_Ntfy, {
+        method: 'POST',
+        headers: { 'Title': m.titulo, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell' },
+        body: cuerpo
+      }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
+        .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
+    });
+  } catch(e) {
+    console.warn('[ntfy app] Error cargando canales:', e.message);
+  }
+}
+
 // ── Helpers globales ─────────────────────────────────
 var STATIONS=["Sierra Cinta","Laser SS","Laser AC","Laser T160","Corte Laser Tubo","Doblez Planos","Centro de Maquinado","Fresadora CNC","Torno CNC","Torno Convencional","Torno LEO","MIG-A","MIG-B","MIG-C","MIG-D","TIG-A","TIG-B","TIG-C","TIG-D","TIG-E","Equipo Electrónico","Grabado","Rolado","Ensamble","PINTURA","Lavado","Ayudantes"];
 // Station status — persists across session
@@ -3540,6 +3616,13 @@ function appConfirmValCal(){
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
   appPlayNotifSound('calidad');
+  // Ntfy → Jefe de Control de Calidad
+  appNtfyNotificar('val_solicitada', {
+    of_sap: ctx.of_sap,
+    op_nombre: op.nombre,
+    estacion: op.estacion,
+    nota: note
+  }).catch(function(){});
   closeAppModal("app-modal-valcal");renderApp();
   console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' needsCal='+op.needsCal+' note='+note);
   if(typeof appSaveOpToSP==='function'){
@@ -3638,6 +3721,14 @@ function appCalRespond(result){
     }
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
+  // Ntfy → Supervisor de Producción
+  var _ntfyEvt = result === 'liberado' ? 'cal_liberada' : 'cal_rechazada';
+  appNtfyNotificar(_ntfyEvt, {
+    of_sap: ctx.of_sap,
+    op_nombre: op.nombre,
+    estacion: op.estacion,
+    resultado: result
+  }).catch(function(){});
   closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
 }
 function appOpenFinish(sap,opId){
@@ -9607,6 +9698,13 @@ function appConfirmValCal(){
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
   appPlayNotifSound('calidad');
+  // Ntfy → Jefe de Control de Calidad
+  appNtfyNotificar('val_solicitada', {
+    of_sap: ctx.of_sap,
+    op_nombre: op.nombre,
+    estacion: op.estacion,
+    nota: note
+  }).catch(function(){});
   closeAppModal("app-modal-valcal");renderApp();
   console.log('[ValCal] op._spId='+op._spId+' status='+op.status+' note='+note);
   appSaveOpToSP(ctx.of_sap, ctx.op_id)
