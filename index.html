@@ -2753,6 +2753,9 @@ function showPage(name) {
   if (page) page.classList.add('active');
   const navItem = document.getElementById('nav-'+name);
   if (navItem) navItem.classList.add('active');
+  // Close any open modals when navigating
+  var modal = document.getElementById('cfg-movil-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 function navigateToPantalla(pantallaID) {

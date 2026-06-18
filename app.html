@@ -651,7 +651,7 @@ tr:last-child td{border-bottom:none;}
           <input id="app-ntfy-canal" type="text" placeholder="madero-juan-garcia"
             style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);
                    border-radius:7px;padding:8px 10px;color:var(--atext);font-size:.78rem;"
-            oninput="this.value=this.value.replace(/[^a-z0-9\-_]/g,'').toLowerCase()">
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         </div>
       </div>
 
@@ -668,7 +668,7 @@ tr:last-child td{border-bottom:none;}
 
       <div class="app-ma">
         <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-ntfy')">Cancelar</button>
-        <button class="app-mb app-mb-g" onclick="appNtfyGuardar()">💾 Guardar y probar</button>
+        <button class="app-mb app-mb-g" onclick="appNtfyGuardar()">🔔 Probar canal ntfy</button>
       </div>
     </div>
   </div>
