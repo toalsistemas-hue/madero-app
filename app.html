@@ -6412,10 +6412,10 @@ async function appInitMsal() {
         clientId: APP_CONFIG.clientId,
         authority: 'https://login.microsoftonline.com/' + APP_CONFIG.tenantId,
         redirectUri: redirectUri,
-        navigateToLoginRequestUrl: false,
+        navigateToLoginRequestUrl: true,
         knownAuthorities: ['login.microsoftonline.com'],
       },
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
       system: { loadFrameTimeout: 10000, windowHashTimeout: 15000, iframeHashTimeout: 10000 }
     };
     appMsalInstance = new msal.PublicClientApplication(msalConfig);
@@ -6430,13 +6430,39 @@ async function appInitMsal() {
     var redirect = null;
     try {
       redirect = await appMsalInstance.handleRedirectPromise();
-    } catch(e) { console.warn('handleRedirectPromise:', e.message); }
+      if (redirect) {
+        console.log('[MSAL] handleRedirectPromise OK — account:', redirect.account ? redirect.account.username : 'null');
+      }
+    } catch(hrpErr) {
+      console.warn('[MSAL] handleRedirectPromise error:', hrpErr.message || hrpErr.errorCode || hrpErr);
+      // If it's a hash/state error, clear the hash and show login cleanly
+      if (window.location.hash) {
+        try { window.history.replaceState(null, '', window.location.pathname); } catch(e2) {}
+      }
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-btn').disabled = false;
+      document.getElementById('app-login-status').textContent = 'Error de autenticación — intenta de nuevo.';
+      return;
+    }
 
     if (redirect && redirect.accessToken) {
       // Successfully returned from redirect login
       appToken = redirect.accessToken;
       appCurrentUser = { email: redirect.account.username.toLowerCase(), nombre: redirect.account.name || redirect.account.username };
       await appLoginSuccess();
+      return;
+    }
+
+    // handleRedirectPromise returned null but we have a hash — MSAL discarded it
+    // This happens when redirectUri doesn't match exactly. Try to recover.
+    if (!redirect && window.location.hash && window.location.hash.indexOf('code=') >= 0) {
+      console.warn('[MSAL] Got auth code in URL but handleRedirectPromise returned null — redirectUri mismatch?');
+      console.warn('[MSAL] Current URL:', window.location.href);
+      console.warn('[MSAL] Configured redirectUri:', appGetRedirectUri());
+      document.getElementById('app-login-status').textContent = 'Error de configuración — contacta al administrador.';
+      document.getElementById('app-login-screen').style.display = 'flex';
+      document.getElementById('app-login-btn').disabled = false;
+      try { window.history.replaceState(null, '', window.location.pathname); } catch(e2) {}
       return;
     }
 
@@ -6537,11 +6563,14 @@ async function appDoLogin() {
     var forceLogin = localStorage.getItem('msal_force_login') === '1';
     if (forceLogin) localStorage.removeItem('msal_force_login');
 
-    await appMsalInstance.loginRedirect({
+    var loginRequest = {
       scopes:      APP_CONFIG.scopes,
       redirectUri: appGetRedirectUri(),
-      prompt:      forceLogin ? 'login' : undefined,
-    });
+    };
+    if (forceLogin) loginRequest.prompt = 'login';
+
+    console.log('[MSAL] loginRedirect → redirectUri:', loginRequest.redirectUri);
+    await appMsalInstance.loginRedirect(loginRequest);
     // Page will redirect — no code runs after this
   } catch(e) {
     console.error('loginRedirect error:', e.message || e.errorCode);
