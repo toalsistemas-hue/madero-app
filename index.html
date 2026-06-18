@@ -11190,10 +11190,17 @@ async function ntfyCargarCanales() {
 // Enviar a un canal ntfy
 async function ntfySend(canal, titulo, cuerpo, prioridad) {
   if (!canal) return;
+  // Strip accidental prefix
+  canal = canal.replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');
+  if (!canal) return;
   try {
     await fetch('https://ntfy.sh/' + canal, {
       method: 'POST',
-      headers: { 'Title': titulo, 'Priority': prioridad||'default', 'Tags': 'factory,bell' },
+      headers: {
+        'Title':    encodeURIComponent(titulo),
+        'Priority': prioridad || 'default',
+        'Tags':     'factory,bell'
+      },
       body: cuerpo
     });
     console.log('[ntfy] ✓', canal, '—', titulo);

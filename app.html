@@ -1826,6 +1826,13 @@ function appNtfyOpenConfig() {
 
 async function appNtfyGuardar() {
   var canal  = (document.getElementById('app-ntfy-canal').value || '').trim().toLowerCase();
+  // Strip common prefixes the user might accidentally type
+  canal = canal.replace(/^https?:\/\/ntfy\.sh\//i, '');
+  canal = canal.replace(/^ntfy\.sh\//i, '');
+  canal = canal.replace(/^ntfysh/i, '');
+  canal = canal.replace(/^ntfy\//i, '');
+  // Only allow safe characters
+  canal = canal.replace(/[^a-z0-9\-_]/g, '');
   var status = document.getElementById('app-ntfy-status');
   if (!canal) {
     localStorage.removeItem(_APP_NTFY_KEY);
@@ -1838,8 +1845,12 @@ async function appNtfyGuardar() {
     // Enviar notificación de prueba al canal
     var resp = await fetch('https://ntfy.sh/' + canal, {
       method: 'POST',
-      headers: { 'Title': '✅ FabTracker conectado', 'Priority': 'high', 'Tags': 'white_check_mark,bell' },
-      body:   'Tu canal ntfy está configurado correctamente. Recibirás alertas de producción aquí.'
+      headers: {
+        'Title':    encodeURIComponent('FabTracker conectado'),
+        'Priority': 'high',
+        'Tags':     'white_check_mark,bell'
+      },
+      body:   'Tu canal ntfy esta configurado correctamente. Recibiras alertas de produccion aqui.'
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     localStorage.setItem(_APP_NTFY_KEY, canal);
@@ -2076,9 +2087,14 @@ async function appNtfyNotificar(evento, data) {
         if (data.resultado) cuerpo += '\nResultado: ' + (data.resultado === 'liberado' ? '✅ Liberado' : '❌ Rechazado');
       }
 
-      fetch('https://ntfy.sh/' + u.Canal_Ntfy, {
+      var _ntfyCanalClean = (u.Canal_Ntfy||'').replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');
+      fetch('https://ntfy.sh/' + _ntfyCanalClean, {
         method: 'POST',
-        headers: { 'Title': m.titulo, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell' },
+        headers: {
+          'Title':    encodeURIComponent(m.titulo),
+          'Priority': m.prioridad || 'high',
+          'Tags':     'factory,bell'
+        },
         body: cuerpo
       }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
         .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
