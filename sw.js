@@ -1,116 +1,152 @@
 // ═══════════════════════════════════════════════════════════════════
-// sw.js — Service Worker FabTracker · Madero Equipos de Ordeño v5
+// sw.js — Service Worker FabTracker · Madero Equipos de Ordeño v6
+// Estrategia: Cache-First para app.html — funciona sin internet
 // ═══════════════════════════════════════════════════════════════════
 
-const SW_VERSION = 'madero-fab-v5';
-const CACHE_NAME = SW_VERSION;
-
-// Archivos críticos para offline — offline.html es el más importante
-const OFFLINE_URL = './offline.html';
-const FILES_TO_CACHE = [
-  OFFLINE_URL,
+const SW_VERSION  = 'madero-fab-v6';
+const CACHE_NAME  = SW_VERSION;
+const APP_SHELL   = [
   './app.html',
-  './manifest.json'
+  './offline.html',
+  './manifest.json',
 ];
 
-// ── Instalación: cachear offline.html primero, resto best-effort ───
+// ── INSTALL: pre-cachear app shell completo ────────────────────────
 self.addEventListener('install', function(evt) {
-  console.log('[SW] Instalando:', SW_VERSION);
+  console.log('[SW v6] Instalando...');
   evt.waitUntil(
-    caches.open(CACHE_NAME).then(async function(cache) {
-      // offline.html es crítico — fallar aquí cancela la instalación
-      await cache.add(OFFLINE_URL);
-      // El resto best-effort (pueden fallar sin cancelar)
-      for (var i = 1; i < FILES_TO_CACHE.length; i++) {
-        try { await cache.add(FILES_TO_CACHE[i]); }
-        catch(e) { console.warn('[SW] No se pudo cachear:', FILES_TO_CACHE[i]); }
-      }
+    caches.open(CACHE_NAME).then(function(cache) {
+      // Cachear cada archivo individualmente para no fallar por uno
+      return Promise.all(
+        APP_SHELL.map(function(url) {
+          return cache.add(url).catch(function(e) {
+            console.warn('[SW] No se pudo cachear:', url, e.message);
+          });
+        })
+      );
+    }).then(function() {
+      console.log('[SW v6] App shell cacheada. skipWaiting...');
+      return self.skipWaiting();
     })
   );
-  self.skipWaiting();
 });
 
-// ── Activación: limpiar versiones anteriores ───────────────────────
+// ── ACTIVATE: limpiar caches anteriores ────────────────────────────
 self.addEventListener('activate', function(evt) {
-  console.log('[SW] Activando:', SW_VERSION);
+  console.log('[SW v6] Activando...');
   evt.waitUntil(
     caches.keys().then(function(keys) {
       return Promise.all(
         keys.filter(function(k) { return k !== CACHE_NAME; })
-            .map(function(k) { return caches.delete(k); })
+            .map(function(k) {
+              console.log('[SW] Eliminando caché viejo:', k);
+              return caches.delete(k);
+            })
       );
-    }).then(function() { return self.clients.claim(); })
+    }).then(function() {
+      return self.clients.claim();
+    })
   );
 });
 
-// ── Fetch: navigate → network first, fallback to offline.html ─────
+// ── FETCH: Cache-First para app.html y offline.html ────────────────
+// Para navegaciones (page load), sirve desde caché si existe.
+// Actualiza el caché en background cuando hay red.
 self.addEventListener('fetch', function(evt) {
   if (evt.request.method !== 'GET') return;
 
-  // Solo interceptar peticiones de navegación (apertura de página)
-  if (evt.request.mode === 'navigate') {
+  var url = new URL(evt.request.url);
+  var isNavigation = evt.request.mode === 'navigate';
+  var isAppFile = url.pathname.endsWith('/app.html') ||
+                  url.pathname.endsWith('/offline.html') ||
+                  url.pathname === '/' ||
+                  url.pathname.endsWith('/');
+
+  if (isNavigation || isAppFile) {
     evt.respondWith(
-      fetch(evt.request)
-        .then(function(resp) {
-          // Cachear respuesta fresca
+      caches.match(evt.request).then(function(cached) {
+        // Siempre intentar actualizar en background
+        var networkFetch = fetch(evt.request).then(function(resp) {
           if (resp && resp.status === 200) {
             var clone = resp.clone();
-            caches.open(CACHE_NAME).then(function(c) { c.put(evt.request, clone); });
+            caches.open(CACHE_NAME).then(function(cache) {
+              cache.put(evt.request, clone);
+            });
           }
           return resp;
-        })
-        .catch(function() {
-          // Sin internet → offline.html del caché
-          return caches.match(OFFLINE_URL).then(function(cached) {
-            if (cached) return cached;
-            // Fallback inline si offline.html tampoco está en caché
-            return new Response(
-              '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
-              '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-              '<title>Sin conexión</title>' +
-              '<style>body{background:#0d1117;color:#e6edf3;font-family:sans-serif;' +
-              'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-              'min-height:100vh;text-align:center;padding:32px 24px;}' +
-              '.icon{font-size:72px;margin-bottom:24px;opacity:.4;}' +
-              'h1{font-size:1.4rem;margin-bottom:10px;}' +
-              'p{color:#8b949e;font-size:.9rem;line-height:1.6;max-width:300px;margin:0 auto 28px;}' +
-              'button{background:#1565C0;color:#fff;border:none;border-radius:12px;' +
-              'padding:14px 32px;font-size:.95rem;font-weight:600;cursor:pointer;width:100%;max-width:280px;}' +
-              '</style></head><body>' +
-              '<div class="icon">📶</div>' +
-              '<h1>Sin acceso a internet</h1>' +
-              '<p>Verifica tu conexión a internet e intenta de nuevo para acceder a Automatizaciones Madero Equipos.</p>' +
-              '<button onclick="location.reload()">🔄 Reintentar</button>' +
-              '</body></html>',
+        }).catch(function() {
+          // Sin red — usar caché o offline.html
+          return null;
+        });
+
+        if (cached) {
+          // Tenemos caché → servir inmediatamente, actualizar en background
+          networkFetch.catch(function() {});
+          return cached;
+        }
+
+        // Sin caché → esperar red o mostrar offline
+        return networkFetch.then(function(resp) {
+          if (resp) return resp;
+          return caches.match('./offline.html').then(function(offlinePage) {
+            return offlinePage || new Response(
+              offlineFallback(),
               { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
             );
           });
-        })
+        });
+      })
     );
     return;
   }
 
-  // Peticiones de recursos: red primero, caché como fallback
+  // Recursos estáticos: network first, caché como fallback
   evt.respondWith(
-    fetch(evt.request).catch(function() {
+    fetch(evt.request).then(function(resp) {
+      if (resp && resp.status === 200) {
+        var clone = resp.clone();
+        caches.open(CACHE_NAME).then(function(cache) { cache.put(evt.request, clone); });
+      }
+      return resp;
+    }).catch(function() {
       return caches.match(evt.request);
     })
   );
 });
 
-// ── Mensajes ───────────────────────────────────────────────────────
+function offlineFallback() {
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<style>body{background:#0d1117;color:#e6edf3;font-family:sans-serif;' +
+    'display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+    'min-height:100vh;text-align:center;padding:32px 24px;}' +
+    '.ic{font-size:72px;margin-bottom:24px;opacity:.35;}' +
+    'h1{font-size:1.4rem;margin-bottom:10px;}' +
+    'p{color:#8b949e;font-size:.88rem;line-height:1.6;max-width:300px;margin:0 auto 28px;}' +
+    'button{background:#1565C0;color:#fff;border:none;border-radius:12px;' +
+    'padding:14px 32px;font-size:.95rem;font-weight:600;cursor:pointer;width:100%;max-width:280px;}' +
+    '</style></head><body>' +
+    '<div class="ic">📶</div>' +
+    '<h1>Sin acceso a internet</h1>' +
+    '<p>Verifica tu conexión e intenta de nuevo para acceder a Automatizaciones Madero Equipos.</p>' +
+    '<button onclick="location.reload()">🔄 Reintentar</button>' +
+    '</body></html>';
+}
+
+// ── MESSAGES ───────────────────────────────────────────────────────
 self.addEventListener('message', function(evt) {
   if (evt.data && evt.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
-// ── Push Notifications ─────────────────────────────────────────────
+// ── PUSH NOTIFICATIONS ─────────────────────────────────────────────
 self.addEventListener('push', function(evt) {
   var data = {};
   try { data = evt.data ? evt.data.json() : {}; } catch(e) {}
-  var tipo = data.tipo || 'coord';
+  var tipo   = data.tipo || 'coord';
   var iconos = { coord:'📅', calidad:'🔍', turno:'🤝', retrabajo:'🔧' };
   evt.waitUntil(
-    self.registration.showNotification((iconos[tipo]||'📡') + ' ' + (data.title||'FabTracker'), {
+    self.registration.showNotification(
+      (iconos[tipo]||'📡') + ' ' + (data.title||'FabTracker'), {
       body:    data.body || 'Nueva notificación de producción',
       icon:    './icon-192.png',
       tag:     'fabtracker-' + tipo,
