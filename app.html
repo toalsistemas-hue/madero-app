@@ -482,7 +482,7 @@ tr:last-child td{border-bottom:none;}
         <div id="launcher-user" style="font-size:.7rem;color:#8b949e;"></div>
       </div>
     </div>
-    <button onclick="appDoLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.1);
+    <button onclick="appGearLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.1);
             color:#8b949e;padding:5px 12px;border-radius:6px;font-size:.7rem;cursor:pointer;">Salir</button>
   </div>
 
@@ -563,6 +563,14 @@ tr:last-child td{border-bottom:none;}
               <span id="app-gear-ntfy-label">Configurar notificaciones</span>
             </button>
           </div>
+          <!-- Inicio — regresar al menú de módulos -->
+          <button onclick="appVolverAlLauncher();appToggleGearMenu()"
+            style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
+                   cursor:pointer;color:#e6edf3;font-size:.78rem;display:flex;align-items:center;gap:9px;
+                   border-bottom:1px solid rgba(255,255,255,.07);">
+            <span>🏠</span>
+            <span>Inicio</span>
+          </button>
           <!-- Cerrar sesión — siempre visible -->
           <button onclick="appGearLogout()"
             style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
@@ -1968,7 +1976,8 @@ function appLaunchPantalla(pantallaID) {
   if (launcher) launcher.style.display = 'none';
   if (pantallaID === 'FabTracker') {
     if (shell) shell.style.display = 'flex';
-    // La app ya está inicializada — solo mostrar
+    // Re-apply profile so role pills reflect the actual user role
+    if (typeof applyAppUserProfile === 'function') applyAppUserProfile();
     if (typeof renderApp === 'function') renderApp();
     return;
   }
@@ -6282,6 +6291,17 @@ var appCurrentUser = null;
 var APP_IS_SECURE = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 // Clear MSAL session cache — use when login fails with "No podemos iniciar sesión"
+// ── Regresar al launcher desde FabTracker ────────────────────────
+function appVolverAlLauncher() {
+  var shell    = document.getElementById('app-shell-mobile');
+  var launcher = document.getElementById('app-launcher');
+  if (shell)    shell.style.display    = 'none';
+  if (launcher) {
+    launcher.style.display = 'flex';
+    appRenderLauncher(); // refresh pantallas in case they changed
+  }
+}
+
 // ── Menú engrane (configuración en header) ───────────────────────
 function appToggleGearMenu() {
   var menu = document.getElementById('app-gear-menu');
@@ -7317,24 +7337,36 @@ var APP_USER_PROFILE = null; // { nombre, email, puestoID, puesto, role, esAdmin
 // Mapa de puesto → rol en la app
 // El rol se determina por el NOMBRE del puesto, no por un campo RolApp en SP.
 // Agregar aquí cualquier puesto nuevo — sin tocar otras partes del código.
+// Roles duales: algunos puestos tienen acceso a más de un rol
+// Se usa un array en lugar de string para soportar múltiples vistas
 var APP_PUESTO_ROL_MAP = [
+  // Puesto dual: Supervisor + Analista Calidad
+  { keywords: ['supervisor pro', 'sup pro', 'supervisor pro / analista', 'analista / supervisor', 'sup_pro_analista'], roles: ['supervisor', 'calidad_tiem'] },
   // Supervisor / Coordinador de línea de producción
-  { keywords: ['supervisor', 'coordinador de fabricac', 'coord_fab', 'jefe de producc', 'jefe producc'], rol: 'supervisor' },
+  { keywords: ['supervisor', 'coordinador de fabricac', 'coord_fab', 'jefe de producc', 'jefe producc'], roles: ['supervisor'] },
   // Control de calidad — inspección en línea
-  { keywords: ['jefe de control de calidad', 'jefe control calidad', 'inspector de calidad', 'inspector calidad', 'control de calidad', 'jefe_calidad'], rol: 'calidad_lin' },
+  { keywords: ['jefe de control de calidad', 'jefe control calidad', 'inspector de calidad', 'inspector calidad', 'control de calidad', 'jefe_calidad'], roles: ['calidad_lin'] },
   // Analista de tiempos / calidad
-  { keywords: ['analista de calidad', 'analista calidad', 'analista de tiempos', 'analista tiempos', 'analista_calidad', 'analista_tiem', 'cal_tiem'], rol: 'calidad_tiem' },
+  { keywords: ['analista de calidad', 'analista calidad', 'analista de tiempos', 'analista tiempos', 'analista_calidad', 'analista_tiem', 'cal_tiem'], roles: ['calidad_tiem'] },
 ];
 
+// Returns the primary role string (first in the roles array)
+// Use puestoToAppRoles() to get all roles for a puesto
 function puestoToAppRole(puestoIDorNombre) {
+  var roles = puestoToAppRoles(puestoIDorNombre);
+  return roles.length ? roles[0] : null;
+}
+
+// Returns array of all roles for a puesto (supports dual-role puestos)
+function puestoToAppRoles(puestoIDorNombre) {
   var p = (puestoIDorNombre||'').toLowerCase().trim();
   for (var i = 0; i < APP_PUESTO_ROL_MAP.length; i++) {
     var entry = APP_PUESTO_ROL_MAP[i];
     for (var j = 0; j < entry.keywords.length; j++) {
-      if (p.includes(entry.keywords[j])) return entry.rol;
+      if (p.includes(entry.keywords[j])) return entry.roles;
     }
   }
-  return null; // sin acceso a la app móvil
+  return []; // sin acceso a la app móvil
 }
 
 // Role display names and permissions
@@ -7374,9 +7406,11 @@ async function appLoadUserProfile() {
     });
     const pFields = puestoItem ? puestoItem.fields : {};
 
-    // 3. Determine base role from puesto NAME (not ID) — more readable and scalable
+    // 3. Determine base role(s) from puesto NAME (supports dual-role puestos)
     var puestoNombre = pFields.NombrePuesto || pFields.Title || uFields.PuestoID || '';
-    var baseRole = puestoToAppRole(puestoNombre) || puestoToAppRole(uFields.PuestoID||'');
+    var baseRoles = puestoToAppRoles(puestoNombre);
+    if (!baseRoles.length) baseRoles = puestoToAppRoles(uFields.PuestoID||'');
+    var baseRole = baseRoles.length ? baseRoles[0] : null;
 
     // 4. Check Excepciones for FabApp role override
     var excList = [];
@@ -7405,6 +7439,7 @@ async function appLoadUserProfile() {
       puestoID:   uFields.PuestoID || '',
       puesto:     pFields.NombrePuesto || pFields.Title || uFields.PuestoID || '',
       role:       baseRole,
+      roles:      baseRoles,   // array — soporta puestos con acceso dual
       esAdmin:    pFields.EsAdministrador === true || pFields.EsAdministrador === 'true',
       puestoMovilID: null,
       canal_ntfy:    null,
@@ -7483,13 +7518,20 @@ function applyAppUserProfile() {
       // Show all buttons for admin
       pillsEl.querySelectorAll('.app-rp').forEach(function(b){ b.style.display = ''; });
     } else {
-      pillsEl.style.display = 'flex';
-      // Show ONLY the button for the user's role, hide others
-      var roleToBtn = { supervisor: 'supervisor', calidad_lin: 'calidad_lin', calidad_tiem: 'calidad_tiem' };
+      // Show pills for all roles the user has access to
+      var userRoles = APP_USER_PROFILE.roles && APP_USER_PROFILE.roles.length
+        ? APP_USER_PROFILE.roles
+        : (APP_USER_PROFILE.role ? [APP_USER_PROFILE.role] : []);
+      var visibleCount = 0;
       pillsEl.querySelectorAll('.app-rp').forEach(function(b) {
-        var btnRole = b.getAttribute('onclick') ? b.getAttribute('onclick').replace(/.*setAppRole\('([^']+)'.*/,'$1') : '';
-        b.style.display = (btnRole === APP_USER_PROFILE.role) ? '' : 'none';
+        var btnRole = b.getAttribute('onclick')
+          ? b.getAttribute('onclick').replace(/.*setAppRole\('([^']+)'.*/,'$1') : '';
+        var show = userRoles.indexOf(btnRole) >= 0;
+        b.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
       });
+      // Hide entire pills bar if user only has 1 role (no switching needed)
+      pillsEl.style.display = visibleCount > 1 ? 'flex' : 'none';
     }
   }
 
