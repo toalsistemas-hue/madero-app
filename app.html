@@ -1893,15 +1893,18 @@ async function appShowLauncher() {
   launcher.style.display = 'flex';
 
   // Mostrar info del usuario
+  // Prefer: FT_UsuariosMovil Nombre > portal Usuarios Nombre > (not Azure AD name)
   var userEl = document.getElementById('launcher-user');
-  var nombre = (APP_USER_PROFILE && APP_USER_PROFILE.nombre) || (appCurrentUser && appCurrentUser.nombre) || '';
-  if (userEl) userEl.textContent = nombre;
-  // Nombre en el título de bienvenida
+  var _nombre = (APP_USER_PROFILE && APP_USER_PROFILE.nombre) || '';
+  // Avoid showing the Azure AD service-account display name (e.g. "Pedidos Especiales")
+  // by only using APP_USER_PROFILE.nombre which comes from SP Usuarios.NombreCompleto
+  if (!_nombre && appCurrentUser) _nombre = appCurrentUser.email || '';
+  if (userEl) userEl.textContent = APP_USER_PROFILE ? (APP_USER_PROFILE.puesto || APP_USER_PROFILE.nombre || '') : '';
+  // Nombre en el título de bienvenida — use first word of real name
   var welcomeEl = document.getElementById('launcher-welcome-name');
-  if (welcomeEl) {
-    // Use first name only
-    var firstName = nombre.split(' ')[0] || nombre;
-    welcomeEl.textContent = firstName;
+  if (welcomeEl && _nombre) {
+    var _firstName = _nombre.split(' ')[0] || _nombre;
+    welcomeEl.textContent = _firstName;
   }
   // Sync logo
   var logoEl = document.getElementById('launcher-logo');
@@ -1984,7 +1987,10 @@ function appLaunchPantalla(pantallaID) {
   if (launcher) launcher.style.display = 'none';
   if (pantallaID === 'FabTracker') {
     if (shell) shell.style.display = 'flex';
-    // Re-apply profile so role pills reflect the actual user role
+    // Ensure APP.role is set from profile before rendering
+    if (APP_USER_PROFILE && typeof APP !== 'undefined') {
+      APP.role = APP_USER_PROFILE.role || 'readonly';
+    }
     if (typeof applyAppUserProfile === 'function') applyAppUserProfile();
     if (typeof renderApp === 'function') renderApp();
     return;
@@ -2670,7 +2676,7 @@ function applyHistFilter(){histFilter.from=document.getElementById("hist-from").
 // ═══════════════════════════════════════════════════════
 // APP MÓVIL — Lógica compartiendo DB con Coordinador
 // ═══════════════════════════════════════════════════════
-var APP = { role:"supervisor", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
+var APP = { role:"readonly", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
 APP.expanded["14489"]=true;
 
 // Recibir sync desde Coordinador
@@ -6477,7 +6483,26 @@ async function appLoginSuccess() {
   // Initialize SP connection
   try { await appGetSiteId(); } catch(e) { console.warn('appGetSiteId:', e.message); }
   await appLoadDataFromSP();
-  try { await appLoadUserProfile(); } catch(e) { console.warn('Profile load:', e); }
+  try {
+    await appLoadUserProfile();
+    console.log('[appLoginSuccess] Profile loaded:', 
+      APP_USER_PROFILE ? (APP_USER_PROFILE.nombre + ' | role:' + APP_USER_PROFILE.role + ' | roles:' + JSON.stringify(APP_USER_PROFILE.roles)) : 'NULL');
+  } catch(e) {
+    console.warn('Profile load error:', e.message);
+    // If profile fails, create minimal profile from MSAL account so launcher still works
+    if (!APP_USER_PROFILE && appCurrentUser) {
+      APP_USER_PROFILE = {
+        nombre:     appCurrentUser.nombre || appCurrentUser.email,
+        nombre_ini: (appCurrentUser.nombre||appCurrentUser.email||'?').slice(0,2).toUpperCase(),
+        email:      appCurrentUser.email,
+        role:       'readonly',
+        roles:      ['readonly'],
+        esAdmin:    false,
+        puestoMovilID: null,
+        canal_ntfy:    null,
+      };
+    }
+  }
   // Auto-expand OFs with active operations
   DB.activeOFs.forEach(function(aof){
     var hasActive = aof.ops.some(function(op){
@@ -7562,8 +7587,11 @@ function applyAppUserProfile() {
   if (!APP_USER_PROFILE) return;
   var cfg = APP_ROLE_CONFIG[APP_USER_PROFILE.role] || APP_ROLE_CONFIG.supervisor;
 
-  // Update APP.role
-  if (typeof APP !== 'undefined') APP.role = APP_USER_PROFILE.role;
+  // Update APP.role — this controls what renderApp shows
+  if (typeof APP !== 'undefined') {
+    APP.role = APP_USER_PROFILE.role || 'readonly';
+    console.log('[applyAppUserProfile] APP.role set to:', APP.role, '| roles:', APP_USER_PROFILE.roles);
+  }
 
   // Update header — show name + role, hide role pills (auto-detected)
   var logoEl = document.querySelector('.app-hdr-logo');
@@ -8493,7 +8521,7 @@ function applyHistFilter(){histFilter.from=document.getElementById("hist-from").
 // APP MÓVIL — Lógica compartiendo DB con Coordinador
 // ═══════════════════════════════════════════════════════
 // APP already declared above — merge defaults without resetting expanded state
-if(typeof APP==='undefined') var APP = { role:"supervisor", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
+if(typeof APP==='undefined') var APP = { role:"readonly", view:"hoy", expanded:{}, calTimes:{}, currentOpCtx:null, currentFinishCtx:null, currentPauseCtx:null, currentCalRespCtx:null, confirmCb:null };
 else { APP.calTimes=APP.calTimes||{}; APP.role=APP.role||"supervisor"; APP.view=APP.view||"hoy"; }
 APP.expanded["14489"]=true;
 
