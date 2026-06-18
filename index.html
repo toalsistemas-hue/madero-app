@@ -1868,7 +1868,7 @@ tr:last-child td{border-bottom:none;}
                 <th style="padding:10px 14px;text-align:left;">Usuario</th>
                 <th style="padding:10px 14px;text-align:left;">Email</th>
                 <th style="padding:10px 14px;text-align:left;">Puesto Móvil</th>
-                <th style="padding:10px 14px;text-align:left;">Rol App</th>
+  
                 <th style="padding:10px 14px;text-align:center;">🔔 Canal ntfy</th>
                 <th style="padding:10px 14px;text-align:center;">Estado</th>
                 <th style="padding:10px 14px;text-align:center;">Acciones</th>
@@ -1922,7 +1922,7 @@ tr:last-child td{border-bottom:none;}
               <thead><tr style="background:var(--accent);color:#fff;">
                 <th style="padding:10px 14px;text-align:left;">Nombre del Puesto</th>
                 <th style="padding:10px 14px;text-align:center;">PuestoID</th>
-                <th style="padding:10px 14px;text-align:center;">Rol App</th>
+  
                 <th style="padding:10px 14px;text-align:left;">Pantallas asignadas</th>
                 <th style="padding:10px 14px;text-align:center;">Acciones</th>
               </tr></thead>
@@ -11236,7 +11236,7 @@ function cfgRenderUsuariosMovil(list) {
       '<td style="padding:10px 14px;font-weight:600;">'+(u.Nombre||u.Title||'')+'</td>' +
       '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(u.Email||'')+'</td>' +
       '<td style="padding:10px 14px;font-size:.78rem;">'+(puestNom)+'</td>' +
-      '<td style="padding:10px 14px;font-size:.78rem;">'+(rolLabel)+'</td>' +
+
       '<td style="padding:10px 14px;text-align:center;font-size:.75rem;">'+(u.Canal_Ntfy?'<span style="color:#22c55e;">ntfy.sh/'+u.Canal_Ntfy+'</span>':'<span style="color:var(--text-mid);">—</span>')+'</td>' +
       '<td style="padding:10px 14px;text-align:center;"><span style="background:rgba('+(activo?'34,197,94':'239,68,68')+',.1);color:'+(activo?'#22c55e':'#ef4444')+';border-radius:5px;padding:2px 8px;font-size:.72rem;">'+(activo?'Activo':'Inactivo')+'</span></td>' +
       '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenUsuarioMovilModal(\''+u._id+'\')">✏ Editar</button></td>' +
@@ -11310,7 +11310,7 @@ function cfgRenderPuestosMovil() {
     return '<tr style="border-bottom:1px solid var(--border-color);">' +
       '<td style="padding:10px 14px;font-weight:600;">'+(p.Nombre||p.Title||'')+'</td>' +
       '<td style="padding:10px 14px;text-align:center;font-family:monospace;font-size:.78rem;">'+(p.PuestoID||'')+'</td>' +
-      '<td style="padding:10px 14px;text-align:center;font-size:.78rem;">'+(rolLabels[p.RolApp]||p.RolApp||'—')+'</td>' +
+
       '<td style="padding:10px 14px;font-size:.78rem;color:var(--text-mid);">'+(panNames||'Sin pantallas')+'</td>' +
       '<td style="padding:10px 14px;text-align:center;"><button class="btn btn-ghost btn-sm" onclick="cfgOpenPuestoMovilModal(\''+p._id+'\')">✏ Editar</button></td>' +
       '</tr>';
@@ -11345,11 +11345,6 @@ function cfgOpenPantallaMovilModal(spId) {
 
 function cfgOpenPuestoMovilModal(spId) {
   var p = spId ? _cfgMovil.puestos.find(function(x){return x._id===spId;}) : null;
-  var rolOpts = ['supervisor','calidad_lin','calidad_tiem'].map(function(r){
-    var sel = p&&p.RolApp===r?' selected':'';
-    var lbl = {supervisor:'Supervisor de Línea',calidad_lin:'Inspector Calidad Línea',calidad_tiem:'Analista de Tiempos'}[r];
-    return '<option value="'+r+'"'+sel+'>'+lbl+'</option>';
-  }).join('');
   var curPans = [];
   try { curPans = JSON.parse(p&&p.Pantallas||'[]'); } catch(e){}
   var panChecks = _cfgMovil.pantallas.map(function(pan){
@@ -11359,18 +11354,23 @@ function cfgOpenPuestoMovilModal(spId) {
       (pan.Icono_App||pan.Icono||'')+ ' '+pan.Nombre+'</label>';
   }).join('');
   var html = '<div style="display:flex;flex-direction:column;gap:12px;">' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre del Puesto</label><input class="form-input" id="cfgpm-pst-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PuestoID <span style="font-size:.65rem;">(sin espacios)</span></label><input class="form-input" id="cfgpm-pst-pid" value="'+(p?p.PuestoID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Rol en la App</label><select class="form-input" id="cfgpm-pst-rol"><option value="">Sin rol</option>'+rolOpts+'</select></div>' +
-    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:8px;">Pantallas asignadas</label><div style="display:flex;flex-direction:column;gap:6px;">'+(panChecks||'<span style="font-size:.78rem;color:var(--dim);">Sin pantallas disponibles — créalas primero.</span>')+'</div></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">Nombre del Puesto</label>' +
+    '<input class="form-input" id="cfgpm-pst-nombre" value="'+(p?p.Nombre||'':'')+'"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:4px;">PuestoID <span style="font-size:.65rem;">(sin espacios)</span></label>' +
+    '<input class="form-input" id="cfgpm-pst-pid" value="'+(p?p.PuestoID||'':'')+'" '+(spId?'readonly':'')+' style="font-family:monospace;"></div>' +
+    '<div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:8px;">Pantallas asignadas</label>' +
+    '<div style="display:flex;flex-direction:column;gap:6px;">'+(panChecks||'<span style="font-size:.78rem;color:var(--dim);">Sin pantallas disponibles — créalas primero.</span>')+'</div>' +
+    '<div style="margin-top:8px;padding:8px 10px;background:rgba(255,255,255,.04);border-radius:6px;font-size:.7rem;color:var(--dim);">' +
+    '💡 El rol en la app se asigna automáticamente según el nombre del puesto.' +
+    '</div></div>' +
     '</div>';
   showCfgMovilModal('🏷️ '+(spId?'Editar':'Nuevo')+' Puesto Móvil', html, async function(){
     var nombre = document.getElementById('cfgpm-pst-nombre').value.trim();
     var pid    = document.getElementById('cfgpm-pst-pid').value.trim();
-    var rol    = document.getElementById('cfgpm-pst-rol').value;
     var pans   = Array.from(document.querySelectorAll('.cfgpm-pan-check:checked')).map(function(c){return c.value;});
     if (!nombre||!pid) { alert('Nombre y PuestoID son requeridos.'); return; }
-    var fields = { Title: nombre, Nombre: nombre, PuestoID: pid, RolApp: rol, Pantallas: JSON.stringify(pans) };
+    // RolApp se determina automáticamente desde el nombre del puesto
+    var fields = { Title: nombre, Nombre: nombre, PuestoID: pid, Pantallas: JSON.stringify(pans) };
     var sid = await getSiteId();
     if (spId) await graphPatch('sites/'+sid+'/lists/FT_PuestosMovil/items/'+spId+'/fields', fields);
     else      await graphPost('sites/'+sid+'/lists/FT_PuestosMovil/items', {fields:fields});
@@ -11403,7 +11403,7 @@ function cfgOpenUsuarioMovilModal(spId) {
     // Get RolApp from selected puesto
     var puestoObj = _cfgMovil.puestos.find(function(p){return p.PuestoID===puesto;});
     var rolApp = puestoObj ? puestoObj.RolApp||'' : '';
-    var fields = { Title: nombre, Nombre: nombre, Email: email, PuestoMovilID: puesto, Canal_Ntfy: ntfy, Activo_App: activo, RolApp: rolApp };
+    var fields = { Title: nombre, Nombre: nombre, Email: email, PuestoMovilID: puesto, Canal_Ntfy: ntfy, Activo_App: activo };
     var sid = await getSiteId();
     if (spId) await graphPatch('sites/'+sid+'/lists/FT_UsuariosMovil/items/'+spId+'/fields', fields);
     else      await graphPost('sites/'+sid+'/lists/FT_UsuariosMovil/items', {fields:fields});
@@ -11449,6 +11449,8 @@ async function cfgMovilModalSave() {
     await _cfgMovilModalCb();
   } catch(e) {
     alert('Error: ' + e.message);
+  } finally {
+    // Siempre resetear el botón al terminar (éxito o error)
     if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
   }
 }

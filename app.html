@@ -7319,19 +7319,34 @@ window.fireSync = function(source, event, data) {
 var APP_USER_PROFILE = null; // { nombre, email, puestoID, puesto, role, esAdmin, nombre_ini }
 
 // Map PuestoID to app role
-function puestoToAppRole(puestoID) {
-  var p = (puestoID||'').toLowerCase();
-  if (p.includes('supervisor') || p.includes('coordfab') || p.includes('fabricac')) return 'supervisor';
-  if (p.includes('calidadlinea') || p.includes('calidadlin') || p.includes('cal_lin')) return 'calidad_lin';
-  if (p.includes('analistacal') || p.includes('calidadtiem') || p.includes('cal_tiem') || p.includes('tiempos')) return 'calidad_tiem';
-  return null; // no access
+// Mapa de puesto → rol en la app
+// El rol se determina por el NOMBRE del puesto, no por un campo RolApp en SP.
+// Agregar aquí cualquier puesto nuevo — sin tocar otras partes del código.
+var APP_PUESTO_ROL_MAP = [
+  // Supervisor / Coordinador de línea de producción
+  { keywords: ['supervisor', 'coordinador de fabricac', 'coord_fab', 'jefe de producc', 'jefe producc'], rol: 'supervisor' },
+  // Control de calidad — inspección en línea
+  { keywords: ['jefe de control de calidad', 'jefe control calidad', 'inspector de calidad', 'inspector calidad', 'control de calidad', 'jefe_calidad'], rol: 'calidad_lin' },
+  // Analista de tiempos / calidad
+  { keywords: ['analista de calidad', 'analista calidad', 'analista de tiempos', 'analista tiempos', 'analista_calidad', 'analista_tiem', 'cal_tiem'], rol: 'calidad_tiem' },
+];
+
+function puestoToAppRole(puestoIDorNombre) {
+  var p = (puestoIDorNombre||'').toLowerCase().trim();
+  for (var i = 0; i < APP_PUESTO_ROL_MAP.length; i++) {
+    var entry = APP_PUESTO_ROL_MAP[i];
+    for (var j = 0; j < entry.keywords.length; j++) {
+      if (p.includes(entry.keywords[j])) return entry.rol;
+    }
+  }
+  return null; // sin acceso a la app móvil
 }
 
 // Role display names and permissions
 var APP_ROLE_CONFIG = {
-  supervisor:    { label: 'Supervisor de Línea',      icon: '🏗',  canStart: true,  canFinish: true,  canCal: false, canCalTiem: false },
-  calidad_lin:   { label: 'Inspector Calidad Línea',  icon: '🏭',  canStart: false, canFinish: false, canCal: true,  canCalTiem: false },
-  calidad_tiem:  { label: 'Analista de Tiempos',      icon: '⏱',  canStart: false, canFinish: false, canCal: false, canCalTiem: true  },
+  supervisor:   { label: 'Supervisor de Línea',          icon: '🏗',  canStart: true,  canFinish: true,  canCal: false, canCalTiem: false },
+  calidad_lin:  { label: 'Jefe de Control de Calidad',   icon: '🔍',  canStart: false, canFinish: false, canCal: true,  canCalTiem: false },
+  calidad_tiem: { label: 'Analista de Calidad',          icon: '⏱',  canStart: false, canFinish: false, canCal: false, canCalTiem: true  },
 };
 
 async function appLoadUserProfile() {
@@ -7364,8 +7379,9 @@ async function appLoadUserProfile() {
     });
     const pFields = puestoItem ? puestoItem.fields : {};
 
-    // 3. Determine base role from puesto
-    var baseRole = puestoToAppRole(uFields.PuestoID||'');
+    // 3. Determine base role from puesto NAME (not ID) — more readable and scalable
+    var puestoNombre = pFields.NombrePuesto || pFields.Title || uFields.PuestoID || '';
+    var baseRole = puestoToAppRole(puestoNombre) || puestoToAppRole(uFields.PuestoID||'');
 
     // 4. Check Excepciones for FabApp role override
     var excList = [];
@@ -7411,9 +7427,22 @@ async function appLoadUserProfile() {
         if (mFields.Activo_App === false) throw new Error('Usuario sin acceso a la app móvil.');
         APP_USER_PROFILE.canal_ntfy    = mFields.Canal_Ntfy    || null;
         APP_USER_PROFILE.puestoMovilID = mFields.PuestoMovilID || null;
-        // If FT_UsuariosMovil has a role override, use it
-        if (mFields.RolApp) APP_USER_PROFILE.role = mFields.RolApp;
-        console.log('[AppProfile] Canal ntfy:', APP_USER_PROFILE.canal_ntfy);
+        // Determine role from puesto movil name if available
+        if (APP_USER_PROFILE.puestoMovilID) {
+          var puestoMovilObj = null;
+          try {
+            var pmRes = await appGraphGet(
+              'sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields' +
+              '&$filter=fields/PuestoID eq \''+APP_USER_PROFILE.puestoMovilID+'\'&$top=1'
+            );
+            puestoMovilObj = pmRes && pmRes.value && pmRes.value[0] ? pmRes.value[0].fields : null;
+          } catch(pmErr) {}
+          if (puestoMovilObj) {
+            var rolFromPuesto = puestoToAppRole(puestoMovilObj.Nombre || puestoMovilObj.PuestoID || '');
+            if (rolFromPuesto) APP_USER_PROFILE.role = rolFromPuesto;
+          }
+        }
+        console.log('[AppProfile] Canal ntfy:', APP_USER_PROFILE.canal_ntfy, '| Role:', APP_USER_PROFILE.role);
       }
     } catch(movilErr) {
       // FT_UsuariosMovil not configured yet or user not in it — use original profile
