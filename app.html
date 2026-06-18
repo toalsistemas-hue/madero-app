@@ -2041,19 +2041,20 @@ var _APP_NTFY_DEST_ROLES = {
 
 async function appNtfyNotificar(evento, data) {
   var m = _APP_NTFY_MENSAJES[evento];
-  if (!m) return;
+  if (!m) { console.warn('[ntfy app] Evento desconocido:', evento); return; }
   var destRoles = _APP_NTFY_DEST_ROLES[evento] || [];
   if (!destRoles.length) return;
+  console.log('[ntfy app] Notificando evento:', evento, '→ roles:', destRoles);
 
-  // Load destination canals from FT_UsuariosMovil via SP
   try {
-    var siteId = await appGetSiteId();
+    // Use appFlowGet — proven to work for all users (avoids token scope issues with appGraphGet)
     var [usrRes, pstRes] = await Promise.all([
-      appGraphGet('sites/'+siteId+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'),
-      appGraphGet('sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'),
+      appFlowGet('FT_UsuariosMovil', 500),
+      appFlowGet('FT_PuestosMovil', 200),
     ]);
-    var usuarios = (usrRes.value||[]).map(function(i){ return i.fields; });
-    var puestos  = (pstRes.value||[]).map(function(i){ return i.fields; });
+    var usuarios = (usrRes.value||[]).map(function(i){ return i.fields || i; });
+    var puestos  = (pstRes.value||[]).map(function(i){ return i.fields || i; });
+    console.log('[ntfy app] Usuarios cargados:', usuarios.length, '| Puestos:', puestos.length);
 
     // PuestoID → roles (same logic as portal)
     var puestoRolMap = {};
@@ -2070,12 +2071,14 @@ async function appNtfyNotificar(evento, data) {
 
     // Find canals for destination roles
     var enviados = {};
+    var encontrados = 0;
     usuarios.forEach(function(u){
       if (!u.Canal_Ntfy || u.Activo_App === false) return;
       var roles = puestoRolMap[u.PuestoMovilID] || [];
       var tieneDestRol = roles.some(function(r){ return destRoles.indexOf(r) >= 0; });
       if (!tieneDestRol || enviados[u.Canal_Ntfy]) return;
       enviados[u.Canal_Ntfy] = true;
+      encontrados++;
 
       // Build message body
       var cuerpo = m.titulo;
@@ -2099,6 +2102,8 @@ async function appNtfyNotificar(evento, data) {
       }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
         .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
     });
+    console.log('[ntfy app] Canales encontrados para', evento, ':', encontrados, '| puestoRolMap:', JSON.stringify(puestoRolMap));
+    if (encontrados === 0) console.warn('[ntfy app] Sin canales para roles:', destRoles, '— verifica Canal_Ntfy en FT_UsuariosMovil');
   } catch(e) {
     console.warn('[ntfy app] Error cargando canales:', e.message);
   }
@@ -9855,6 +9860,13 @@ function appCalRespond(result){
     }
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
+  // Ntfy → Supervisor de Producción
+  appNtfyNotificar(result === 'liberado' ? 'cal_liberada' : 'cal_rechazada', {
+    of_sap:    ctx.of_sap,
+    op_nombre: op.nombre,
+    estacion:  op.estacion,
+    resultado: result
+  }).catch(function(){});
   closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
   appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
   _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
@@ -12692,7 +12704,12 @@ function startSPPolling() {
     if (!appSiteId || !appToken) return;
     try {
       await spPollCheck();
-    } catch(e) { if(e.message && !e.message.includes('fetch')) console.warn('SP poll error:', e.message); }
+    } catch(e) {
+      // Silently ignore 404 (list not found for this user) and network errors
+      if (e.message && !e.message.includes('404') && !e.message.includes('fetch') && !e.message.includes('itemNotFound')) {
+        console.warn('SP poll error:', e.message);
+      }
+    }
   }, 15000); // cada 15 segundos para seguimiento en tiempo real
 }
 
@@ -12725,7 +12742,7 @@ async function spPollCheck() {
     if (!_spLastOpsHash && latestOpMod) {
       _spLastOpsHash = latestOpMod;
     }
-  } catch(e) { if(!e.message||!e.message.includes('fetch')) console.warn('Poll ops error:', e.message); }
+  } catch(e) { if(e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch')) console.warn('Poll ops error:', e.message); }
   // Also check FT_Cola_Estacion for queue reorder changes from coordinator
   try {
     var colaRes = await appGraphGet(
@@ -12774,7 +12791,7 @@ async function spPollCheck() {
     if (!_spLastProgramadas && latestOfsMod) {
       _spLastProgramadas = latestOfsMod;
     }
-  } catch(e) { if(!e.message||!e.message.includes('fetch')) console.warn('Poll OFs error:', e.message); }
+  } catch(e) { if(e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch')) console.warn('Poll OFs error:', e.message); }
 }
 
 // Lightweight reload — only refresh ops without rebuilding DB.ofs
