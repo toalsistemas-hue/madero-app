@@ -7395,6 +7395,10 @@ var APP_PUESTO_ROL_MAP = [
   // Puesto dual: Supervisor + Analista Calidad (check first — more specific)
   { keywords: ['supervisor pro / analista', 'supervisor pro/analista', 'sup pro / analista',
                'analista / supervisor', 'sup_pro_analista'], roles: ['supervisor', 'calidad_tiem'] },
+  // Administrador General — acceso completo en la app
+  { keywords: ['administrador general', 'admin general', 'admingeneral',
+               'direcciongeneral', 'direccion general', 'director',
+               'gerente', 'jefe de operaciones'], roles: ['supervisor'] },
   // Supervisor de Producción (PuestoID: sup_pro)
   { keywords: ['supervisor de producción', 'supervisor de produccion',
                'supervisor de prod', 'sup_pro', 'supervisor'], roles: ['supervisor'] },
@@ -7540,14 +7544,37 @@ async function appLoadUserProfile() {
     });
 
     // 5. Verify access — puesto must map to a valid role
+    var pIsAdmin = pFields.EsAdministrador === true || pFields.EsAdministrador === 'true';
     if (!baseRole) {
-      // Check if puesto has explicit Fabricaciones access
-      var pantallasRaw = pFields.Pantallas || '[]';
-      var pantallas = [];
-      try { pantallas = JSON.parse(pantallasRaw.replace(/\"/g,'"')); } catch(e) {}
-      var hasFab = pantallas.some(function(p){ return p.pantallaID === 'Fabricaciones'; });
-      if (!hasFab) throw new Error('Tu puesto (' + (uFields.PuestoID||'?') + ') no tiene acceso a FabTracker.');
-      baseRole = 'supervisor'; // fallback if puesto has Fabricaciones but no specific role
+      // Admin always gets supervisor role in the app
+      if (pIsAdmin) {
+        baseRole  = 'supervisor';
+        baseRoles = ['supervisor'];
+      } else {
+        // Check if puesto has explicit Fabricaciones access
+        var pantallasRaw = pFields.Pantallas || '[]';
+        var pantallas = [];
+        try { pantallas = JSON.parse(pantallasRaw.replace(/\"/g,'"')); } catch(e) {}
+        var hasFab = pantallas.some(function(p){ return p.pantallaID === 'Fabricaciones'; });
+        if (!hasFab) {
+          // Before throwing, check FT_UsuariosMovil — may have mobile-only access
+          var _moCheck = await appGraphGet(
+            'sites/'+siteId+'/lists/FT_UsuariosMovil/items?$expand=fields&$top=500'
+          ).catch(function(){ return null; });
+          var _moFound = _moCheck && (_moCheck.value||[]).find(function(i){
+            return (i.fields.Email||'').toLowerCase() === email.toLowerCase();
+          });
+          if (!_moFound) {
+            throw new Error('Tu puesto (' + (uFields.PuestoID||'?') + ') no tiene acceso a FabTracker.');
+          }
+          // Found in FT_UsuariosMovil — will be resolved in step 6
+          baseRole  = 'readonly';
+          baseRoles = ['readonly'];
+        } else {
+          baseRole  = 'supervisor';
+          baseRoles = ['supervisor'];
+        }
+      }
     }
 
     APP_USER_PROFILE = {
@@ -7558,7 +7585,7 @@ async function appLoadUserProfile() {
       puesto:     pFields.NombrePuesto || pFields.Title || uFields.PuestoID || '',
       role:       baseRole,
       roles:      baseRoles,   // array — soporta puestos con acceso dual
-      esAdmin:    pFields.EsAdministrador === true || pFields.EsAdministrador === 'true',
+      esAdmin:    pIsAdmin,
       puestoMovilID: null,
       canal_ntfy:    null,
     };
@@ -12426,6 +12453,11 @@ var _spLastOpsHash = '';      // track cambios en operaciones
 
 function startSPPolling() {
   if (_spPollTimer) return; // ya corriendo
+  // Don't start polling if profile is null or user has no valid role
+  if (!APP_USER_PROFILE || !APP_USER_PROFILE.role || APP_USER_PROFILE.role === 'readonly') {
+    console.log('SP polling omitido — perfil no disponible o rol solo lectura');
+    return;
+  }
   console.log('Iniciando SP polling cada 30s...');
   _spPollTimer = setInterval(async function() {
     if (!appSiteId || !appToken) return;
