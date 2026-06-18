@@ -2968,7 +2968,8 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    var _roleForRender = (_appRole==='readonly') ? 'supervisor' : _appRole;
+    var _appRoleLocal = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
       if(op.status==="pending"){
@@ -2986,7 +2987,7 @@ function renderAppOpsPanel(of){
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if(_renderRole==="calidad_lin"&&appCan('cal')){
+    } else if((APP_USER_PROFILE&&APP_USER_PROFILE.role)==='calidad_lin'&&appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
@@ -3083,8 +3084,8 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    var _appRoleCT = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
-  if((_appRoleCT==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT!=='readonly'){
+    var _appRoleCT2 = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    if((_appRoleCT2==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT2!=='readonly'){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
       h+="</div>";
@@ -8938,7 +8939,8 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    var _roleForRender = (_appRole==='readonly') ? 'supervisor' : _appRole;
+    var _appRoleLocal = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
       if(op.status==="pending"){
@@ -8965,7 +8967,7 @@ function renderAppOpsPanel(of){
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if(_renderRole==="calidad_lin"&&appCan('cal')){
+    } else if((APP_USER_PROFILE&&APP_USER_PROFILE.role)==='calidad_lin'&&appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
@@ -9041,8 +9043,8 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    var _appRoleCT = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
-  if((_appRoleCT==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT!=='readonly'){
+    var _appRoleCT2 = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    if((_appRoleCT2==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT2!=='readonly'){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
       h+="</div>";
