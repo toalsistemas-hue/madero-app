@@ -2787,8 +2787,10 @@ function renderAppHoy(){
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
-  if(APP.role==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
-  else if(APP.role==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
+  var _appRole = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+  if(_appRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
+  else if(_appRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
+  else if(_appRole==="readonly")h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — No se pueden realizar acciones.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -2911,7 +2913,7 @@ function renderAppOpsPanel(of){
           h+="<span style='font-size:.62rem;background:rgba(245,158,11,.12);color:var(--ayellow);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:1px 6px;'>🤝 "+esc(a)+"</span>";
         }
       });
-      if(APP.role==="supervisor" && op.status!=='done'){
+      if(appCan('traspaso') && op.status!=='done'){
         h+="<button onclick=\"appOpenQuickAssign('"+of.of_sap+"','"+op.id+"')\" style='font-size:.58rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--adim);border-radius:5px;padding:1px 5px;cursor:pointer;'>✏</button>";
       }
       h+="</div>";
@@ -2937,7 +2939,7 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    if(APP.role==="supervisor"){
+    if(appCan('start')){
       var canFinish=(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
       if(op.status==="pending"){
         h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Iniciar</button>";
@@ -2949,23 +2951,23 @@ function renderAppOpsPanel(of){
           h+="</div>";
         }
       }
-      if(op.status==="running"){h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
-      if(op.status==="paused"){h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
-      if(op.status==="retrabajo")h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if(APP.role==="calidad_lin"){
+      if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
+    } else if(APP.role==="calidad_lin"||appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
   });
   // Cal.Tiem. — bloque completo multi-muestra al final del panel
-  if(APP.role==="calidad_tiem"){
+  if(APP.role==="calidad_tiem"||appCan('calTiem')){
     h+="<div style='border-top:1px solid rgba(255,255,255,.07);margin-top:6px;padding-top:4px;'>";
     h+=renderCalTiemInputs(of, false);
     h+="</div>";
   }
-  if(APP.role==="supervisor")h+="<button class='app-add-op-btn' onclick='appOpenAddOp(\""+of.of_sap+"\")'>+ Agregar operación</button>";
+  if(appCan('addOp'))h+="<button class='app-add-op-btn' onclick='appOpenAddOp(\""+of.of_sap+"\")'>+ Agregar operación</button>";
   return h;
 }
 
@@ -3050,7 +3052,7 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    if(APP.role==="calidad_tiem"){
+    if(APP.role==="calidad_tiem"||appCan('calTiem')){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
       h+="</div>";
@@ -7334,6 +7336,22 @@ window.fireSync = function(source, event, data) {
 var APP_USER_PROFILE = null; // { nombre, email, puestoID, puesto, role, esAdmin, nombre_ini }
 
 // Map PuestoID to app role
+// Helper: check if current role allows an action
+// Actions: 'start', 'finish', 'pause', 'resume', 'cal', 'calTiem', 'addOp', 'traspaso'
+function appCan(action) {
+  var role = (APP_USER_PROFILE && APP_USER_PROFILE.role) || (typeof APP !== 'undefined' && APP.role) || 'readonly';
+  var cfg  = APP_ROLE_CONFIG[role] || APP_ROLE_CONFIG.readonly;
+  if (role === 'readonly') return false;
+  switch(action) {
+    case 'start':    case 'pause':
+    case 'resume':   case 'addOp':
+    case 'traspaso': case 'finish':  return cfg.canStart || cfg.canFinish;
+    case 'cal':                      return cfg.canCal;
+    case 'calTiem':                  return cfg.canCalTiem;
+    default:                         return false;
+  }
+}
+
 // Mapa de puesto → rol en la app
 // El rol se determina por el NOMBRE del puesto, no por un campo RolApp en SP.
 // Agregar aquí cualquier puesto nuevo — sin tocar otras partes del código.
@@ -7371,9 +7389,10 @@ function puestoToAppRoles(puestoIDorNombre) {
 
 // Role display names and permissions
 var APP_ROLE_CONFIG = {
-  supervisor:   { label: 'Supervisor de Línea',          icon: '🏗',  canStart: true,  canFinish: true,  canCal: false, canCalTiem: false },
-  calidad_lin:  { label: 'Jefe de Control de Calidad',   icon: '🔍',  canStart: false, canFinish: false, canCal: true,  canCalTiem: false },
-  calidad_tiem: { label: 'Analista de Calidad',          icon: '⏱',  canStart: false, canFinish: false, canCal: false, canCalTiem: true  },
+  supervisor:   { label: 'Supervisor de Línea',        icon: '🏗',  canStart: true,  canFinish: true,  canCal: false, canCalTiem: false },
+  calidad_lin:  { label: 'Jefe de Control de Calidad', icon: '🔍',  canStart: false, canFinish: false, canCal: true,  canCalTiem: false },
+  calidad_tiem: { label: 'Analista de Calidad',        icon: '⏱',  canStart: false, canFinish: false, canCal: false, canCalTiem: true  },
+  readonly:     { label: 'Solo Lectura',               icon: '👁',  canStart: false, canFinish: false, canCal: false, canCalTiem: false  },
 };
 
 async function appLoadUserProfile() {
@@ -7457,7 +7476,8 @@ async function appLoadUserProfile() {
         if (mFields.Activo_App === false) throw new Error('Usuario sin acceso a la app móvil.');
         APP_USER_PROFILE.canal_ntfy    = mFields.Canal_Ntfy    || null;
         APP_USER_PROFILE.puestoMovilID = mFields.PuestoMovilID || null;
-        // Determine role from puesto movil name if available
+
+        // Determine role(s) from FT_PuestosMovil using the puesto name
         if (APP_USER_PROFILE.puestoMovilID) {
           var puestoMovilObj = null;
           try {
@@ -7466,18 +7486,39 @@ async function appLoadUserProfile() {
               '&$filter=fields/PuestoID eq \''+APP_USER_PROFILE.puestoMovilID+'\'&$top=1'
             );
             puestoMovilObj = pmRes && pmRes.value && pmRes.value[0] ? pmRes.value[0].fields : null;
-          } catch(pmErr) {}
+          } catch(pmErr) { console.warn('[AppProfile] FT_PuestosMovil lookup:', pmErr.message); }
+
           if (puestoMovilObj) {
-            var rolFromPuesto = puestoToAppRole(puestoMovilObj.Nombre || puestoMovilObj.PuestoID || '');
-            if (rolFromPuesto) APP_USER_PROFILE.role = rolFromPuesto;
+            var pNombre = puestoMovilObj.Nombre || puestoMovilObj.Title || APP_USER_PROFILE.puestoMovilID;
+            var rolesFromMovil = puestoToAppRoles(pNombre);
+            if (!rolesFromMovil.length) rolesFromMovil = puestoToAppRoles(APP_USER_PROFILE.puestoMovilID);
+            if (rolesFromMovil.length) {
+              APP_USER_PROFILE.roles = rolesFromMovil;
+              APP_USER_PROFILE.role  = rolesFromMovil[0];
+              APP_USER_PROFILE.puesto = pNombre;
+            } else {
+              // Puesto exists in FT_PuestosMovil but no role match — readonly viewer
+              APP_USER_PROFILE.roles = ['readonly'];
+              APP_USER_PROFILE.role  = 'readonly';
+              APP_USER_PROFILE.puesto = pNombre;
+            }
           }
         }
-        console.log('[AppProfile] Canal ntfy:', APP_USER_PROFILE.canal_ntfy, '| Role:', APP_USER_PROFILE.role);
+        console.log('[AppProfile] puestoMovil:', APP_USER_PROFILE.puesto, '| roles:', APP_USER_PROFILE.roles);
+      } else {
+        // User in FT_UsuariosMovil but no puestoMovilID assigned — readonly
+        APP_USER_PROFILE.roles = ['readonly'];
+        APP_USER_PROFILE.role  = 'readonly';
       }
     } catch(movilErr) {
-      // FT_UsuariosMovil not configured yet or user not in it — use original profile
       if (movilErr.message && movilErr.message.includes('sin acceso')) throw movilErr;
-      console.warn('[AppProfile] FT_UsuariosMovil no disponible todavía:', movilErr.message);
+      // FT_UsuariosMovil not found or user not in it
+      // If user has a valid portal role that maps, keep it; otherwise readonly
+      if (!APP_USER_PROFILE.role || !APP_ROLE_CONFIG[APP_USER_PROFILE.role]) {
+        APP_USER_PROFILE.role  = 'readonly';
+        APP_USER_PROFILE.roles = ['readonly'];
+      }
+      console.warn('[AppProfile] FT_UsuariosMovil:', movilErr.message, '| role fallback:', APP_USER_PROFILE.role);
     }
 
     window.CURRENT_USER_NAME = APP_USER_PROFILE.nombre;
@@ -7522,16 +7563,21 @@ function applyAppUserProfile() {
       var userRoles = APP_USER_PROFILE.roles && APP_USER_PROFILE.roles.length
         ? APP_USER_PROFILE.roles
         : (APP_USER_PROFILE.role ? [APP_USER_PROFILE.role] : []);
-      var visibleCount = 0;
-      pillsEl.querySelectorAll('.app-rp').forEach(function(b) {
-        var btnRole = b.getAttribute('onclick')
-          ? b.getAttribute('onclick').replace(/.*setAppRole\('([^']+)'.*/,'$1') : '';
-        var show = userRoles.indexOf(btnRole) >= 0;
-        b.style.display = show ? '' : 'none';
-        if (show) visibleCount++;
-      });
-      // Hide entire pills bar if user only has 1 role (no switching needed)
-      pillsEl.style.display = visibleCount > 1 ? 'flex' : 'none';
+      // readonly role: hide pills entirely
+      if (userRoles.indexOf('readonly') >= 0 || !userRoles.length) {
+        pillsEl.style.display = 'none';
+      } else {
+        var visibleCount = 0;
+        pillsEl.querySelectorAll('.app-rp').forEach(function(b) {
+          var btnRole = b.getAttribute('onclick')
+            ? b.getAttribute('onclick').replace(/[\s\S]*setAppRole\('([^']+)'[\s\S]*/,'$1') : '';
+          var show = userRoles.indexOf(btnRole) >= 0;
+          b.style.display = show ? '' : 'none';
+          if (show) visibleCount++;
+        });
+        // Hide pills bar if user only has 1 role (no switching needed)
+        pillsEl.style.display = visibleCount > 1 ? 'flex' : 'none';
+      }
     }
   }
 
@@ -8546,8 +8592,10 @@ function renderAppHoy(){
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
-  if(APP.role==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
-  else if(APP.role==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
+  var _appRole = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+  if(_appRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
+  else if(_appRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
+  else if(_appRole==="readonly")h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — No se pueden realizar acciones.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -8670,7 +8718,7 @@ function renderAppOpsPanel(of){
           h+="<span style='font-size:.62rem;background:rgba(245,158,11,.12);color:var(--ayellow);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:1px 6px;'>🤝 "+esc(a)+"</span>";
         }
       });
-      if(APP.role==="supervisor" && op.status!=='done'){
+      if(appCan('traspaso') && op.status!=='done'){
         h+="<button onclick=\"appOpenQuickAssign('"+of.of_sap+"','"+op.id+"')\" style='font-size:.58rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:var(--adim);border-radius:5px;padding:1px 5px;cursor:pointer;'>✏</button>";
       }
       h+="</div>";
@@ -8696,7 +8744,7 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    if(APP.role==="supervisor"){
+    if(appCan('start')){
       var canFinish=(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
       if(op.status==="pending"){
         h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Iniciar</button>";
@@ -8717,23 +8765,23 @@ function renderAppOpsPanel(of){
           h+='</div>';
         }
       }
-      if(op.status==="running"){h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
-      if(op.status==="paused"){h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish)h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
-      if(op.status==="retrabajo")h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if(APP.role==="calidad_lin"){
+      if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
+    } else if(APP.role==="calidad_lin"||appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
   });
   // Cal.Tiem. — bloque completo multi-muestra al final del panel
-  if(APP.role==="calidad_tiem"){
+  if(APP.role==="calidad_tiem"||appCan('calTiem')){
     h+="<div style='border-top:1px solid rgba(255,255,255,.07);margin-top:6px;padding-top:4px;'>";
     h+=renderCalTiemInputs(of, false);
     h+="</div>";
   }
-  if(APP.role==="supervisor")h+="<button class='app-add-op-btn' onclick='appOpenAddOp(\""+of.of_sap+"\")'>+ Agregar operación</button>";
+  if(appCan('addOp'))h+="<button class='app-add-op-btn' onclick='appOpenAddOp(\""+of.of_sap+"\")'>+ Agregar operación</button>";
   return h;
 }
 
@@ -8797,7 +8845,7 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    if(APP.role==="calidad_tiem"){
+    if(APP.role==="calidad_tiem"||appCan('calTiem')){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
       h+="</div>";
