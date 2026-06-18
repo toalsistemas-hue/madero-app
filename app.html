@@ -2814,12 +2814,14 @@ function renderAppHoy(){
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
-  var _appRole = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
-  // readonly uses the supervisor view (Sup.) — same layout, but appCan() blocks all buttons
-  var _renderRole = _appRole === 'readonly' ? 'supervisor' : _appRole;
+  // APP.role is the source of truth — updated by setAppRole() when user switches pills
+  // APP_USER_PROFILE.role only used to initialize APP.role at login
+  var _appRole = APP.role || 'readonly';
+  var _isReadonly = _appRole === 'readonly';
+  var _renderRole = _isReadonly ? 'supervisor' : _appRole;
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
-  if(_appRole==="readonly")h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_isReadonly)h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -2968,7 +2970,7 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    var _appRoleLocal = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _appRoleLocal = APP.role || 'readonly';
     var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
@@ -2987,13 +2989,13 @@ function renderAppOpsPanel(of){
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if((APP_USER_PROFILE&&APP_USER_PROFILE.role)==='calidad_lin'&&appCan('cal')){
+    } else if(APP.role==='calidad_lin'&&appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
   });
   // Cal.Tiem. — bloque completo multi-muestra al final del panel
-  var _appRoleCT = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+  var _appRoleCT = APP.role || 'readonly';
   if((_appRoleCT==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT!=='readonly'){
     h+="<div style='border-top:1px solid rgba(255,255,255,.07);margin-top:6px;padding-top:4px;'>";
     h+=renderCalTiemInputs(of, false);
@@ -3084,7 +3086,7 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    var _appRoleCT2 = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _appRoleCT2 = APP.role || 'readonly';
     if((_appRoleCT2==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT2!=='readonly'){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
@@ -7427,7 +7429,8 @@ var APP_USER_PROFILE = null; // { nombre, email, puestoID, puesto, role, esAdmin
 // Helper: check if current role allows an action
 // Actions: 'start', 'finish', 'pause', 'resume', 'cal', 'calTiem', 'addOp', 'traspaso'
 function appCan(action) {
-  var role = (APP_USER_PROFILE && APP_USER_PROFILE.role) || (typeof APP !== 'undefined' && APP.role) || 'readonly';
+  // Use APP.role — updated in real time by setAppRole() when user switches pills
+  var role = (typeof APP !== 'undefined' && APP.role) || (APP_USER_PROFILE && APP_USER_PROFILE.role) || 'readonly';
   var cfg  = APP_ROLE_CONFIG[role] || APP_ROLE_CONFIG.readonly;
   if (role === 'readonly') return false;  // never allows actions
   switch(action) {
@@ -7728,10 +7731,10 @@ function applyAppUserProfile() {
   if (!APP_USER_PROFILE) return;
   var cfg = APP_ROLE_CONFIG[APP_USER_PROFILE.role] || APP_ROLE_CONFIG.supervisor;
 
-  // Update APP.role — this controls what renderApp shows
+  // Set APP.role from profile — this is the single source of truth for rendering
   if (typeof APP !== 'undefined') {
     APP.role = APP_USER_PROFILE.role || 'readonly';
-    console.log('[applyAppUserProfile] APP.role set to:', APP.role, '| roles:', APP_USER_PROFILE.roles);
+    console.log('[applyAppUserProfile] APP.role =', APP.role, '| esAdmin =', APP_USER_PROFILE.esAdmin, '| roles =', JSON.stringify(APP_USER_PROFILE.roles));
   }
 
   // Update header — show name + role, hide role pills (auto-detected)
@@ -8785,12 +8788,14 @@ function renderAppHoy(){
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
-  var _appRole = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
-  // readonly uses the supervisor view (Sup.) — same layout, but appCan() blocks all buttons
-  var _renderRole = _appRole === 'readonly' ? 'supervisor' : _appRole;
+  // APP.role is the source of truth — updated by setAppRole() when user switches pills
+  // APP_USER_PROFILE.role only used to initialize APP.role at login
+  var _appRole = APP.role || 'readonly';
+  var _isReadonly = _appRole === 'readonly';
+  var _renderRole = _isReadonly ? 'supervisor' : _appRole;
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
-  if(_appRole==="readonly")h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_isReadonly)h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -8939,7 +8944,7 @@ function renderAppOpsPanel(of){
     h+="</div></div>";
     // BOTONES
     h+="<div class='app-op-btns'>";
-    var _appRoleLocal = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _appRoleLocal = APP.role || 'readonly';
     var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
@@ -8967,13 +8972,13 @@ function renderAppOpsPanel(of){
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
-    } else if((APP_USER_PROFILE&&APP_USER_PROFILE.role)==='calidad_lin'&&appCan('cal')){
+    } else if(APP.role==='calidad_lin'&&appCan('cal')){
       if(op.status==="validating")h+="<button class='app-ob app-ob-lib' onclick='openCalResp(\""+of.of_sap+"\",\""+op.id+"\")'>🏭 Responder</button>";
     }
     h+="</div></div>";
   });
   // Cal.Tiem. — bloque completo multi-muestra al final del panel
-  var _appRoleCT = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+  var _appRoleCT = APP.role || 'readonly';
   if((_appRoleCT==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT!=='readonly'){
     h+="<div style='border-top:1px solid rgba(255,255,255,.07);margin-top:6px;padding-top:4px;'>";
     h+=renderCalTiemInputs(of, false);
@@ -9043,7 +9048,7 @@ function renderAppFlujo(){
     h+="</div>";
     // Leyenda
     h+="<div style='display:flex;gap:6px;flex-wrap:wrap;padding:4px 0 2px;font-size:.58rem;color:var(--adim);'><span>⬜ Pend</span><span style='color:var(--aaccent)'>▶ Activa</span><span style='color:var(--ayellow)'>⏸ Pausa</span><span style='color:var(--apurple)'>🔍 Cal</span><span style='color:var(--agreen)'>✓ OK</span></div>";
-    var _appRoleCT2 = (APP_USER_PROFILE&&APP_USER_PROFILE.role)||APP.role||'readonly';
+    var _appRoleCT2 = APP.role || 'readonly';
     if((_appRoleCT2==="calidad_tiem"||appCan('calTiem'))&&_appRoleCT2!=='readonly'){
       h+="<div style='border-top:1px solid rgba(255,255,255,.06);padding-top:8px;margin-top:4px;'>";
       h+=renderCalTiemInputs(of, true);
