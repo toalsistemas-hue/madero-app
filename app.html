@@ -475,6 +475,138 @@ tr:last-child td{border-bottom:none;}
 </div>
 
 
+<!-- ═══ MONITOR ESTACIÓN ════════════════════════════════════════════
+     Pantalla fija para tablets en estaciones de trabajo.
+     Los operadores ven sus ops, inician y concluyen con PIN.
+═══════════════════════════════════════════════════════════════════ -->
+<div id="monitor-screen" style="display:none;position:fixed;inset:0;background:#0a0f1a;
+     flex-direction:column;overflow:hidden;z-index:200;">
+
+  <!-- Header Monitor -->
+  <div id="monitor-header" style="background:#0d1117;border-bottom:1px solid rgba(255,255,255,.08);
+       padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:36px;height:36px;background:#1B5E20;border-radius:8px;
+           display:flex;align-items:center;justify-content:center;font-size:1.1rem;">📺</div>
+      <div>
+        <div style="font-weight:700;font-size:.9rem;color:#e6edf3;">Monitor de Producción</div>
+        <div id="monitor-header-sub" style="font-size:.68rem;color:#8b949e;">Cargando estaciones...</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div id="monitor-clock" style="font-size:.8rem;color:#58a6ff;font-family:monospace;"></div>
+      <button id="monitor-gear-btn" onclick="monitorToggleGear()"
+        style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+               border-radius:7px;padding:5px 8px;cursor:pointer;color:#8b949e;font-size:.85rem;">⚙️</button>
+    </div>
+  </div>
+
+  <!-- Gear menu -->
+  <div id="monitor-gear-menu" style="display:none;position:absolute;top:58px;right:12px;
+       background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:10px;
+       min-width:200px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden;">
+    <button onclick="monitorGoConfig()"
+      style="width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.07);
+             padding:11px 14px;text-align:left;cursor:pointer;color:#e6edf3;font-size:.78rem;
+             display:flex;align-items:center;gap:9px;">
+      <span>🖥️</span><span>Configurar estaciones</span>
+    </button>
+    <button onclick="monitorGoLauncher()"
+      style="width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.07);
+             padding:11px 14px;text-align:left;cursor:pointer;color:#e6edf3;font-size:.78rem;
+             display:flex;align-items:center;gap:9px;">
+      <span>🏠</span><span>Inicio</span>
+    </button>
+    <button onclick="monitorGoLogout()"
+      style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
+             cursor:pointer;color:#e6edf3;font-size:.78rem;display:flex;align-items:center;gap:9px;">
+      <span>🔄</span><span>Cerrar sesión</span>
+    </button>
+  </div>
+
+  <!-- Tabs: Activas / Terminadas -->
+  <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;background:#0d1117;">
+    <button id="mon-tab-activas" onclick="monitorSetTab('activas')"
+      style="flex:1;background:none;border:none;border-bottom:2px solid #58a6ff;
+             padding:9px;font-size:.78rem;color:#58a6ff;cursor:pointer;font-weight:600;">
+      ⚡ Operaciones del día
+    </button>
+    <button id="mon-tab-terminadas" onclick="monitorSetTab('terminadas')"
+      style="flex:1;background:none;border:none;border-bottom:2px solid transparent;
+             padding:9px;font-size:.78rem;color:#8b949e;cursor:pointer;">
+      ✅ Terminadas hoy
+    </button>
+  </div>
+
+  <!-- Content area -->
+  <div id="monitor-content" style="flex:1;overflow-y:auto;padding:10px;"></div>
+
+  <!-- PIN Modal -->
+  <div id="monitor-pin-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+       z-index:600;align-items:center;justify-content:center;">
+    <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+         width:min(340px,92vw);padding:24px;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <div id="monitor-pin-icon" style="font-size:2rem;margin-bottom:8px;"></div>
+        <div id="monitor-pin-title" style="font-weight:700;font-size:1rem;color:#e6edf3;margin-bottom:4px;"></div>
+        <div id="monitor-pin-sub" style="font-size:.78rem;color:#8b949e;"></div>
+      </div>
+      <!-- PIN display -->
+      <div style="display:flex;justify-content:center;gap:10px;margin:16px 0;">
+        <div id="mon-pin-d1" style="width:48px;height:56px;background:rgba(255,255,255,.06);
+             border:2px solid rgba(255,255,255,.15);border-radius:10px;
+             display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#58a6ff;">_</div>
+        <div id="mon-pin-d2" style="width:48px;height:56px;background:rgba(255,255,255,.06);
+             border:2px solid rgba(255,255,255,.15);border-radius:10px;
+             display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#58a6ff;">_</div>
+        <div id="mon-pin-d3" style="width:48px;height:56px;background:rgba(255,255,255,.06);
+             border:2px solid rgba(255,255,255,.15);border-radius:10px;
+             display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#58a6ff;">_</div>
+        <div id="mon-pin-d4" style="width:48px;height:56px;background:rgba(255,255,255,.06);
+             border:2px solid rgba(255,255,255,.15);border-radius:10px;
+             display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#58a6ff;">_</div>
+      </div>
+      <!-- Numpad -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+        <script>
+          document.write([1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(function(k){
+            if(k==='') return '<div></div>';
+            var action = k==='⌫' ? 'monitorPinDel()' : 'monitorPinAdd('+k+')';
+            return '<button onclick="'+action+'" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:14px;font-size:1.1rem;color:#e6edf3;cursor:pointer;font-weight:600;">'+k+'</button>';
+          }).join(''));
+        </script>
+      </div>
+      <div id="monitor-pin-error" style="text-align:center;font-size:.75rem;color:#f87171;min-height:18px;margin-bottom:10px;"></div>
+      <button onclick="monitorPinCancel()"
+        style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+               border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">
+        Cancelar
+      </button>
+    </div>
+  </div>
+
+  <!-- Config screen (admin only, shown over monitor) -->
+  <div id="monitor-config-screen" style="display:none;position:fixed;inset:0;background:#0a0f1a;
+       z-index:400;flex-direction:column;">
+    <div style="background:#0d1117;border-bottom:1px solid rgba(255,255,255,.08);
+         padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-weight:700;color:#e6edf3;">⚙️ Configurar estaciones</div>
+      <button onclick="monitorConfigSave()"
+        style="background:#1565C0;border:none;border-radius:8px;padding:8px 16px;
+               color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">
+        ✅ Confirmar y bloquear
+      </button>
+    </div>
+    <div style="padding:16px;flex:1;overflow-y:auto;">
+      <div style="font-size:.75rem;color:#8b949e;margin-bottom:14px;">
+        Selecciona las estaciones que se mostrarán en esta tablet.
+        Al confirmar, el menú ⚙️ quedará bloqueado y requerirá el PIN de Admin para volver a configurar.
+      </div>
+      <div id="monitor-config-stations" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ APP LAUNCHER ══════════════════════════════════════════════
      Se muestra después del login. El usuario elige a qué módulo
      entrar. Cuando solo hay uno disponible, entra directo.
@@ -1902,8 +2034,8 @@ var APP_VERSION = 'v1.0.0';
 // Pantallas disponibles hardcoded como fallback (siempre funcionan
 // aunque SP no esté disponible o las listas no existan todavía)
 var APP_PANTALLAS_FALLBACK = [
-  { PantallaID: 'FabTracker', Nombre: 'FabTracker', Icono_App: '🏭',
-    Descripcion: 'Seguimiento de Fabricaciones', Color: '#1565C0' }
+  { PantallaID: 'FabTracker',      Nombre: 'FabTracker',         Icono_App: '🏭', Descripcion: 'Seguimiento de Fabricaciones', Color: '#1565C0' },
+  { PantallaID: 'MonitorEstacion', Nombre: 'Monitor de Estación', Icono_App: '📺', Descripcion: 'Monitor fijo de producción para operadores', Color: '#1B5E20' }
 ];
 
 async function appShowLauncher() {
@@ -2019,6 +2151,10 @@ function appLaunchPantalla(pantallaID) {
     if (typeof renderApp === 'function') renderApp();
     return;
   }
+  if (pantallaID === 'MonitorEstacion') {
+    monitorInit();
+    return;
+  }
   // Futuras pantallas se manejarán aquí
   alert('Módulo "' + pantallaID + '" próximamente.');
 }
@@ -2027,16 +2163,24 @@ function appLaunchPantalla(pantallaID) {
 // ── Ntfy desde la app móvil ───────────────────────────────────────
 // Mensajes de eventos de la app hacia otros usuarios
 var _APP_NTFY_MENSAJES = {
-  val_solicitada: { titulo: 'Validacion de Calidad solicitada', prioridad: 'high' },
-  cal_liberada:   { titulo: 'Calidad: Operacion liberada',      prioridad: 'high' },
-  cal_rechazada:  { titulo: 'Calidad: Operacion rechazada',     prioridad: 'high' },
+  val_solicitada:    { titulo: 'Validacion de Calidad solicitada', prioridad: 'high' },
+  cal_liberada:      { titulo: 'Calidad: Operacion liberada',      prioridad: 'high' },
+  cal_rechazada:     { titulo: 'Calidad: Operacion rechazada',     prioridad: 'high' },
+  // Monitor events
+  mon_op_iniciada:   { titulo: 'Operador inicio una operacion',    prioridad: 'default' },
+  mon_op_concluida:  { titulo: 'Operador concluyo operacion',      prioridad: 'high' },
+  mon_val_calidad:   { titulo: 'Validacion de Calidad solicitada desde Monitor', prioridad: 'high' },
 };
 
 // Roles que deben recibir cada evento (desde la app)
 var _APP_NTFY_DEST_ROLES = {
-  val_solicitada: ['calidad_lin'],            // → Jefe de Control de Calidad
-  cal_liberada:   ['supervisor'],             // → Supervisor de Producción
-  cal_rechazada:  ['supervisor'],             // → Supervisor de Producción
+  val_solicitada:    ['calidad_lin'],                      // → Jefe de Control de Calidad
+  cal_liberada:      ['supervisor'],                       // → Supervisor de Producción
+  cal_rechazada:     ['supervisor'],                       // → Supervisor de Producción
+  // Monitor events
+  mon_op_iniciada:   ['supervisor'],                       // → Supervisor
+  mon_op_concluida:  ['supervisor'],                       // → Supervisor
+  mon_val_calidad:   ['calidad_lin', 'supervisor'],        // → Jefe Calidad + Supervisor
 };
 
 async function appNtfyNotificar(evento, data) {
@@ -3063,6 +3207,15 @@ function renderAppOpsPanel(of){
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
+    if(op.status==="op_concluded"){
+      h+="<div class='app-op-note' style='background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#f59e0b;'>⏳ Operador concluyó — aguarda confirmación del Supervisor</div>";
+      if(_appRoleLocal==='supervisor'||appCan('finish')){
+        h+="<div style='display:flex;gap:6px;margin-top:4px;'>";
+        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>✓ Confirmar conclusión</button>";
+        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>↩ Devolver a activa</button>";
+        h+="</div>";
+      }
+    }
     if(op.calResult){var cM={liberado:{bg:"rgba(34,197,94,.12)",col:"var(--agreen)",lbl:"✅ Liberado"},retrabajo:{bg:"rgba(212,160,23,.12)",col:"var(--ayellow)",lbl:"🔄 Retrabajo"},chatarra:{bg:"rgba(239,68,68,.12)",col:"var(--ared)",lbl:"🗑 Chatarra"}};var cm=cM[op.calResult]||cM.liberado;h+="<div class='app-op-note' style='background:"+cm.bg+";color:"+cm.col+";'>"+cm.lbl+(op.calComment?" — "+esc(op.calComment):"")+(op.qty_rej>0?" · "+op.qty_rej+" rec / "+(op.qty_total-op.qty_rej)+" lib":"")+"</div>";}
     h+="</div></div>";
     // BOTONES
@@ -7955,7 +8108,616 @@ async function appValidateRole() {
   return await appLoadUserProfile();
 }
 
-// Listen for connectivity changes — update login button in real time
+// ════════════════════════════════════════════════════════════════
+// ── MONITOR ESTACIÓN — Sistema de tablet fija por área ────────────
+// ════════════════════════════════════════════════════════════════
+
+var _MON = {
+  tab:            'activas',         // 'activas' | 'terminadas'
+  estaciones:     [],                // estaciones seleccionadas
+  locked:         false,             // config bloqueada
+  pollTimer:      null,
+  clockTimer:     null,
+  pinCtx:         null,              // contexto del PIN actual
+  pinDigits:      '',
+  technicians:    [],                // cache de FT_Tecnicos
+  ADMIN_PIN_KEY:  'monitor_admin_pin',
+  ESTACIONES_KEY: 'monitor_estaciones',
+  LOCKED_KEY:     'monitor_locked',
+  DEFAULT_ADMIN_PIN: '123456',
+};
+
+// ── Init ──────────────────────────────────────────────────────────
+function monitorInit() {
+  var screen = document.getElementById('monitor-screen');
+  if (screen) screen.style.display = 'flex';
+  _MON.estaciones = JSON.parse(localStorage.getItem(_MON.ESTACIONES_KEY) || '[]');
+  _MON.locked     = localStorage.getItem(_MON.LOCKED_KEY) === '1';
+  monitorUpdateClock();
+  _MON.clockTimer = setInterval(monitorUpdateClock, 1000);
+  monitorLoadTechnicians().then(function() {
+    if (!_MON.estaciones.length) {
+      // First time — go to config
+      monitorGoConfig();
+    } else {
+      monitorRender();
+      monitorStartPolling();
+    }
+  });
+}
+
+function monitorUpdateClock() {
+  var el = document.getElementById('monitor-clock');
+  if (el) el.textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
+}
+
+function monitorExit() {
+  if (_MON.pollTimer)  clearInterval(_MON.pollTimer);
+  if (_MON.clockTimer) clearInterval(_MON.clockTimer);
+  var screen = document.getElementById('monitor-screen');
+  if (screen) screen.style.display = 'none';
+}
+
+// ── Polling ───────────────────────────────────────────────────────
+function monitorStartPolling() {
+  if (_MON.pollTimer) clearInterval(_MON.pollTimer);
+  _MON.pollTimer = setInterval(function() {
+    appFlowGet('FT_OrdenesFabricacion', 2000).catch(function(){});
+    appFlowGet('FT_Operaciones', 5000).then(function() {
+      monitorRender();
+    }).catch(function(){});
+  }, 30000);
+}
+
+// ── Technicians cache ─────────────────────────────────────────────
+async function monitorLoadTechnicians() {
+  try {
+    var res = await appFlowGet('FT_Tecnicos', 200);
+    _MON.technicians = (res.value || []).map(function(i) {
+      var f = i.fields || i;
+      return { nombre: f.Title||f.Nombre||'', pin: f.PIN_Monitor||'', _id: i.id||f.ID||0 };
+    });
+    console.log('[Monitor] Técnicos cargados:', _MON.technicians.length);
+  } catch(e) {
+    console.warn('[Monitor] Error cargando técnicos:', e.message);
+  }
+}
+
+// ── Tab ───────────────────────────────────────────────────────────
+function monitorSetTab(tab) {
+  _MON.tab = tab;
+  ['activas','terminadas'].forEach(function(t) {
+    var btn = document.getElementById('mon-tab-'+t);
+    if (!btn) return;
+    btn.style.borderBottomColor = t === tab ? '#58a6ff' : 'transparent';
+    btn.style.color = t === tab ? '#58a6ff' : '#8b949e';
+    btn.style.fontWeight = t === tab ? '600' : '400';
+  });
+  monitorRender();
+}
+
+// ── Main render ───────────────────────────────────────────────────
+function monitorRender() {
+  var content = document.getElementById('monitor-content');
+  if (!content) return;
+
+  var today = new Date().toLocaleDateString('es-MX');
+  var estaciones = _MON.estaciones;
+  if (!estaciones.length) {
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#8b949e;">Sin estaciones configuradas. Toca ⚙️ para configurar.</div>';
+    return;
+  }
+
+  // Collect all ops for selected stations
+  var opsActivas = [], opsTerminadas = [];
+  (DB.activeOFs || []).forEach(function(of) {
+    (of.ops || []).forEach(function(op) {
+      if (!estaciones.includes(op.estacion)) return;
+      var item = { of: of, op: op };
+      if (op.status === 'done') {
+        // Only show if finished today
+        if (op.fin && op.fin.includes(today.split('/')[0])) opsTerminadas.push(item);
+        else if (op.status === 'done') opsTerminadas.push(item); // fallback
+      } else {
+        opsActivas.push(item);
+      }
+    });
+  });
+
+  if (_MON.tab === 'terminadas') {
+    content.innerHTML = monitorRenderTerminadas(opsTerminadas);
+    return;
+  }
+
+  // Group by station
+  var byStation = {};
+  estaciones.forEach(function(est) { byStation[est] = []; });
+  opsActivas.forEach(function(item) {
+    if (!byStation[item.op.estacion]) byStation[item.op.estacion] = [];
+    byStation[item.op.estacion].push(item);
+  });
+
+  var h = '';
+  var anyOps = false;
+  estaciones.forEach(function(est) {
+    var ops = byStation[est] || [];
+    if (!ops.length) return;
+    anyOps = true;
+    h += '<div style="margin-bottom:16px;">';
+    h += '<div style="font-size:.65rem;font-weight:700;color:#58a6ff;letter-spacing:.08em;';
+    h += 'text-transform:uppercase;padding:0 4px;margin-bottom:8px;border-left:3px solid #58a6ff;padding-left:8px;">';
+    h += est + '</div>';
+    ops.forEach(function(item) {
+      h += monitorRenderOp(item.of, item.op);
+    });
+    h += '</div>';
+  });
+  if (!anyOps) {
+    h = '<div style="text-align:center;padding:48px 24px;color:#8b949e;">';
+    h += '<div style="font-size:3rem;margin-bottom:12px;">✅</div>';
+    h += '<div style="font-weight:600;margin-bottom:6px;">Sin operaciones activas</div>';
+    h += '<div style="font-size:.8rem;">Las operaciones de las estaciones asignadas aparecerán aquí</div>';
+    h += '</div>';
+  }
+  content.innerHTML = h;
+
+  // Update subtitle
+  var sub = document.getElementById('monitor-header-sub');
+  if (sub) sub.textContent = estaciones.join(' · ');
+}
+
+function monitorRenderOp(of, op) {
+  var statusColors = {
+    pending: '#8b949e', running: '#22c55e', op_concluded: '#f59e0b',
+    validating: '#a78bfa', paused: '#fb923c'
+  };
+  var statusLabels = {
+    pending: 'PENDIENTE', running: 'EN PROCESO', op_concluded: 'CONCLUIDA — Aguarda Supervisor',
+    validating: 'VALIDACIÓN CALIDAD', paused: 'PAUSADA'
+  };
+  var color  = statusColors[op.status] || '#8b949e';
+  var label  = statusLabels[op.status] || op.status.toUpperCase();
+  var isRunning   = op.status === 'running';
+  var isPending   = op.status === 'pending';
+  var isConcluded = op.status === 'op_concluded';
+  var isValidating = op.status === 'validating';
+  var isPaused    = op.status === 'paused';
+
+  // Elapsed time
+  var elapsed = '';
+  if ((isRunning || isPaused || isConcluded || isValidating) && op.inicio) {
+    var mins = op.mins || 0;
+    if (isRunning && op.inicio) {
+      var startParts = op.inicio.split(':');
+      var now = new Date();
+      var start = new Date(now);
+      start.setHours(parseInt(startParts[0]), parseInt(startParts[1]), 0);
+      var diff = Math.floor((now - start) / 60000);
+      mins = Math.max(0, diff + (op.elapsedMins || 0));
+    }
+    var h2 = Math.floor(mins/60), m2 = mins % 60;
+    elapsed = h2 > 0 ? h2+'h '+m2+'m' : m2+'m';
+  }
+
+  var borderColor = isRunning ? '#22c55e' : isConcluded ? '#f59e0b' : isValidating ? '#a78bfa' : 'rgba(255,255,255,.06)';
+
+  var card = '<div style="background:#0d1117;border:1px solid '+borderColor+';border-radius:10px;';
+  card += 'padding:12px;margin-bottom:8px;">';
+
+  // Header row
+  card += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">';
+  card += '<div style="flex:1;">';
+  card += '<div style="font-size:.65rem;color:#58a6ff;font-family:monospace;margin-bottom:2px;">';
+  card += 'OF '+of.of_sap+' · '+esc(of.articulo_padre||of.articulo||'')+'</div>';
+  card += '<div style="font-weight:700;font-size:.85rem;color:#e6edf3;line-height:1.3;">';
+  card += esc(of.descripcion_padre||of.descripcion||'')+'</div>';
+  card += '</div>';
+  card += '<div style="margin-left:8px;text-align:right;">';
+  card += '<div style="display:inline-block;background:rgba('+
+    (isRunning?'34,197,94':isConcluded?'245,158,11':isValidating?'167,139,250':isPending?'139,148,158':'251,146,60')+
+    ',.15);color:'+color+';border-radius:5px;padding:2px 8px;font-size:.62rem;font-weight:700;">';
+  card += label+'</div>';
+  if (elapsed) card += '<div style="font-size:.7rem;color:#58a6ff;margin-top:3px;">⏱ '+elapsed+'</div>';
+  card += '</div>';
+  card += '</div>';
+
+  // Op details
+  card += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:.72rem;color:#8b949e;">';
+  card += '<span>🔧 '+esc(op.nombre)+'</span>';
+  card += '<span>📦 '+op.qty_total+' pzas</span>';
+  if (op.tecnico) card += '<span>👷 '+esc(op.tecnico)+'</span>';
+  else card += '<span style="color:#f59e0b;">👤 Sin asignar</span>';
+  card += '</div>';
+
+  // Action buttons
+  var ofSap = of.of_sap, opId = op.id;
+  card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+
+  if (isPending) {
+    card += '<button onclick="monitorAskPin(\'iniciar\',\''+ofSap+'\',\''+opId+'\')" '+
+      'style="background:#1565C0;border:none;border-radius:8px;padding:9px 16px;'+
+      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">'+
+      '▶ Iniciar</button>';
+  }
+  if (isRunning || isPaused) {
+    card += '<button onclick="monitorAskPin(\'concluir\',\''+ofSap+'\',\''+opId+'\')" '+
+      'style="background:#dc2626;border:none;border-radius:8px;padding:9px 16px;'+
+      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">'+
+      '⏹ Concluir</button>';
+    if (op.needsCal && !isValidating) {
+      card += '<button onclick="monitorAskPin(\'valcal\',\''+ofSap+'\',\''+opId+'\')" '+
+        'style="background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);border-radius:8px;'+
+        'padding:9px 14px;color:#a78bfa;font-size:.78rem;font-weight:600;cursor:pointer;">'+
+        '🔍 Val.Cal.</button>';
+    }
+  }
+  if (isConcluded) {
+    card += '<div style="padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);';
+    card += 'border-radius:8px;font-size:.75rem;color:#f59e0b;">⏳ Aguardando confirmación del Supervisor</div>';
+  }
+  if (isValidating) {
+    card += '<div style="padding:8px 12px;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.2);';
+    card += 'border-radius:8px;font-size:.75rem;color:#a78bfa;">🔍 En validación de Calidad</div>';
+  }
+
+  card += '</div></div>';
+  return card;
+}
+
+function monitorRenderTerminadas(ops) {
+  if (!ops.length) {
+    return '<div style="text-align:center;padding:48px 24px;color:#8b949e;">' +
+      '<div style="font-size:3rem;margin-bottom:12px;">📋</div>' +
+      '<div style="font-weight:600;margin-bottom:6px;">Sin operaciones terminadas hoy</div>' +
+      '</div>';
+  }
+  var h = '<div style="padding:4px;">';
+  ops.forEach(function(item) {
+    var of = item.of, op = item.op;
+    h += '<div style="background:#0d1117;border:1px solid rgba(34,197,94,.2);border-radius:10px;';
+    h += 'padding:12px;margin-bottom:8px;opacity:.8;">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+    h += '<div style="font-size:.65rem;color:#22c55e;font-family:monospace;">OF '+of.of_sap+' · ✅ TERMINADA</div>';
+    if (op.fin) h += '<div style="font-size:.65rem;color:#8b949e;">Fin: '+op.fin+'</div>';
+    h += '</div>';
+    h += '<div style="font-weight:600;font-size:.82rem;color:#e6edf3;margin-bottom:4px;">'+esc(op.nombre)+'</div>';
+    h += '<div style="font-size:.72rem;color:#8b949e;">';
+    h += '📦 '+op.qty_total+' pzas';
+    if (op.qty_ok) h += ' · ✅ '+op.qty_ok+' OK';
+    if (op.tecnico) h += ' · 👷 '+esc(op.tecnico);
+    h += '</div></div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+// ── PIN system ────────────────────────────────────────────────────
+function monitorAskPin(accion, ofSap, opId) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+
+  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍' };
+  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad' };
+  var subs    = {
+    iniciar:  op.tecnico ? ('PIN de '+op.tecnico) : 'PIN de operador (o nuevo operador)',
+    concluir: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    valcal:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+  };
+
+  _MON.pinCtx = { accion: accion, ofSap: ofSap, opId: opId, of: of, op: op };
+  _MON.pinDigits = '';
+  monitorPinRefresh();
+
+  document.getElementById('monitor-pin-icon').textContent  = icons[accion];
+  document.getElementById('monitor-pin-title').textContent = titles[accion];
+  document.getElementById('monitor-pin-sub').textContent   = subs[accion];
+  document.getElementById('monitor-pin-error').textContent = '';
+  document.getElementById('monitor-pin-modal').style.display = 'flex';
+}
+
+function monitorPinAdd(d) {
+  if (_MON.pinDigits.length >= 4) return;
+  _MON.pinDigits += d;
+  monitorPinRefresh();
+  if (_MON.pinDigits.length === 4) {
+    setTimeout(monitorPinSubmit, 200);
+  }
+}
+
+function monitorPinDel() {
+  _MON.pinDigits = _MON.pinDigits.slice(0,-1);
+  monitorPinRefresh();
+}
+
+function monitorPinRefresh() {
+  ['d1','d2','d3','d4'].forEach(function(id, i) {
+    var el = document.getElementById('mon-pin-'+id);
+    if (!el) return;
+    el.textContent = _MON.pinDigits[i] ? '●' : '_';
+    el.style.borderColor = _MON.pinDigits[i] ? '#58a6ff' : 'rgba(255,255,255,.15)';
+  });
+}
+
+function monitorPinCancel() {
+  _MON.pinCtx = null;
+  _MON.pinDigits = '';
+  document.getElementById('monitor-pin-modal').style.display = 'none';
+}
+
+async function monitorPinSubmit() {
+  var pin = _MON.pinDigits;
+  var ctx = _MON.pinCtx;
+  if (!ctx || !pin || pin.length !== 4) return;
+
+  var errEl = document.getElementById('monitor-pin-error');
+  errEl.textContent = 'Verificando...';
+
+  var op = ctx.op;
+  var tec = null;
+
+  // If op has assigned technician — find their PIN
+  if (op.tecnico) {
+    tec = _MON.technicians.find(function(t) {
+      return t.nombre.trim().toUpperCase() === op.tecnico.trim().toUpperCase();
+    });
+    if (!tec) {
+      errEl.textContent = 'Técnico no encontrado en el sistema. Contacta al Supervisor.';
+      _MON.pinDigits = '';
+      monitorPinRefresh();
+      return;
+    }
+    // First time setup — no PIN yet
+    if (!tec.pin) {
+      if (pin.length === 4) {
+        await monitorSavePin(tec, pin);
+        tec.pin = pin;
+        errEl.textContent = 'PIN registrado. Confirma de nuevo.';
+        _MON.pinDigits = '';
+        monitorPinRefresh();
+        // Ask to confirm
+        document.getElementById('monitor-pin-sub').textContent = 'Confirma tu PIN de 4 dígitos';
+        _MON.pinCtx._confirmingPin = pin;
+        return;
+      }
+    }
+    if (_MON.pinCtx._confirmingPin) {
+      if (pin === _MON.pinCtx._confirmingPin) {
+        // Already saved, proceed
+        errEl.textContent = '';
+      } else {
+        errEl.textContent = 'Los PINs no coinciden. Intenta de nuevo.';
+        _MON.pinDigits = '';
+        monitorPinRefresh();
+        _MON.pinCtx._confirmingPin = null;
+        return;
+      }
+    } else if (tec.pin && pin !== tec.pin) {
+      errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
+      _MON.pinDigits = '';
+      monitorPinRefresh();
+      return;
+    }
+  } else {
+    // No technician assigned — find by PIN or register new
+    tec = _MON.technicians.find(function(t) { return t.pin === pin; });
+    if (!tec) {
+      errEl.textContent = 'PIN no encontrado. Pide al Supervisor que te asigne.';
+      _MON.pinDigits = '';
+      monitorPinRefresh();
+      return;
+    }
+  }
+
+  // PIN validated — execute action
+  errEl.textContent = '';
+  document.getElementById('monitor-pin-modal').style.display = 'none';
+  _MON.pinDigits = '';
+  _MON.pinCtx = null;
+
+  var tecNombre = tec ? tec.nombre : op.tecnico;
+  monitorExecuteAction(ctx.accion, ctx.of, ctx.op, tecNombre);
+}
+
+async function monitorSavePin(tec, pin) {
+  try {
+    var siteId = await appGetSiteId();
+    var fields = { PIN_Monitor: pin };
+    await appFlowEscribir('FT_Tecnicos', 'actualizar', parseInt(tec._id), fields);
+    console.log('[Monitor] PIN guardado para:', tec.nombre);
+  } catch(e) {
+    console.warn('[Monitor] Error guardando PIN:', e.message);
+  }
+}
+
+// ── Execute actions after PIN validated ───────────────────────────
+async function monitorExecuteAction(accion, of, op, tecNombre) {
+  var now = new Date();
+  var timeStr = now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+
+  if (accion === 'iniciar') {
+    op.status  = 'running';
+    op.inicio  = timeStr;
+    if (!op.tecnico) op.tecnico = tecNombre;
+    if (typeof DB.timers === 'undefined') DB.timers = {};
+    DB.timers[of.of_sap+'_'+op.id] = { start: Date.now(), elapsed: 0, running: true };
+    await appSaveOpToSP(of.of_sap, op.id);
+    appNtfyNotificar('mon_op_iniciada', {
+      of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
+      tecnico: tecNombre
+    }).catch(function(){});
+    console.log('[Monitor] Iniciada:', op.nombre, 'por', tecNombre);
+
+  } else if (accion === 'concluir') {
+    op.status = 'op_concluded';
+    op.fin    = timeStr;
+    var timer = DB.timers ? DB.timers[of.of_sap+'_'+op.id] : null;
+    if (timer) {
+      timer.running = false;
+      if (timer.start) timer.elapsed = (timer.elapsed||0) + (Date.now()-timer.start);
+      timer.start = null;
+      op.mins = Math.round((timer.elapsed||0)/60000);
+      appSaveTimerToSP(of.of_sap+'_'+op.id).catch(function(){});
+    }
+    await appSaveOpToSP(of.of_sap, op.id);
+    appNtfyNotificar('mon_op_concluida', {
+      of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
+      tecnico: tecNombre
+    }).catch(function(){});
+    console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
+
+  } else if (accion === 'valcal') {
+    op.status  = 'validating';
+    op.needsCal = true;
+    op.calResult = null;
+    await appSaveOpToSP(of.of_sap, op.id);
+    appNtfyNotificar('mon_val_calidad', {
+      of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
+      tecnico: tecNombre
+    }).catch(function(){});
+    console.log('[Monitor] ValCal solicitada por:', tecNombre);
+  }
+
+  monitorRender();
+}
+
+// ── Gear menu ─────────────────────────────────────────────────────
+function monitorToggleGear() {
+  if (_MON.locked) {
+    // Require admin PIN to unlock
+    monitorAskAdminPin(function() {
+      _MON.locked = false;
+      localStorage.removeItem(_MON.LOCKED_KEY);
+      monitorToggleGear(); // open menu now
+    });
+    return;
+  }
+  var menu = document.getElementById('monitor-gear-menu');
+  if (!menu) return;
+  var isOpen = menu.style.display === 'block';
+  menu.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    setTimeout(function() {
+      var close = function(e) {
+        var m = document.getElementById('monitor-gear-menu');
+        var b = document.getElementById('monitor-gear-btn');
+        if (m && !m.contains(e.target) && b && !b.contains(e.target)) {
+          m.style.display = 'none';
+          document.removeEventListener('click', close);
+        }
+      };
+      document.addEventListener('click', close);
+    }, 10);
+  }
+}
+
+function monitorGoConfig() {
+  document.getElementById('monitor-gear-menu').style.display = 'none';
+  var configScreen = document.getElementById('monitor-config-screen');
+  configScreen.style.display = 'flex';
+  // Render station checkboxes
+  var container = document.getElementById('monitor-config-stations');
+  container.innerHTML = STATIONS.map(function(s) {
+    var checked = _MON.estaciones.includes(s) ? 'checked' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;padding:10px 12px;' +
+      'background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);' +
+      'border-radius:8px;cursor:pointer;font-size:.8rem;color:#e6edf3;">' +
+      '<input type="checkbox" value="'+s+'" '+checked+' style="width:16px;height:16px;cursor:pointer;">' +
+      s+'</label>';
+  }).join('');
+}
+
+function monitorConfigSave() {
+  var checks = document.querySelectorAll('#monitor-config-stations input[type=checkbox]:checked');
+  _MON.estaciones = Array.from(checks).map(function(c){ return c.value; });
+  if (!_MON.estaciones.length) {
+    alert('Selecciona al menos una estación.');
+    return;
+  }
+  localStorage.setItem(_MON.ESTACIONES_KEY, JSON.stringify(_MON.estaciones));
+  _MON.locked = true;
+  localStorage.setItem(_MON.LOCKED_KEY, '1');
+  document.getElementById('monitor-config-screen').style.display = 'none';
+  // Update gear button to show locked state
+  var gearBtn = document.getElementById('monitor-gear-btn');
+  if (gearBtn) { gearBtn.textContent = '🔒'; gearBtn.title = 'Requiere PIN de Admin'; }
+  monitorRender();
+  monitorStartPolling();
+}
+
+function monitorGoLauncher() {
+  document.getElementById('monitor-gear-menu').style.display = 'none';
+  monitorExit();
+  var launcher = document.getElementById('app-launcher');
+  if (launcher) {
+    launcher.style.display = 'flex';
+    if (typeof appRenderLauncher === 'function') appRenderLauncher();
+  }
+}
+
+function monitorGoLogout() {
+  document.getElementById('monitor-gear-menu').style.display = 'none';
+  monitorExit();
+  if (typeof appGearLogout === 'function') appGearLogout();
+}
+
+// ── Admin PIN ─────────────────────────────────────────────────────
+function monitorAskAdminPin(onSuccess) {
+  var savedPin = localStorage.getItem(_MON.ADMIN_PIN_KEY) || _MON.DEFAULT_ADMIN_PIN;
+  // Reuse PIN modal with special context
+  _MON.pinCtx = { accion: '_admin', _onSuccess: onSuccess, _adminPin: savedPin };
+  _MON.pinDigits = '';
+  monitorPinRefresh();
+  document.getElementById('monitor-pin-icon').textContent  = '🔐';
+  document.getElementById('monitor-pin-title').textContent = 'PIN de Administrador';
+  document.getElementById('monitor-pin-sub').textContent   = 'Ingresa el PIN de 6 dígitos del Admin';
+  document.getElementById('monitor-pin-error').textContent = '';
+  // Extend pin to 6 digits for admin — swap pinSubmit logic
+  _MON._adminMode = true;
+  _MON._adminOnSuccess = onSuccess;
+  _MON._adminPin = savedPin;
+  document.getElementById('monitor-pin-modal').style.display = 'flex';
+}
+
+// Patch monitorPinAdd to support 6-digit admin PIN
+var _monPinAddOrig = monitorPinAdd;
+monitorPinAdd = function(d) {
+  var maxLen = _MON._adminMode ? 6 : 4;
+  if (_MON.pinDigits.length >= maxLen) return;
+  _MON.pinDigits += d;
+  monitorPinRefresh();
+  if (_MON.pinDigits.length === maxLen) {
+    setTimeout(function() {
+      if (_MON._adminMode) {
+        monitorAdminPinSubmit();
+      } else {
+        monitorPinSubmit();
+      }
+    }, 200);
+  }
+};
+
+function monitorAdminPinSubmit() {
+  var pin = _MON.pinDigits;
+  var savedPin = _MON._adminPin || localStorage.getItem(_MON.ADMIN_PIN_KEY) || _MON.DEFAULT_ADMIN_PIN;
+  var errEl = document.getElementById('monitor-pin-error');
+  _MON.pinDigits = '';
+  monitorPinRefresh();
+  if (pin === savedPin) {
+    _MON._adminMode = false;
+    document.getElementById('monitor-pin-modal').style.display = 'none';
+    if (_MON._adminOnSuccess) _MON._adminOnSuccess();
+    _MON._adminOnSuccess = null;
+  } else {
+    errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
+  }
+}
+
+// ── FabTracker: show op_concluded badge for supervisor ────────────
+// Patch renderApp to highlight op_concluded ops
+var _monOrigAfterRender = (typeof afterRenderApp !== 'undefined') ? afterRenderApp : null;
+
+
 window.addEventListener('online', function() {
   var btn    = document.getElementById('app-login-btn');
   var status = document.getElementById('app-login-status');
@@ -9117,6 +9879,15 @@ function renderAppOpsPanel(of){
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
+    if(op.status==="op_concluded"){
+      h+="<div class='app-op-note' style='background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#f59e0b;'>⏳ Operador concluyó — aguarda confirmación del Supervisor</div>";
+      if(_appRoleLocal==='supervisor'||appCan('finish')){
+        h+="<div style='display:flex;gap:6px;margin-top:4px;'>";
+        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>✓ Confirmar conclusión</button>";
+        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>↩ Devolver a activa</button>";
+        h+="</div>";
+      }
+    }
     if(op.calResult){var cM={liberado:{bg:"rgba(34,197,94,.12)",col:"var(--agreen)",lbl:"✅ Liberado"},retrabajo:{bg:"rgba(212,160,23,.12)",col:"var(--ayellow)",lbl:"🔄 Retrabajo"},chatarra:{bg:"rgba(239,68,68,.12)",col:"var(--ared)",lbl:"🗑 Chatarra"}};var cm=cM[op.calResult]||cM.liberado;h+="<div class='app-op-note' style='background:"+cm.bg+";color:"+cm.col+";'>"+cm.lbl+(op.calComment?" — "+esc(op.calComment):"")+(op.qty_rej>0?" · "+op.qty_rej+" rec / "+(op.qty_total-op.qty_rej)+" lib":"")+"</div>";}
     h+="</div></div>";
     // BOTONES
