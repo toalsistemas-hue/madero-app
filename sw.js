@@ -3,7 +3,7 @@
 // Estrategia: Cache-First para app.html — funciona sin internet
 // ═══════════════════════════════════════════════════════════════════
 
-const SW_VERSION  = 'madero-fab-v6';
+const SW_VERSION  = 'madero-fab-v7';
 const CACHE_NAME  = SW_VERSION;
 const APP_SHELL   = [
   './app.html',
@@ -43,9 +43,10 @@ self.addEventListener('activate', function(evt) {
               return caches.delete(k);
             })
       );
-    }).then(function() {
-      return self.clients.claim();
     })
+    // clients.claim() removed intentionally:
+    // it triggers controllerchange → reload → network request → defeats offline cache
+    // The new SW takes control on next navigation automatically
   );
 });
 
