@@ -1869,8 +1869,8 @@ var APP_VERSION = 'v1.0.0';
 // Pantallas disponibles hardcoded como fallback (siempre funcionan
 // aunque SP no esté disponible o las listas no existan todavía)
 var APP_PANTALLAS_FALLBACK = [
-  { pantallaID: 'FabTracker', nombre: 'FabTracker', icono: '🏭',
-    descripcion: 'Seguimiento de Fabricaciones', color: '#1565C0' }
+  { PantallaID: 'FabTracker', Nombre: 'FabTracker', Icono_App: '🏭',
+    Descripcion: 'Seguimiento de Fabricaciones', Color: '#1565C0' }
 ];
 
 async function appShowLauncher() {
@@ -1942,16 +1942,11 @@ async function appRenderLauncher() {
   if (loading) loading.style.display = 'none';
   if (!grid) return;
 
-  // Si solo hay una pantalla, entrar directo sin mostrar el launcher
-  if (pantallas.length === 1) {
-    appLaunchPantalla(pantallas[0].pantallaID);
-    return;
-  }
-
-  // Renderizar grid de apps
+  // Renderizar grid de apps (siempre mostramos el launcher aunque haya 1 pantalla)
   grid.innerHTML = pantallas.map(function(p) {
     var color = p.Color || p.color || '#1565C0';
-    return '<div onclick="appLaunchPantalla(\''+p.pantallaID+'\')" '+
+    var pid = p.PantallaID || p.pantallaID || '';
+    return '<div onclick="appLaunchPantalla(\''+pid+'\')" '+
       'style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);'+
       'border-radius:14px;padding:20px 12px;display:flex;flex-direction:column;'+
       'align-items:center;gap:10px;cursor:pointer;transition:.15s;" '+
@@ -7480,11 +7475,22 @@ function applyAppUserProfile() {
   var titleEl = document.querySelector('.app-hdr-title');
   if (titleEl) titleEl.textContent = APP_USER_PROFILE.nombre || 'FabTracker';
 
-  // Hide role pills — role is set automatically
-  // Show only for admins so they can switch for testing
+  // Role pills: admins see all 3 to switch; regular users see only their role button
   var pillsEl = document.querySelector('.app-role-pills');
   if (pillsEl) {
-    pillsEl.style.display = APP_USER_PROFILE.esAdmin ? 'flex' : 'none';
+    if (APP_USER_PROFILE.esAdmin) {
+      pillsEl.style.display = 'flex';
+      // Show all buttons for admin
+      pillsEl.querySelectorAll('.app-rp').forEach(function(b){ b.style.display = ''; });
+    } else {
+      pillsEl.style.display = 'flex';
+      // Show ONLY the button for the user's role, hide others
+      var roleToBtn = { supervisor: 'supervisor', calidad_lin: 'calidad_lin', calidad_tiem: 'calidad_tiem' };
+      pillsEl.querySelectorAll('.app-rp').forEach(function(b) {
+        var btnRole = b.getAttribute('onclick') ? b.getAttribute('onclick').replace(/.*setAppRole\('([^']+)'.*/,'$1') : '';
+        b.style.display = (btnRole === APP_USER_PROFILE.role) ? '' : 'none';
+      });
+    }
   }
 
   // Botón de notificaciones ntfy — solo visible para Administrador General
