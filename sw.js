@@ -1,73 +1,115 @@
-// FabTracker Service Worker v1
-// Cache básico para funcionar offline (pantalla de carga)
+// ═══════════════════════════════════════════════════════════════════
+// sw.js — Service Worker FabTracker · Madero Equipos de Ordeño
+// ═══════════════════════════════════════════════════════════════════
 
-var CACHE_NAME = 'fabtracker-v1';
-var urlsToCache = [
+const SW_VERSION    = 'madero-fab-v4';
+const CACHE_NAME    = SW_VERSION;
+const FILES_TO_CACHE = [
+  './',
   './app.html',
-  './icon-192.png',
-  './icon-512.png',
+  './offline.html',
   './manifest.json'
 ];
 
-// Instalar SW y cachear archivos base
-self.addEventListener('install', function(event) {
-  event.waitUntil(
+// ── Instalación ────────────────────────────────────────────────────
+self.addEventListener('install', function(evt) {
+  console.log('[SW] Instalando:', SW_VERSION);
+  evt.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
-      console.log('SW: Cacheando archivos base');
-      return cache.addAll(urlsToCache);
+      return cache.addAll(FILES_TO_CACHE).catch(function(e) {
+        console.warn('[SW] Cache parcial:', e.message);
+      });
     })
   );
   self.skipWaiting();
 });
 
-// Activar y limpiar caches viejos
-self.addEventListener('activate', function(event) {
-  event.waitUntil(
-    caches.keys().then(function(cacheNames) {
-      return Promise.all(
-        cacheNames.filter(function(name) {
-          return name !== CACHE_NAME;
-        }).map(function(name) {
-          console.log('SW: Eliminando cache viejo:', name);
-          return caches.delete(name);
-        })
-      );
+// ── Activación ─────────────────────────────────────────────────────
+self.addEventListener('activate', function(evt) {
+  evt.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(keys.map(function(key) {
+        if (key !== CACHE_NAME) return caches.delete(key);
+      }));
+    }).then(function() {
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
-// Estrategia: Network First (siempre intenta red, fallback a cache)
-// Así siempre tienes la versión más reciente cuando hay internet
-self.addEventListener('fetch', function(event) {
-  // Solo cachear requests del mismo origen
-  if (!event.request.url.startsWith(self.location.origin)) return;
-  // No cachear requests a Microsoft/Graph API
-  if (event.request.url.includes('microsoftonline') ||
-      event.request.url.includes('graph.microsoft') ||
-      event.request.url.includes('sharepoint')) return;
+// ── Fetch — Network first, offline fallback ────────────────────────
+self.addEventListener('fetch', function(evt) {
+  if (evt.request.method !== 'GET') return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then(function(response) {
-        // Guardar copia en cache si es válida
-        if (response && response.status === 200) {
-          var responseClone = response.clone();
-          caches.open(CACHE_NAME).then(function(cache) {
-            cache.put(event.request, responseClone);
-          });
+  var url = evt.request.url;
+
+  // For navigation requests (page loads) — network first, offline page as fallback
+  if (evt.request.mode === 'navigate') {
+    evt.respondWith(
+      fetch(evt.request).then(function(resp) {
+        // Cache the fresh response
+        if (resp && resp.status === 200) {
+          var clone = resp.clone();
+          caches.open(CACHE_NAME).then(function(cache) { cache.put(evt.request, clone); });
         }
-        return response;
-      })
-      .catch(function() {
-        // Sin red — usar cache
-        return caches.match(event.request).then(function(cached) {
-          if (cached) return cached;
-          // Fallback a app.html para navegación
-          if (event.request.mode === 'navigate') {
-            return caches.match('./app.html');
-          }
+        return resp;
+      }).catch(function() {
+        // No internet — serve offline page from cache
+        return caches.match('./offline.html').then(function(cached) {
+          return cached || new Response(
+            '<h1 style="font-family:sans-serif;text-align:center;padding:40px;color:#e6edf3;background:#0d1117;min-height:100vh">Sin conexión a internet.<br><br><button onclick="location.reload()" style="padding:12px 24px;border-radius:8px;background:#1565C0;color:#fff;border:none;font-size:1rem;cursor:pointer">Reintentar</button></h1>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          );
         });
       })
+    );
+    return;
+  }
+
+  // For other requests — try network, then cache
+  evt.respondWith(
+    fetch(evt.request).catch(function() {
+      return caches.match(evt.request);
+    })
+  );
+});
+
+// ── Messages ───────────────────────────────────────────────────────
+self.addEventListener('message', function(evt) {
+  if (evt.data && evt.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ── Push Notifications ─────────────────────────────────────────────
+self.addEventListener('push', function(evt) {
+  var data = {};
+  try { data = evt.data ? evt.data.json() : {}; } catch(e) {
+    data = { title: 'FabTracker', body: evt.data ? evt.data.text() : 'Nueva notificación' };
+  }
+  var tipo = data.tipo || 'coord';
+  var iconoTipo = { coord:'📅', calidad:'🔍', turno:'🤝', retrabajo:'🔧', error:'⚠️' }[tipo] || '📡';
+  evt.waitUntil(
+    self.registration.showNotification(iconoTipo + ' ' + (data.title || 'FabTracker'), {
+      body:    data.body || 'Tienes una notificación pendiente',
+      icon:    './icon-192.png',
+      badge:   './icon-192.png',
+      tag:     data.tag || 'fabtracker',
+      renotify: true,
+      requireInteraction: tipo === 'calidad',
+      vibrate: tipo === 'calidad' ? [200,100,200,100,200] : [100,50,100],
+      data:    { tipo: tipo, url: './app.html', of_sap: data.of_sap||'', op_id: data.op_id||'' }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', function(evt) {
+  evt.notification.close();
+  if (evt.action === 'ignorar') return;
+  evt.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(wins) {
+      for (var i = 0; i < wins.length; i++) {
+        if (wins[i].url.indexOf('app.html') >= 0) { wins[i].focus(); return; }
+      }
+      if (clients.openWindow) return clients.openWindow('./app.html');
+    })
   );
 });

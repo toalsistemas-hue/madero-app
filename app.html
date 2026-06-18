@@ -2821,7 +2821,7 @@ function renderAppHoy(){
   var _renderRole = _isReadonly ? 'supervisor' : _appRole;
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
-  if(_isReadonly)h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -7785,9 +7785,12 @@ function applyAppUserProfile() {
   // Sync ntfy button label in gear menu
   appNtfyUpdateBtn();
 
-  // Set active pill
+  // Set active pill — mark the one matching APP.role as active
   document.querySelectorAll('.app-rp').forEach(function(btn) {
     btn.classList.remove('active');
+    var btnRole = btn.getAttribute('onclick')
+      ? btn.getAttribute('onclick').replace(/[\s\S]*setAppRole\('([^']+)'[\s\S]*/,'$1') : '';
+    if (btnRole === APP.role) btn.classList.add('active');
   });
   var roleMap = { supervisor: 0, calidad_lin: 1, calidad_tiem: 2 };
   var pills = document.querySelectorAll('.app-rp');
@@ -8795,7 +8798,7 @@ function renderAppHoy(){
   var _renderRole = _isReadonly ? 'supervisor' : _appRole;
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
-  if(_isReadonly)h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
