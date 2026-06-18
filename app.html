@@ -1846,7 +1846,7 @@ async function appNtfyGuardar() {
     var resp = await fetch('https://ntfy.sh/' + canal, {
       method: 'POST',
       headers: {
-        'Title':    encodeURIComponent('FabTracker conectado'),
+        'Title':    'FabTracker conectado',
         'Priority': 'high',
         'Tags':     'white_check_mark,bell'
       },
@@ -2091,7 +2091,7 @@ async function appNtfyNotificar(evento, data) {
       fetch('https://ntfy.sh/' + _ntfyCanalClean, {
         method: 'POST',
         headers: {
-          'Title':    encodeURIComponent(m.titulo),
+          'Title':    m.titulo,
           'Priority': m.prioridad || 'high',
           'Tags':     'factory,bell'
         },
@@ -3076,8 +3076,8 @@ function renderAppOpsPanel(of){
           h+="</div>";
         }
       }
-      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
-      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('requestCal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('requestCal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";
@@ -7564,6 +7564,7 @@ function appCan(action) {
     case 'resume':   case 'addOp':
     case 'traspaso': case 'finish':  return cfg.canStart || cfg.canFinish;
     case 'cal':                      return cfg.canCal;
+    case 'requestCal':               return cfg.canRequestCal;
     case 'calTiem':                  return cfg.canCalTiem;
     default:                         return false;
   }
@@ -7616,10 +7617,12 @@ function puestoToAppRoles(puestoIDorNombre) {
 
 // Role display names and permissions
 var APP_ROLE_CONFIG = {
-  supervisor:   { label: 'Supervisor de Línea',        icon: '🏗',  canStart: true,  canFinish: true,  canCal: false, canCalTiem: false },
-  calidad_lin:  { label: 'Jefe de Control de Calidad', icon: '🔍',  canStart: false, canFinish: false, canCal: true,  canCalTiem: false },
-  calidad_tiem: { label: 'Analista de Calidad',        icon: '⏱',  canStart: false, canFinish: false, canCal: false, canCalTiem: true  },
-  readonly:     { label: 'Solo Lectura',               icon: '👁',  canStart: false, canFinish: false, canCal: false, canCalTiem: false  },
+  //                                                                              canRequestCal = puede SOLICITAR validación (supervisor)
+  //                                                                              canCal        = puede REALIZAR validación (jefe calidad)
+  supervisor:   { label: 'Supervisor de Línea',        icon: '🏗',  canStart: true,  canFinish: true,  canRequestCal: true,  canCal: false, canCalTiem: false },
+  calidad_lin:  { label: 'Jefe de Control de Calidad', icon: '🔍',  canStart: false, canFinish: false, canRequestCal: false, canCal: true,  canCalTiem: false },
+  calidad_tiem: { label: 'Analista de Calidad',        icon: '⏱',  canStart: false, canFinish: false, canRequestCal: false, canCal: false, canCalTiem: true  },
+  readonly:     { label: 'Solo Lectura',               icon: '👁',  canStart: false, canFinish: false, canRequestCal: false, canCal: false, canCalTiem: false  },
 };
 
 async function appLoadUserProfile() {
@@ -9134,8 +9137,8 @@ function renderAppOpsPanel(of){
           h+='</div>';
         }
       }
-      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
-      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('cal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="running"){if(appCan('pause'))h+="<button class='app-ob app-ob-pause' onclick='appOpenPause(\""+of.of_sap+"\",\""+op.id+"\")'>⏸ Pausar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('requestCal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
+      if(op.status==="paused"){if(appCan('resume'))h+="<button class='app-ob app-ob-resume' onclick='appResumeOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reanudar</button>";if(canFinish&&appCan('finish'))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";if(appCan('requestCal'))h+="<button class='app-ob app-ob-val' onclick='appOpenValCal(\""+of.of_sap+"\",\""+op.id+"\")'>🔍 Val.Cal.</button>";}
       if(op.status==="validating")h+="<span class='app-chip app-c-pur' style='font-size:.64rem;'>🔍 Esperando Calidad</span>";
       if(op.calResult==="liberado"&&(op.status==="running"||op.status==="paused"))h+="<button class='app-ob app-ob-end' onclick='appOpenFinish(\""+of.of_sap+"\",\""+op.id+"\")'>✓ Terminar</button>";
       if(op.status==="retrabajo"&&appCan('start'))h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Reiniciar</button>";

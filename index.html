@@ -11200,7 +11200,7 @@ async function ntfySend(canal, titulo, cuerpo, prioridad) {
     await fetch('https://ntfy.sh/' + canal, {
       method: 'POST',
       headers: {
-        'Title':    encodeURIComponent(titulo),
+        'Title':    titulo,
         'Priority': prioridad || 'default',
         'Tags':     'factory,bell'
       },
