@@ -1911,7 +1911,7 @@ tr:last-child td{border-bottom:none;}
                 placeholder="6 dígitos numéricos" maxlength="6"
                 style="width:160px;font-family:monospace;letter-spacing:.2em;font-size:1rem;"
                 oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,6)">
-              <button class="btn btn-primary btn-sm" onclick="cfgSaveMonitorAdminPin()">💾 Guardar PIN</button>
+              <button class="btn btn-primary btn-sm" id="cfg-monitor-save-pin-btn" onclick="cfgSaveMonitorAdminPin()">💾 Guardar PIN</button>
             </div>
             <div id="cfg-monitor-pin-status" style="font-size:.72rem;color:var(--dim);margin-top:8px;"></div>
           </div>
@@ -4949,11 +4949,24 @@ async function ftSaveTecnico() {
   if (!nombre) { alert('El nombre es requerido.'); return; }
   try {
     const siteId = await getSiteId();
-    const fields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy, PIN_Monitor: pin };
+    // Base fields through flow (LISTAS_PROTEGIDAS)
+    const baseFields = { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy };
     if (_ftEditTecId) {
-      await spEscribir('FT_Tecnicos', fields, _ftEditTecId);
+      await spEscribir('FT_Tecnicos', baseFields, _ftEditTecId);
+      // PIN_Monitor: update directly via Graph (flow doesn't handle this column)
+      if (pin) {
+        try {
+          await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'/fields', { PIN_Monitor: pin });
+        } catch(pinErr) { console.warn('[ftSave] PIN_Monitor patch:', pinErr.message); }
+      }
     } else {
-      await spEscribir('FT_Tecnicos', fields, null);
+      const newItem = await spEscribir('FT_Tecnicos', baseFields, null);
+      // Get the new item ID to patch PIN
+      if (pin && newItem && newItem.id) {
+        try {
+          await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+newItem.id+'/fields', { PIN_Monitor: pin });
+        } catch(pinErr) { console.warn('[ftSave] PIN_Monitor patch (new):', pinErr.message); }
+      }
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);
@@ -11588,21 +11601,32 @@ async function coordRevertOpConclusion(ofSap, opId) {
 }
 
 
-function cfgSaveMonitorAdminPin() {
+async function cfgSaveMonitorAdminPin() {
   var pin = (document.getElementById('cfg-monitor-admin-pin').value||'').trim();
   var status = document.getElementById('cfg-monitor-pin-status');
   if (pin.length !== 6 || !/^[0-9]{6}$/.test(pin)) {
-    if (status) status.textContent = '⚠️ El PIN debe ser exactamente 6 dígitos numéricos.';
-    status.style.color = '#ef4444';
+    if (status) { status.textContent = '⚠️ El PIN debe ser exactamente 6 dígitos numéricos.'; status.style.color = '#ef4444'; }
     return;
   }
-  // Store in localStorage — admin must set this on each tablet
-  localStorage.setItem('monitor_admin_pin', pin);
-  document.getElementById('cfg-monitor-admin-pin').value = '';
-  if (status) {
-    status.textContent = '✅ PIN guardado en este dispositivo. Repite en cada tablet.';
-    status.style.color = '#22c55e';
-    setTimeout(function(){ if(status) status.textContent = ''; }, 4000);
+  var btn = document.querySelector('#cfg-view-monitor .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+  try {
+    const siteId = await getSiteId();
+    // Find existing monitor_admin_pin record in Configuracion list
+    const cfgAll = await graphGet('sites/'+siteId+'/lists/Configuracion/items?$expand=fields&$top=100');
+    const existing = (cfgAll.value||[]).find(function(i){ return (i.fields.Title||'') === 'monitor_admin_pin'; });
+    if (existing) {
+      await graphPatch('sites/'+siteId+'/lists/Configuracion/items/'+existing.id+'/fields', { Valor: pin });
+    } else {
+      await graphPost('sites/'+siteId+'/lists/Configuracion/items', { fields: { Title: 'monitor_admin_pin', Valor: pin } });
+    }
+    document.getElementById('cfg-monitor-admin-pin').value = '';
+    if (status) { status.textContent = '✅ PIN guardado en SharePoint. Se sincronizará en todas las tablets.'; status.style.color = '#22c55e'; }
+    setTimeout(function(){ if(status) status.textContent = ''; }, 5000);
+  } catch(e) {
+    if (status) { status.textContent = '❌ Error: ' + e.message; status.style.color = '#ef4444'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar PIN'; }
   }
 }
 

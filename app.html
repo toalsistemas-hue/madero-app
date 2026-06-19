@@ -538,6 +538,10 @@ tr:last-child td{border-bottom:none;}
     </button>
   </div>
 
+  <!-- Filter bar -->
+  <div id="monitor-filter-bar" style="display:none;flex-wrap:wrap;gap:6px;padding:8px 12px;
+       background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;"></div>
+
   <!-- Content area -->
   <div id="monitor-content" style="flex:1;overflow-y:auto;padding:10px;"></div>
 
@@ -2084,11 +2088,14 @@ async function appRenderLauncher() {
     var siteId = await appGetSiteId();
     // Cargar pantallas del puesto del usuario desde FT_PuestosMovil
     if (APP_USER_PROFILE && APP_USER_PROFILE.puestoMovilID) {
-      var pRes = await appGraphGet(
-        'sites/'+siteId+'/lists/FT_PuestosMovil/items' +
-        '?$expand=fields&$filter=fields/PuestoID eq \''+APP_USER_PROFILE.puestoMovilID+'\'' +
-        '&$top=1'
+      // $filter + $expand returns 400 in SP — load all and filter client-side
+      var pAllRes = await appGraphGet(
+        'sites/'+siteId+'/lists/FT_PuestosMovil/items?$expand=fields&$top=200'
       ).catch(function(){ return null; });
+      var pMatch = pAllRes && pAllRes.value
+        ? pAllRes.value.find(function(i){ return (i.fields.PuestoID||'') === APP_USER_PROFILE.puestoMovilID; })
+        : null;
+      var pRes = pMatch ? { value: [pMatch] } : null;
       if (pRes && pRes.value && pRes.value[0]) {
         var pantallasJSON = pRes.value[0].fields.Pantallas || '[]';
         var pantallasIDs  = [];
@@ -5244,7 +5251,15 @@ function appSaveQuickAssign(){
   if(wrap) wrap.remove();
   closeAppModal('app-modal-quick-assign');
   if(ctx.pendingStart) _doStartOp(ctx.of_sap, ctx.op_id);
-  else renderApp();
+  else {
+    renderApp();
+    // Punto 4: save tecnico/ayudantes to SP immediately so Monitor shows them
+    if (op._spId) {
+      appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
+        console.warn('[QuickAssign] SP save:', e.message);
+      });
+    }
+  }
 }
 
 // Botón de cambio de técnico/piezas/ayudantes (sin iniciar)
@@ -8114,6 +8129,7 @@ async function appValidateRole() {
 
 var _MON = {
   tab:            'activas',         // 'activas' | 'terminadas'
+  filtroEstacion: '',                // '' = todas, o nombre de estación
   estaciones:     [],                // estaciones seleccionadas
   locked:         false,             // config bloqueada
   pollTimer:      null,
@@ -8128,22 +8144,36 @@ var _MON = {
 };
 
 // ── Init ──────────────────────────────────────────────────────────
-function monitorInit() {
+async function monitorInit() {
   var screen = document.getElementById('monitor-screen');
   if (screen) screen.style.display = 'flex';
   _MON.estaciones = JSON.parse(localStorage.getItem(_MON.ESTACIONES_KEY) || '[]');
   _MON.locked     = localStorage.getItem(_MON.LOCKED_KEY) === '1';
   monitorUpdateClock();
   _MON.clockTimer = setInterval(monitorUpdateClock, 1000);
-  monitorLoadTechnicians().then(function() {
-    if (!_MON.estaciones.length) {
-      // First time — go to config
-      monitorGoConfig();
-    } else {
-      monitorRender();
-      monitorStartPolling();
+  // Load Admin PIN from SP Configuracion list
+  try {
+    var siteId = await appGetSiteId();
+    var cfgRes = await appFlowGet('Configuracion', 100).catch(function(){ return null; });
+    if (cfgRes && cfgRes.value) {
+      var pinRecord = cfgRes.value.find(function(i){
+        var f = i.fields || i;
+        return (f.Title||'') === 'monitor_admin_pin';
+      });
+      if (pinRecord) {
+        var f = pinRecord.fields || pinRecord;
+        var spPin = f.Valor || f.valor || '';
+        if (spPin) localStorage.setItem(_MON.ADMIN_PIN_KEY, spPin);
+      }
     }
-  });
+  } catch(e) { console.warn('[Monitor] PIN SP load:', e.message); }
+  await monitorLoadTechnicians();
+  if (!_MON.estaciones.length) {
+    monitorGoConfig();
+  } else {
+    monitorRender();
+    monitorStartPolling();
+  }
 }
 
 function monitorUpdateClock() {
@@ -8184,6 +8214,25 @@ async function monitorLoadTechnicians() {
 }
 
 // ── Tab ───────────────────────────────────────────────────────────
+function monitorBuildFilterBar(bar, estaciones) {
+  var all = _MON.filtroEstacion === '';
+  var html = '';
+  var styleBase = 'padding:4px 10px;border-radius:6px;font-size:.68rem;cursor:pointer;border:1px solid rgba(255,255,255,.1);';
+  var styleActive = styleBase + 'background:#1565C0;color:#fff;font-weight:600;border-color:#1565C0;';
+  var styleInact  = styleBase + 'background:rgba(255,255,255,.06);color:#8b949e;';
+  html += '<button style="'+(all?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\'\';monitorRender();">Todas</button>';
+  estaciones.forEach(function(est) {
+    var a = (_MON.filtroEstacion === est);
+    html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
+  });
+  bar.innerHTML = html;
+}
+
+function monitorSetFiltro(estacion) {
+  _MON.filtroEstacion = estacion;
+  monitorRender();
+}
+
 function monitorSetTab(tab) {
   _MON.tab = tab;
   ['activas','terminadas'].forEach(function(t) {
@@ -8203,6 +8252,20 @@ function monitorRender() {
 
   var today = new Date().toLocaleDateString('es-MX');
   var estaciones = _MON.estaciones;
+  // Apply station filter
+  var estacionesFiltradas = _MON.filtroEstacion
+    ? estaciones.filter(function(e){ return e === _MON.filtroEstacion; })
+    : estaciones;
+
+  // Render filter bar
+  var filterBar = document.getElementById('monitor-filter-bar');
+  if (filterBar && estaciones.length > 1) {
+    filterBar.style.display = 'flex';
+    monitorBuildFilterBar(filterBar, estaciones);
+  } else if (filterBar) {
+    filterBar.style.display = 'none';
+  }
+
   if (!estaciones.length) {
     content.innerHTML = '<div style="text-align:center;padding:40px;color:#8b949e;">Sin estaciones configuradas. Toca ⚙️ para configurar.</div>';
     return;
@@ -8236,10 +8299,23 @@ function monitorRender() {
     if (!byStation[item.op.estacion]) byStation[item.op.estacion] = [];
     byStation[item.op.estacion].push(item);
   });
+  // Sort each station's ops by cola position (ascending), then by status priority
+  var statusOrder = { running:0, op_concluded:1, validating:2, paused:3, pending:4 };
+  Object.keys(byStation).forEach(function(est) {
+    byStation[est].sort(function(a, b) {
+      var colaA = (a.op.cola != null) ? a.op.cola : 999;
+      var colaB = (b.op.cola != null) ? b.op.cola : 999;
+      var stA = statusOrder[a.op.status] != null ? statusOrder[a.op.status] : 9;
+      var stB = statusOrder[b.op.status] != null ? statusOrder[b.op.status] : 9;
+      // Active ops first, then by cola
+      if (stA !== stB) return stA - stB;
+      return colaA - colaB;
+    });
+  });
 
   var h = '';
   var anyOps = false;
-  estaciones.forEach(function(est) {
+  estacionesFiltradas.forEach(function(est) {
     var ops = byStation[est] || [];
     if (!ops.length) return;
     anyOps = true;
@@ -8283,20 +8359,24 @@ function monitorRenderOp(of, op) {
   var isValidating = op.status === 'validating';
   var isPaused    = op.status === 'paused';
 
-  // Elapsed time
+  // Elapsed time — use DB.timers exactly like FabTracker
   var elapsed = '';
-  if ((isRunning || isPaused || isConcluded || isValidating) && op.inicio) {
-    var mins = op.mins || 0;
-    if (isRunning && op.inicio) {
-      var startParts = op.inicio.split(':');
-      var now = new Date();
-      var start = new Date(now);
-      start.setHours(parseInt(startParts[0]), parseInt(startParts[1]), 0);
-      var diff = Math.floor((now - start) / 60000);
-      mins = Math.max(0, diff + (op.elapsedMins || 0));
+  if (isRunning || isPaused || isConcluded || isValidating) {
+    var timerKey = of.of_sap + '_' + op.id;
+    var t = DB.timers && DB.timers[timerKey];
+    var mins = 0;
+    if (t) {
+      var accumulated = t.elapsed || 0;
+      var current = (t.running && t.start) ? (Date.now() - t.start) : 0;
+      mins = Math.floor((accumulated + current) / 60000);
+    } else {
+      // Fallback: use op.mins from SP
+      mins = op.mins || 0;
     }
-    var h2 = Math.floor(mins/60), m2 = mins % 60;
-    elapsed = h2 > 0 ? h2+'h '+m2+'m' : m2+'m';
+    if (mins > 0 || isRunning) {
+      var h2 = Math.floor(mins/60), m2 = mins % 60;
+      elapsed = h2 > 0 ? h2+'h '+m2+'m' : m2+'m';
+    }
   }
 
   var borderColor = isRunning ? '#22c55e' : isConcluded ? '#f59e0b' : isValidating ? '#a78bfa' : 'rgba(255,255,255,.06)';
@@ -8325,8 +8405,19 @@ function monitorRenderOp(of, op) {
   card += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:.72rem;color:#8b949e;">';
   card += '<span>🔧 '+esc(op.nombre)+'</span>';
   card += '<span>📦 '+op.qty_total+' pzas</span>';
-  if (op.tecnico) card += '<span>👷 '+esc(op.tecnico)+'</span>';
-  else card += '<span style="color:#f59e0b;">👤 Sin asignar</span>';
+  card += '</div>';
+  // Técnico y ayudantes
+  card += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">';
+  if (op.tecnico) {
+    card += '<span style="background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 8px;font-size:.7rem;color:#58a6ff;">👷 '+esc(op.tecnico)+'</span>';
+  } else {
+    card += '<span style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:5px;padding:2px 8px;font-size:.7rem;color:#f59e0b;">👤 Sin técnico asignado</span>';
+  }
+  if (op.ayudantes && op.ayudantes.length) {
+    op.ayudantes.forEach(function(a) {
+      if (a) card += '<span style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:2px 8px;font-size:.7rem;color:#8b949e;">🤝 '+esc(a)+'</span>';
+    });
+  }
   card += '</div>';
 
   // Action buttons
@@ -12022,7 +12113,15 @@ function appSaveQuickAssign(){
   if(wrap) wrap.remove();
   closeAppModal('app-modal-quick-assign');
   if(ctx.pendingStart) _doStartOp(ctx.of_sap, ctx.op_id);
-  else renderApp();
+  else {
+    renderApp();
+    // Punto 4: save tecnico/ayudantes to SP immediately so Monitor shows them
+    if (op._spId) {
+      appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
+        console.warn('[QuickAssign] SP save:', e.message);
+      });
+    }
+  }
 }
 
 // Botón de cambio de técnico/piezas/ayudantes (sin iniciar)
