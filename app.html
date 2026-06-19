@@ -242,6 +242,7 @@ tr:last-child td{border-bottom:none;}
 .opr.validating{border-color:var(--apurple);}
 .opr.done{border-color:rgba(34,197,94,.2);opacity:.82;}
 .opr.rejected{border-color:var(--ared);}
+.opr.op_concluded{border-color:#f59e0b;background:rgba(245,158,11,.05);}
 .app-op-top{display:flex;align-items:flex-start;gap:5px;}
 .app-move-btns{display:flex;flex-direction:column;gap:1px;flex-shrink:0;}
 .app-mv-btn{width:16px;height:15px;border:1px solid rgba(255,255,255,.08);border-radius:3px;background:transparent;color:var(--adim);font-size:.56rem;cursor:pointer;display:flex;align-items:center;justify-content:center;}
@@ -8131,6 +8132,28 @@ async function appValidateRole() {
   return await appLoadUserProfile();
 }
 
+
+// ── Monitor: Confirm or revert op_concluded from FabTracker app ──
+async function monitorConfirmOp(ofSap, opId) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+  op.status = 'done';
+  op.fin = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  renderApp();
+  await appSaveOpToSP(ofSap, opId).catch(function(e){ console.warn('[monitorConfirm]', e.message); });
+}
+
+async function monitorRevertOp(ofSap, opId) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+  op.status = 'running';
+  op.fin = null;
+  renderApp();
+  await appSaveOpToSP(ofSap, opId).catch(function(e){ console.warn('[monitorRevert]', e.message); });
+}
+
 // ════════════════════════════════════════════════════════════════
 // ── MONITOR ESTACIÓN — Sistema de tablet fija por área ────────────
 // ════════════════════════════════════════════════════════════════
@@ -8708,9 +8731,10 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
 
   } else if (accion === 'valcal') {
-    op.status  = 'validating';
-    op.needsCal = true;
+    op.status   = 'validating';
+    op.needsCal  = true;
     op.calResult = null;
+    op.valcalNote = 'Solicitado desde Monitor — ' + tecNombre;
     await appSaveOpToSP(of.of_sap, op.id);
     appNtfyNotificar('mon_val_calidad', {
       of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,

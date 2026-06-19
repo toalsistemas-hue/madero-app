@@ -9878,7 +9878,7 @@ function renderSeg(){
         h+='<div style="width:18px;height:18px;border-radius:4px;background:var(--green);display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;">✓</div>';
         h+='<div style="flex:1;min-width:0;">';
         h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' <span style="color:var(--dim);font-size:.7rem;">· '+esc(of.articulo)+'</span>':'')+'</span></div>';
-        h+='<div style="font-size:.78rem;color:var(--text-dim);">'+esc(of.descripcion.substring(0,60))+'</div>';
+        h+='<div style="font-size:.78rem;color:var(--text-dim);">'+esc(of.descripcion||'')+'</div>';
         if(of.fecha_entrega){var _p=of.fecha_entrega.split('-');var _f=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:of.fecha_entrega;h+='<div style="font-size:.7rem;color:var(--dim);">📅 '+_f+(of.cantidad?' · 📦 '+of.cantidad+' pzas':'')+'</div>';}
         h+='</div>';
         h+='<span style="font-size:.68rem;color:var(--green);white-space:nowrap;">✓ Cerrada</span>';
@@ -9889,7 +9889,7 @@ function renderSeg(){
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
-      h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion.substring(0,40))+'</span></div>';
+      h+=' <span style="font-size:.78rem;font-weight:500;">'+esc(of.descripcion||'')+'</span></div>';
       h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+aof.ops.length+' · '+pct+'%</span></div>';
       h+='<div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:'+pct+'%;background:var(--green);border-radius:2px;"></div></div>';
       // -- 8: Ops con comentarios --
