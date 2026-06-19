@@ -495,6 +495,8 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <div id="monitor-clock" style="font-size:.8rem;color:#58a6ff;font-family:monospace;"></div>
+      <button onclick="monitorToggleDebug()" title="Debug"
+        style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:5px 8px;cursor:pointer;color:#8b949e;font-size:.75rem;">🐛</button>
       <button id="monitor-gear-btn" onclick="monitorToggleGear()"
         style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
                border-radius:7px;padding:5px 8px;cursor:pointer;color:#8b949e;font-size:.85rem;">⚙️</button>
@@ -2248,6 +2250,7 @@ async function appNtfyNotificar(evento, data) {
       }
 
       var _ntfyCanalClean = (u.Canal_Ntfy||'').replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');
+      var _bodyFinal = cuerpo + (data && data.operador ? '\nOperador: ' + data.operador : '');
       fetch('https://ntfy.sh/' + _ntfyCanalClean, {
         method: 'POST',
         headers: {
@@ -2255,7 +2258,7 @@ async function appNtfyNotificar(evento, data) {
           'Priority': m.prioridad || 'high',
           'Tags':     'factory,bell'
         },
-        body: cuerpo
+        body: _bodyFinal
       }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
         .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
     });
@@ -3224,8 +3227,8 @@ function renderAppOpsPanel(of){
       h+="<div class='app-op-note' style='background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#f59e0b;'>⏳ Operador concluyó — aguarda confirmación del Supervisor</div>";
       if(_appRoleLocal==='supervisor'||appCan('finish')){
         h+="<div style='display:flex;gap:6px;margin-top:4px;'>";
-        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>✓ Confirmar conclusión</button>";
-        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>↩ Devolver a activa</button>";
+        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\"" +of.of_sap+ "\",\""+op.id+"\")'>✓ Confirmar conclusión</button>";
+        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\"" +of.of_sap+ "\",\""+op.id+"\")'>↩ Devolver a activa</button>";
         h+="</div>";
       }
     }
@@ -8428,15 +8431,17 @@ function monitorRenderOp(of, op) {
 
   // Action buttons
   var ofSap = of.of_sap, opId = op.id;
-  card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
 
-  // Inicio/Fin times
+  // Inicio/Fin times (full date+time)
   if (op.inicio || op.fin) {
-    card += '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:.68rem;color:#8b949e;">';
-    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+esc(op.inicio)+'</span></span>';
-    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+esc(op.fin)+'</span></span>';
+    card += '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:.68rem;color:#8b949e;flex-wrap:wrap;">';
+    var _today = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(op.fechaInicio||_today)+' '+esc(op.inicio)+'</span></span>';
+    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(op.fechaFin||_today)+' '+esc(op.fin)+'</span></span>';
     card += '</div>';
   }
+
+  card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
 
   if (isPending) {
     card += '<button onclick="monitorAskPin(\'iniciar\',\''+ofSap+'\',\''+opId+'\')" '+
@@ -8701,6 +8706,11 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
 }
 
 // ── Gear menu ─────────────────────────────────────────────────────
+function monitorToggleDebug() {
+  var dbg = document.getElementById('debug-console');
+  if (dbg) { dbg.style.display = (dbg.style.display === 'none' || !dbg.style.display) ? 'flex' : 'none'; }
+}
+
 function monitorLockConfig() {
   document.getElementById('monitor-gear-menu').style.display = 'none';
   _MON.locked = true;
@@ -10015,8 +10025,8 @@ function renderAppOpsPanel(of){
       h+="<div class='app-op-note' style='background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#f59e0b;'>⏳ Operador concluyó — aguarda confirmación del Supervisor</div>";
       if(_appRoleLocal==='supervisor'||appCan('finish')){
         h+="<div style='display:flex;gap:6px;margin-top:4px;'>";
-        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>✓ Confirmar conclusión</button>";
-        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\\\""+of.of_sap+"\\\",\\\""+op.id+"\\\")'>↩ Devolver a activa</button>";
+        h+="<button class='app-ob' style='background:#22c55e;color:#000;font-weight:600;font-size:.72rem;' onclick='monitorConfirmOp(\"" +of.of_sap+ "\",\""+op.id+"\")'>✓ Confirmar conclusión</button>";
+        h+="<button class='app-ob' style='background:rgba(255,100,100,.15);color:#f87171;font-size:.72rem;' onclick='monitorRevertOp(\"" +of.of_sap+ "\",\""+op.id+"\")'>↩ Devolver a activa</button>";
         h+="</div>";
       }
     }

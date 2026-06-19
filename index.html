@@ -8467,12 +8467,9 @@ function openOFOpsModal(sap) {
     h += '</div>';
     h += '</div>';
     if(op.status==='op_concluded'){
-      h += '<div style="margin:0 0 10px;padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:.75rem;color:#f59e0b;display:flex;justify-content:space-between;align-items:center;gap:8px;">';
-      h += '<span>⏳ Operador concluyó — aguarda tu confirmación</span>';
-      h += '<div style="display:flex;gap:6px;">';
-      h += '<button class="btn btn-sm" style="background:#22c55e;color:#000;border:none;font-weight:600;" onclick="coordConfirmOpConclusion(\''+aof.of_sap+'\',\''+op.id+'\');">✓ Confirmar</button>';
-      h += '<button class="btn btn-sm btn-ghost" onclick="coordRevertOpConclusion(\''+aof.of_sap+'\',\''+op.id+'\');">↩ Devolver</button>';
-      h += '</div></div>';
+      h += '<div style="margin:0 0 10px;padding:6px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:.73rem;color:#f59e0b;">';
+      h += '⏳ Concluida por Operador — aguarda confirmación del Supervisor';
+      h += '</div>';
     }
 
     // Row: técnico + piezas
