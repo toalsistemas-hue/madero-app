@@ -517,6 +517,12 @@ tr:last-child td{border-bottom:none;}
              display:flex;align-items:center;gap:9px;">
       <span>🏠</span><span>Inicio</span>
     </button>
+    <button id="monitor-lock-btn" onclick="monitorLockConfig()"
+      style="width:100%;background:none;border:none;border-top:1px solid rgba(255,255,255,.07);
+             padding:11px 14px;text-align:left;cursor:pointer;color:#f59e0b;font-size:.78rem;
+             display:flex;align-items:center;gap:9px;">
+      <span>🔒</span><span>Bloquear configuración</span>
+    </button>
     <button onclick="monitorGoLogout()"
       style="width:100%;background:none;border:none;padding:11px 14px;text-align:left;
              cursor:pointer;color:#e6edf3;font-size:.78rem;display:flex;align-items:center;gap:9px;">
@@ -8191,11 +8197,11 @@ function monitorExit() {
 // ── Polling ───────────────────────────────────────────────────────
 function monitorStartPolling() {
   if (_MON.pollTimer) clearInterval(_MON.pollTimer);
-  _MON.pollTimer = setInterval(function() {
-    appFlowGet('FT_OrdenesFabricacion', 2000).catch(function(){});
-    appFlowGet('FT_Operaciones', 5000).then(function() {
+  _MON.pollTimer = setInterval(async function() {
+    try {
+      await appLoadDataFromSP();  // Full reload — updates DB.activeOFs with latest tecnico/ayudantes
       monitorRender();
-    }).catch(function(){});
+    } catch(e) { console.warn('[Monitor] Poll error:', e.message); }
   }, 30000);
 }
 
@@ -8424,18 +8430,27 @@ function monitorRenderOp(of, op) {
   var ofSap = of.of_sap, opId = op.id;
   card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
 
+  // Inicio/Fin times
+  if (op.inicio || op.fin) {
+    card += '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:.68rem;color:#8b949e;">';
+    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+esc(op.inicio)+'</span></span>';
+    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+esc(op.fin)+'</span></span>';
+    card += '</div>';
+  }
+
   if (isPending) {
     card += '<button onclick="monitorAskPin(\'iniciar\',\''+ofSap+'\',\''+opId+'\')" '+
       'style="background:#1565C0;border:none;border-radius:8px;padding:9px 16px;'+
-      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">'+
+      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '▶ Iniciar</button>';
   }
   if (isRunning || isPaused) {
     card += '<button onclick="monitorAskPin(\'concluir\',\''+ofSap+'\',\''+opId+'\')" '+
       'style="background:#dc2626;border:none;border-radius:8px;padding:9px 16px;'+
-      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">'+
+      'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '⏹ Concluir</button>';
-    if (op.needsCal && !isValidating) {
+    // Val.Cal always visible for running ops (not just needsCal)
+    if (!isValidating) {
       card += '<button onclick="monitorAskPin(\'valcal\',\''+ofSap+'\',\''+opId+'\')" '+
         'style="background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);border-radius:8px;'+
         'padding:9px 14px;color:#a78bfa;font-size:.78rem;font-weight:600;cursor:pointer;">'+
@@ -8484,6 +8499,18 @@ function monitorRenderTerminadas(ops) {
 
 // ── PIN system ────────────────────────────────────────────────────
 function monitorAskPin(accion, ofSap, opId) {
+  // Ensure 4-digit mode (restore if admin was last)
+  if (_MON._adminMode) {
+    _MON._adminMode = false;
+    var pinRow = document.querySelector('#monitor-pin-modal > div > div[style*="justify-content"]');
+    if (pinRow) {
+      pinRow.innerHTML = ['d1','d2','d3','d4'].map(function(id){
+        return '<div id="mon-pin-'+id+'" style="width:48px;height:56px;background:rgba(255,255,255,.06);'+
+          'border:2px solid rgba(255,255,255,.15);border-radius:10px;'+
+          'display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#58a6ff;">_</div>';
+      }).join('');
+    }
+  }
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
@@ -8522,12 +8549,13 @@ function monitorPinDel() {
 }
 
 function monitorPinRefresh() {
-  ['d1','d2','d3','d4'].forEach(function(id, i) {
-    var el = document.getElementById('mon-pin-'+id);
-    if (!el) return;
+  var maxLen = _MON._adminMode ? 6 : 4;
+  for (var i = 0; i < maxLen; i++) {
+    var el = document.getElementById('mon-pin-d'+(i+1));
+    if (!el) continue;
     el.textContent = _MON.pinDigits[i] ? '●' : '_';
     el.style.borderColor = _MON.pinDigits[i] ? '#58a6ff' : 'rgba(255,255,255,.15)';
-  });
+  }
 }
 
 function monitorPinCancel() {
@@ -8653,7 +8681,7 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     await appSaveOpToSP(of.of_sap, op.id);
     appNtfyNotificar('mon_op_concluida', {
       of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
-      tecnico: tecNombre
+      tecnico: tecNombre, operador: tecNombre
     }).catch(function(){});
     console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
 
@@ -8673,6 +8701,14 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
 }
 
 // ── Gear menu ─────────────────────────────────────────────────────
+function monitorLockConfig() {
+  document.getElementById('monitor-gear-menu').style.display = 'none';
+  _MON.locked = true;
+  localStorage.setItem(_MON.LOCKED_KEY, '1');
+  var gearBtn = document.getElementById('monitor-gear-btn');
+  if (gearBtn) { gearBtn.textContent = '🔒'; gearBtn.title = 'Requiere PIN de Admin'; }
+}
+
 function monitorToggleGear() {
   if (_MON.locked) {
     // Require admin PIN to unlock
@@ -8755,18 +8791,23 @@ function monitorGoLogout() {
 // ── Admin PIN ─────────────────────────────────────────────────────
 function monitorAskAdminPin(onSuccess) {
   var savedPin = localStorage.getItem(_MON.ADMIN_PIN_KEY) || _MON.DEFAULT_ADMIN_PIN;
-  // Reuse PIN modal with special context
-  _MON.pinCtx = { accion: '_admin', _onSuccess: onSuccess, _adminPin: savedPin };
   _MON.pinDigits = '';
-  monitorPinRefresh();
-  document.getElementById('monitor-pin-icon').textContent  = '🔐';
-  document.getElementById('monitor-pin-title').textContent = 'PIN de Administrador';
-  document.getElementById('monitor-pin-sub').textContent   = 'Ingresa el PIN de 6 dígitos del Admin';
-  document.getElementById('monitor-pin-error').textContent = '';
-  // Extend pin to 6 digits for admin — swap pinSubmit logic
   _MON._adminMode = true;
   _MON._adminOnSuccess = onSuccess;
   _MON._adminPin = savedPin;
+  // Build 6-digit display for admin PIN
+  var pinRow = document.querySelector('#monitor-pin-modal > div > div[style*="justify-content"]');
+  if (pinRow) {
+    pinRow.innerHTML = ['d1','d2','d3','d4','d5','d6'].map(function(id){
+      return '<div id="mon-pin-'+id+'" style="width:40px;height:50px;background:rgba(255,255,255,.06);'+
+        'border:2px solid rgba(255,255,255,.15);border-radius:8px;'+
+        'display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#58a6ff;">_</div>';
+    }).join('');
+  }
+  document.getElementById('monitor-pin-icon').textContent  = '🔐';
+  document.getElementById('monitor-pin-title').textContent = 'PIN de Administrador';
+  document.getElementById('monitor-pin-sub').textContent   = 'Ingresa el PIN de 6 dígitos';
+  document.getElementById('monitor-pin-error').textContent = '';
   document.getElementById('monitor-pin-modal').style.display = 'flex';
 }
 

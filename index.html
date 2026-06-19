@@ -1121,13 +1121,13 @@ tr:last-child td{border-bottom:none;}
       <div class="page-hdr">
         <div><div class="page-title">📡 Seguimiento en Tiempo Real</div><div class="page-sub">Estado actual por pedido y OF</div></div>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()" title="Diagnóstico FT_Operaciones (ver consola)">🔍 Diagnóstico</button>
+          <!-- Diagnóstico oculto: <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()">🔍 Diagnóstico</button> -->
           <button class="btn btn-ghost btn-sm" onclick="renderSeg()">↻ Actualizar</button>
         <span id="auto-refresh-indicator" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
         </div>
       </div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="kpi-val" style="color:var(--accent-l)" id="seg-kpi-ofs">0</div><div class="kpi-lbl">OFs hoy</div></div>
+        <div class="kpi-card"><div class="kpi-val" style="color:var(--accent-l)" id="seg-kpi-ofs">0</div><div class="kpi-lbl">OFs en producción</div></div>
         <div class="kpi-card"><div class="kpi-val" style="color:var(--green)" id="seg-kpi-done">0</div><div class="kpi-lbl">Ops terminadas</div></div>
         <div class="kpi-card"><div class="kpi-val" style="color:var(--yellow)" id="seg-kpi-run">0</div><div class="kpi-lbl">En proceso</div></div>
         <div class="kpi-card"><div class="kpi-val" style="color:var(--purple)" id="seg-kpi-val">0</div><div class="kpi-lbl">En validación</div></div>
@@ -6917,7 +6917,7 @@ function renderSeg(){
   document.getElementById("seg-list").innerHTML=h;
   // Update KPIs
   var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
-  document.getElementById("seg-kpi-ofs").textContent=DB.activeOFs.length;
+  document.getElementById("seg-kpi-ofs").textContent=DB.activeOFs.filter(function(a){return a.ops.some(function(o){return o.status==='running'||o.status==='paused'||o.status==='op_concluded'||o.status==='validating';});}).length;
   document.getElementById("seg-kpi-done").textContent=allOps.filter(function(o){return o.status==="done";}).length;
   document.getElementById("seg-kpi-run").textContent=allOps.filter(function(o){return o.status==="running";}).length;
   document.getElementById("seg-kpi-val").textContent=allOps.filter(function(o){return o.status==="validating";}).length;
@@ -8461,8 +8461,10 @@ function openOFOpsModal(sap) {
     h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
     h += '<div style="background:rgba(255,255,255,.08);border-radius:6px;padding:2px 8px;font-size:.68rem;color:var(--dim);font-weight:700;min-width:24px;text-align:center;">'+(i+1)+'</div>';
     h += '<div style="flex:1;"><div style="font-size:.82rem;font-weight:600;">'+esc(op.nombre)+'</div>';
-    h += '<div style="font-size:.7rem;color:var(--dim);">'+esc(op.estacion)+'</div></div>';
-    h += '<div style="font-size:.68rem;color:'+statusColor+';font-weight:600;">'+statusLabel+'</div>';
+    h += '<div style="font-size:.7rem;color:var(--dim);">'+esc(op.estacion)+' · 📦 '+(op.qty_total||0)+' pzas</div></div>';
+    h += '<div style="text-align:right;"><div style="font-size:.68rem;color:'+statusColor+';font-weight:600;">'+statusLabel+'</div>';
+    if(op.tecnico) h += '<div style="font-size:.7rem;color:var(--dim);margin-top:2px;">👷 '+esc(op.tecnico)+(op.mins?' · ⏱'+Math.floor(op.mins/60)+'h'+(op.mins%60)+'m':'')+'</div>';
+    h += '</div>';
     h += '</div>';
     if(op.status==='op_concluded'){
       h += '<div style="margin:0 0 10px;padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);border-radius:6px;font-size:.75rem;color:#f59e0b;display:flex;justify-content:space-between;align-items:center;gap:8px;">';
@@ -9821,6 +9823,7 @@ function renderSeg(){
     pedidos_to_show = DB.ofs.filter(function(o){return o.pedidoCerrado;});
   }
 
+  if (!window._segExpanded) window._segExpanded = {};
   var groups = groupByPedido((pedidos_to_show||[]).filter(Boolean));
   var pC={alta:'chip prio-alta',media:'chip prio-media',normal:'chip prio-normal'};
   var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
@@ -9834,14 +9837,19 @@ function renderSeg(){
     var grpPct = grpTotal>0?Math.round(grpDone/grpTotal*100):0;
     var allDone = grpTotal>0 && grpDone===grpTotal;
 
+    var isExpanded = window._segExpanded[g.pedido] !== false; // default open
     h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">';
-    h+='<div style="padding:10px 14px;background:rgba(0,82,139,.08);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">';
+    h+='<div onclick="window._segExpanded[\''+g.pedido+'\']=(window._segExpanded[\''+g.pedido+'\']===false);renderSeg();" '+
+      'style="padding:10px 14px;background:rgba(0,82,139,.08);border-bottom:1px solid var(--border);'+
+      'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer;'+
+      'user-select:none;">';
     h+='<div><div style="font-family:\'DM Mono\',monospace;font-size:.78rem;color:var(--accent-l);font-weight:600;">Pedido '+esc(g.pedido)+'</div>';
     h+='<div style="font-size:.82rem;font-weight:600;">'+esc(g.cliente)+'</div></div>';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
     h+='<span class="'+pC[g.prioridad]+'">'+pL[g.prioridad]+'</span>';
     h+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.76rem;color:var(--green);">'+grpDone+'/'+grpTotal+' ops · '+grpPct+'%</div>';
     h+='<div style="width:120px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:3px;"><div style="height:100%;width:'+grpPct+'%;background:var(--green);border-radius:3px;"></div></div></div>';
+    h+='<span style="color:var(--dim);font-size:.9rem;transition:.2s;transform:rotate('+(isExpanded?'0':'180')+'deg);display:inline-block;">▲</span>';
     // -- 12: Botones de cierre --
     if(filterStatus==='activos' && allDone){
       h+='<div style="display:flex;gap:5px;">';
@@ -9853,10 +9861,11 @@ function renderSeg(){
       h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido">✅ Cerrar pedido</button>';
     }
     h+='</div></div>';
+    h+='<div style="'+(isExpanded?'':'display:none;')+'">';
 
     g.ofs.forEach(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
+      var done = aof ? aof.ops.filter(function(o){return o.status==='done'||o.status==='op_concluded';}).length : 0;
       var totalOps = aof ? aof.ops.length : 0;
       var pct = totalOps>0 ? Math.round(done/totalOps*100) : (filterStatus==='cerrados'?100:0);
       if(!aof && filterStatus !== 'cerrados') return;
@@ -9959,7 +9968,8 @@ function renderSeg(){
       });
       h+='</div></div>';
     });
-    h+='</div>';
+    h+='</div>'; // close collapsible content
+    h+='</div>'; // close group card
   });
   if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
@@ -9972,7 +9982,7 @@ function renderSeg(){
     return !of || (!of.pedidoCerrado && of.status!=='Cerrado');
   });
   var allOps=[]; _aofActivas.forEach(function(o){allOps=allOps.concat(o.ops);});
-  document.getElementById('seg-kpi-ofs').textContent=_aofActivas.length;
+  document.getElementById('seg-kpi-ofs').textContent=_aofActivas.filter(function(a){return a.ops.some(function(o){return o.status==='running'||o.status==='paused'||o.status==='op_concluded'||o.status==='validating';});}).length;
   document.getElementById('seg-kpi-done').textContent=allOps.filter(function(o){return o.status==='done';}).length;
   document.getElementById('seg-kpi-run').textContent=allOps.filter(function(o){return o.status==='running';}).length;
   document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
@@ -11310,7 +11320,7 @@ async function ntfyNotificarEvento(evento, data) {
   var titulo = m.titulo, cuerpo = m.cuerpo, prioridad = m.prioridad, roles = m.roles || _NTFY_ROLES_COORD;
   if (evento === 'ops_assigned' && data && data.of_sap) {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === data.of_sap; });
-    titulo = '👷 Operaciones asignadas — OF ' + data.of_sap;
+    titulo = 'Operaciones asignadas OF ' + data.of_sap;
     cuerpo = 'Se programaron operaciones en: ' + ((aof&&aof.descripcion)||data.of_sap);
   }
   await ntfySendARoles(roles, titulo, cuerpo, prioridad);
