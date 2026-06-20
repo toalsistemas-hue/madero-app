@@ -8606,7 +8606,7 @@ function monitorCheckQueueThenAskPin(ofSap, opId) {
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
 
-  var q = DB.colaEstacion && DB.colaEstacion[op.estacion] ? DB.colaEstacion[op.estacion] : [];
+  var q = (typeof sqGetQueue === 'function') ? sqGetQueue(op.estacion) : [];
 
   // Check: station already has a running op
   var stationRunning = null;
