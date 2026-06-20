@@ -8641,19 +8641,26 @@ async function monitorPinSubmit() {
       _MON.pinDigits = '';
       monitorPinRefresh();
       ctx._confirmingPin = null;
-      // Restore original sub text
       document.getElementById('monitor-pin-sub').textContent =
         ctx.op.tecnico ? ('PIN de ' + ctx.op.tecnico) : 'PIN del operador';
       return;
     }
-    // PINs match — PIN already saved in phase 1, proceed to action
+    // PINs match — re-fetch live op from DB (polling may have refreshed it)
+    var liveOf = DB.activeOFs.find(function(o){ return o.of_sap === ctx.ofSap; });
+    var liveOp = liveOf ? liveOf.ops.find(function(o){ return o.id === ctx.opId; }) : null;
+    if (!liveOp) {
+      errEl.textContent = 'Operación no encontrada. Actualiza e intenta de nuevo.';
+      _MON.pinDigits = ''; monitorPinRefresh();
+      setTimeout(function(){ document.getElementById('monitor-pin-modal').style.display='none'; _MON.pinCtx=null; }, 2000);
+      return;
+    }
     errEl.textContent = '';
     document.getElementById('monitor-pin-modal').style.display = 'none';
     _MON.pinDigits = '';
-    var savedTec = ctx._newTec;
-    var savedCtx = ctx;
+    var savedTec  = ctx._newTec;
+    var savedAccion = ctx.accion;
     _MON.pinCtx = null;
-    monitorExecuteAction(savedCtx.accion, savedCtx.of, savedCtx.op, savedTec.nombre);
+    monitorExecuteAction(savedAccion, liveOf, liveOp, savedTec.nombre);
     return;
   }
 
@@ -8693,12 +8700,15 @@ async function monitorPinSubmit() {
     }
   }
 
-  // PIN validated — execute action immediately
+  // PIN validated — re-fetch live op reference before executing
+  var liveOf1 = DB.activeOFs.find(function(o){ return o.of_sap === ctx.ofSap; });
+  var liveOp1 = liveOf1 ? liveOf1.ops.find(function(o){ return o.id === ctx.opId; }) : null;
+  if (!liveOp1) { liveOf1 = ctx.of; liveOp1 = ctx.op; } // fallback to ctx if DB not yet loaded
   errEl.textContent = '';
   document.getElementById('monitor-pin-modal').style.display = 'none';
   _MON.pinDigits = '';
   _MON.pinCtx = null;
-  monitorExecuteAction(ctx.accion, ctx.of, ctx.op, tec ? tec.nombre : op.tecnico);
+  monitorExecuteAction(ctx.accion, liveOf1, liveOp1, tec ? tec.nombre : op.tecnico);
 }
 
 async function monitorSavePin(tec, pin) {
