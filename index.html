@@ -5100,11 +5100,22 @@ function esListaProtegida(endpoint) {
 async function flowGet(lista, filtro, top) {
   filtro = filtro || '';
   top    = top    || 500;
-  const res = await fetch(FLOW_URL_LEER, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ lista: lista, filtro: filtro, top: top })
-  });
+  const controller = new AbortController();
+  const tid = setTimeout(function(){ controller.abort(); }, 25000);
+  let res;
+  try {
+    res = await fetch(FLOW_URL_LEER, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ lista: lista, filtro: filtro, top: top }),
+      signal:  controller.signal
+    });
+    clearTimeout(tid);
+  } catch(fe) {
+    clearTimeout(tid);
+    if (fe.name === 'AbortError') throw new Error('Flow GET timeout (>25s) — '+lista);
+    throw fe;
+  }
   if (!res.ok) throw new Error('Flow GET '+lista+' '+res.status);
   const data = await res.json();
   // El Flow de SP devuelve array de items con campos en el raíz
@@ -5191,7 +5202,7 @@ async function ftLoadDataFromSP() {
     FT_SITE_ID = siteId;
 
     // Load OFs and Operaciones in parallel
-    const empty = function(){ return {value:[]}; };
+    const empty = function(){ return {value:[], _error:true}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes, calTiemposRes] = await Promise.all([
       flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
       flowGet('FT_Operaciones', '', 5000).catch(empty),
@@ -5205,6 +5216,14 @@ async function ftLoadDataFromSP() {
       flowGet('FT_Catalogo_Operaciones', '', 5000).catch(empty),
       flowGet('FT_CalTiempos', '', 2000).catch(empty),
     ]);
+
+    // Preserve existing data if both OFs and Ops failed (504/timeout)
+    if ((ofsRes._error || (ofsRes.value||[]).length===0) &&
+        (opsRes._error  || (opsRes.value||[]).length===0) &&
+        DB.activeOFs && DB.activeOFs.length > 0) {
+      console.warn('[ftLoadData] OFs+Ops empty (504?) — keeping existing data');
+      return;
+    }
 
     // Build DB.ofs from SharePoint
     const ofs = (ofsRes.value||[]).map(i => i.fields);

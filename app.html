@@ -7154,7 +7154,7 @@ async function appLoadDataFromSP() {
 
 async function _appLoadDataFromSP_impl() {
   try {
-    var emptyFn = function(){ return {value:[]}; };
+    var emptyFn = function(){ return {value:[], _error:true}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
       appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
@@ -7166,6 +7166,16 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
       appFlowGet('FT_Catalogo_Operaciones', 500).catch(emptyFn),
     ]);
+
+    // If both OFs and Ops failed (504/timeout), preserve existing data
+    // This prevents clearing the screen when PA is temporarily overloaded
+    var ofsEmpty = ofsRes._error || (ofsRes.value||[]).length === 0;
+    var opsEmpty = opsRes._error || (opsRes.value||[]).length === 0;
+    if (ofsEmpty && opsEmpty && DB.activeOFs && DB.activeOFs.length > 0) {
+      console.warn('[appLoadData] OFs+Ops empty (504?) — keeping existing data');
+      return; // preserve DB.activeOFs, don't wipe it
+    }
+
     const ofs = (ofsRes.value||[]).map(i => i.fields);
     DB.ofs = ofs.map(f => ({
       of_sap: f.OF_SAP||f.Title||'', articulo: f.Numero_Articulo||'',
