@@ -4951,47 +4951,21 @@ async function ftSaveTecnico() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
   try {
     const siteId = await getSiteId();
+    // Known SP internal column names for FT_Tecnicos (verified from SP):
+    // Title = nombre, Activo, Puesto, Canal_Ntfy, PIN_Monitor, Fecha_Alta
+    // SP Graph GET omits null/empty fields — they still exist for PATCH/POST
     if (_ftEditTecId) {
-      // Read existing item to discover real internal SP field names
-      const existing = await graphGet('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'?$expand=fields');
-      const realKeys = existing && existing.fields ? Object.keys(existing.fields).filter(k=>!k.startsWith('@')) : [];
-      console.log('[ftSave] SP internal field names:', realKeys);
-      // Build patch using only fields confirmed to exist
-      // Build patch with confirmed field names
-      // Title is always available; custom columns depend on what was created in SP
-      const patch = { Title: nombre };
-      if (realKeys.includes('Nombre'))      patch['Nombre']      = nombre;
-      if (realKeys.includes('Puesto'))      patch['Puesto']      = puesto;
-      if (realKeys.includes('Canal_Ntfy'))  patch['Canal_Ntfy']  = ntfy;
-      if (realKeys.includes('Canal'))       patch['Canal']       = ntfy;
-      if (realKeys.includes('Activo'))      patch['Activo']      = activo;
-      if (realKeys.includes('PIN_Monitor') && pin) patch['PIN_Monitor'] = pin;
-      // Warn if important columns are missing
-      var missing = [];
-      if (!realKeys.includes('Puesto'))     missing.push('Puesto');
-      if (!realKeys.includes('Canal_Ntfy') && !realKeys.includes('Canal')) missing.push('Canal_Ntfy');
-      if (!realKeys.includes('PIN_Monitor')) missing.push('PIN_Monitor');
-      if (missing.length) console.warn('[ftSave] Columnas faltantes en FT_Tecnicos:', missing.join(', '), '— créalas en SharePoint');
+      const patch = { Title: nombre, Activo: activo };
+      if (puesto !== undefined) patch['Puesto']      = puesto;
+      if (ntfy   !== undefined) patch['Canal_Ntfy']  = ntfy;
+      if (pin)                  patch['PIN_Monitor']  = pin;
       await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'/fields', patch);
-      if (pin && !realKeys.includes('PIN_Monitor')) {
-        alert('Falta la columna PIN_Monitor en FT_Tecnicos.\n\nEn SharePoint: FT_Tecnicos > Agregar columna > Nombre: PIN_Monitor > Tipo: Texto > Max: 4 chars');
-      }
     } else {
-      // New: read column definitions to know what internal names to use
-      // Read column definitions to know available fields
-      const colDefs = await graphGet('sites/'+siteId+'/lists/FT_Tecnicos/columns');
-      const availableCols = (colDefs.value||[]).map(function(c){ return c.name; });
-      console.log('[ftSave] Available columns for new item:', availableCols);
-      const newFields = { Title: nombre };
-      if (availableCols.includes('Puesto'))     newFields['Puesto']     = puesto;
-      if (availableCols.includes('Canal_Ntfy')) newFields['Canal_Ntfy'] = ntfy;
-      if (availableCols.includes('Canal'))      newFields['Canal']      = ntfy;
-      if (availableCols.includes('Activo'))     newFields['Activo']     = activo;
-      if (pin && availableCols.includes('PIN_Monitor')) newFields['PIN_Monitor'] = pin;
+      const newFields = { Title: nombre, Activo: activo };
+      if (puesto) newFields['Puesto']      = puesto;
+      if (ntfy)   newFields['Canal_Ntfy']  = ntfy;
+      if (pin)    newFields['PIN_Monitor'] = pin;
       await graphPost('sites/'+siteId+'/lists/FT_Tecnicos/items', { fields: newFields });
-      if (pin && !availableCols.includes('PIN_Monitor')) {
-        alert('Falta la columna PIN_Monitor en FT_Tecnicos.\n\nEn SharePoint: FT_Tecnicos > Agregar columna > Nombre: PIN_Monitor > Tipo: Texto > Max: 4 chars');
-      }
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);
