@@ -3774,8 +3774,10 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
+  // elapsed = all time accumulated before this resume
+  // start = when THIS running session began (now)
   var prev=DB.timers[key]?DB.timers[key].elapsed||0:0;
-  DB.timers[key]={start:Date.now()-prev,elapsed:prev,running:true};
+  DB.timers[key]={start:Date.now(),elapsed:prev,running:true};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original
   // Reanudar timers de ayudantes
@@ -3783,7 +3785,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now()-prev2,elapsed:prev2,running:true};
+    DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
   });
   renderApp();
   _refreshStationViews();
@@ -7216,11 +7218,10 @@ async function appLoadDataFromSP() {
       // Si el timer está running, recalcular start para que el elapsed acumulado sea correcto
       // start = ahora - (elapsed acumulado + tiempo desde startMS)
       if(isRunning && startMS > 0) {
-        // El timer arrancó en startMS con elapsedMS ya acumulado
-        // Para que fmtM() calcule bien: mantener start=startMS (la UI suma Date.now()-start)
-        // pero el elapsed previo se pierde. Compensar: start = Date.now() - elapsedMS - (Date.now()-startMS)
-        // = startMS - elapsedMS (ajustado para incluir el tiempo previo pausado)
-        startMS = startMS - elapsedMS;
+        // startMS = when the current running session began (epoch ms)
+        // elapsedMS = time accumulated before this session
+        // Correct: keep startMS as-is, elapsed=elapsedMS
+        // getEl() = elapsed + (Date.now()-start) = total correct time
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
     });
@@ -8376,11 +8377,12 @@ function monitorRender() {
 function monitorRenderOp(of, op) {
   var statusColors = {
     pending: '#8b949e', running: '#22c55e', op_concluded: '#f59e0b',
-    validating: '#a78bfa', paused: '#fb923c'
+    validating: '#a78bfa', paused: '#f59e0b'
   };
+  var pauseLabel = isTurnoPause ? ('⏸🌙 Fin de turno'+(op.pauseReason?' — '+esc(op.pauseReason):'')) : ('⏸ PAUSADA'+(op.pauseReason?' — '+esc(op.pauseReason):''));
   var statusLabels = {
     pending: 'PENDIENTE', running: 'EN PROCESO', op_concluded: 'CONCLUIDA — Aguarda Supervisor',
-    validating: 'VALIDACIÓN CALIDAD', paused: 'PAUSADA'
+    validating: 'VALIDACIÓN CALIDAD', paused: isPaused ? pauseLabel : 'PAUSADA'
   };
   var color  = statusColors[op.status] || '#8b949e';
   var label  = statusLabels[op.status] || op.status.toUpperCase();
@@ -8389,6 +8391,7 @@ function monitorRenderOp(of, op) {
   var isConcluded = op.status === 'op_concluded';
   var isValidating = op.status === 'validating';
   var isPaused    = op.status === 'paused';
+  var isTurnoPause = isPaused && ((op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('Fin de turno')>=0) || ((op.pauseReason||'').indexOf('🌙')>=0));
 
   // Elapsed time — use DB.timers exactly like FabTracker
   var elapsed = '';
@@ -8410,7 +8413,7 @@ function monitorRenderOp(of, op) {
     }
   }
 
-  var borderColor = isRunning ? '#22c55e' : isConcluded ? '#f59e0b' : isValidating ? '#a78bfa' : 'rgba(255,255,255,.06)';
+  var borderColor = isRunning ? '#22c55e' : isConcluded ? '#f59e0b' : isValidating ? '#a78bfa' : isPaused ? '#f59e0b' : 'rgba(255,255,255,.06)';
 
   var card = '<div style="background:#0d1117;border:1px solid '+borderColor+';border-radius:10px;';
   card += 'padding:12px;margin-bottom:8px;">';
@@ -8476,13 +8479,12 @@ function monitorRenderOp(of, op) {
       'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '▶ Iniciar</button>';
   }
-  if (isRunning || isPaused) {
+  if (isRunning) {
     card += '<button data-mon-accion="concluir" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
       'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
       'style="background:#dc2626;border:none;border-radius:8px;padding:9px 16px;'+
       'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '⏹ Concluir</button>';
-    // Val.Cal always visible for running ops (not just needsCal)
     if (!isValidating) {
       card += '<button data-mon-accion="valcal" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
         'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
@@ -8490,6 +8492,15 @@ function monitorRenderOp(of, op) {
         'padding:9px 14px;color:#a78bfa;font-size:.78rem;font-weight:600;cursor:pointer;">'+
         '🔍 Val.Cal.</button>';
     }
+  }
+  if (isPaused) {
+    // Paused — only Reanudar is available (no Concluir/Val.Cal while paused)
+    card += '<button data-mon-accion="reanudar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+      'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
+      'style="background:#f59e0b;border:none;border-radius:8px;padding:9px 16px;'+
+      'color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">'+
+      '▶ Reanudar</button>';
+    card += '<div style="font-size:.72rem;color:#8b949e;padding:6px 0;">Concluir y Val.Cal. disponibles al reanudar</div>';
   }
   if (isConcluded) {
     card += '<div style="padding:8px 12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);';
@@ -8564,12 +8575,13 @@ function monitorAskPin(accion, ofSap, opId) {
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
 
-  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍' };
-  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad' };
+  var icons   = { iniciar:'▶', concluir:'⏹', valcal:'🔍', reanudar:'▶' };
+  var titles  = { iniciar:'Iniciar operación', concluir:'Concluir operación', valcal:'Solicitar validación de calidad', reanudar:'Reanudar operación' };
   var subs    = {
     iniciar:  op.tecnico ? ('PIN de '+op.tecnico) : 'PIN de operador (o nuevo operador)',
     concluir: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
     valcal:   op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
+    reanudar: op.tecnico ? ('PIN de '+esc(op.tecnico)) : 'PIN del operador',
   };
 
   _MON.pinCtx = { accion: accion, ofSap: ofSap, opId: opId, of: of, op: op };
@@ -8817,6 +8829,18 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
       tecnico: tecNombre
     }).catch(function(){});
     console.log('[Monitor] ValCal solicitada por:', tecNombre);
+
+  } else if (accion === 'reanudar') {
+    // Resume paused op — same logic as _doResumeOp
+    var key = of.of_sap + '_' + op.id;
+    var prev = DB.timers[key] ? DB.timers[key].elapsed || 0 : 0;
+    DB.timers[key] = { start: Date.now(), elapsed: prev, running: true };
+    op.status = 'running';
+    op.pauseReason = null;
+    op._pauseTipo = null;
+    await appSaveOpToSP(of.of_sap, op.id);
+    appSaveTimerToSP(key).catch(function(){});
+    console.log('[Monitor] Reanudada por:', tecNombre);
   }
 
   monitorRender();
