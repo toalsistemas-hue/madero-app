@@ -4952,16 +4952,21 @@ async function ftSaveTecnico() {
   try {
     const siteId = await getSiteId();
     // Use graphPatch/graphPost directly — FT_Tecnicos flow returns 502 intermittently
-    const allFields = {
-      Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo,
-      Canal_Ntfy: ntfy
-    };
-    if (pin) allFields.PIN_Monitor = pin;
     if (_ftEditTecId) {
-      await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'/fields', allFields);
+      // Use flow for base fields (proven to work), graphPatch only for PIN
+      await spEscribir('FT_Tecnicos', { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy }, _ftEditTecId);
+      if (pin !== undefined && pin !== null) {
+        try {
+          await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+_ftEditTecId+'/fields', { PIN_Monitor: pin });
+        } catch(pinErr) { console.warn('[ftSave] PIN patch:', pinErr.message); }
+      }
     } else {
-      const newItem = await graphPost('sites/'+siteId+'/lists/FT_Tecnicos/items', { fields: allFields });
-      if (newItem && newItem.id) window._ftNewTecId = newItem.id;
+      const newItem = await spEscribir('FT_Tecnicos', { Title: nombre, Nombre: nombre, Puesto: puesto, Activo: activo, Canal_Ntfy: ntfy }, null);
+      if (pin && newItem && newItem.id) {
+        try {
+          await graphPatch('sites/'+siteId+'/lists/FT_Tecnicos/items/'+newItem.id+'/fields', { PIN_Monitor: pin });
+        } catch(pinErr) { console.warn('[ftSave] PIN patch (new):', pinErr.message); }
+      }
     }
     if (!window.TECHNICIANS) window.TECHNICIANS = [];
     if (!window.TECHNICIANS.includes(nombre)) window.TECHNICIANS.push(nombre);

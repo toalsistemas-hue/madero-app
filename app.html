@@ -460,6 +460,13 @@ tr:last-child td{border-bottom:none;}
   <div class="app-login-status" id="app-login-status">Inicializando...</div>
 
   <div class="app-login-note">Usa tu cuenta @maderoequipos.com para acceder.</div>
+  <!-- Botón discreto para limpiar caché — solo visible si se sabe que existe -->
+  <div style="text-align:center;margin-top:12px;">
+    <button onclick="appClearCacheAndReload()" id="app-clear-btn"
+      style="background:none;border:none;color:rgba(255,255,255,.12);font-size:.65rem;
+             cursor:pointer;padding:6px 14px;letter-spacing:.05em;user-select:none;"
+      title="Limpiar caché y recargar">↺</button>
+  </div>
   <div style="margin-top:20px;font-size:.65rem;color:rgba(255,255,255,.2);letter-spacing:.05em;">v1.0.0</div>
 
   <!-- Debug log panel — visible solo cuando hay errores de login -->
@@ -6654,6 +6661,29 @@ function appToggleGearMenu() {
 }
 
 // Logout: limpia sesión local y marca para forzar credenciales en el próximo login
+// ── Cache clear — called from hidden button on login screen ─────
+async function appClearCacheAndReload() {
+  var btn = document.getElementById('app-clear-btn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    if ('caches' in window) {
+      var names = await caches.keys();
+      await Promise.all(names.map(function(n){ return caches.delete(n); }));
+    }
+    if ('serviceWorker' in navigator) {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){ return r.unregister(); }));
+    }
+    var remove = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && (k.startsWith('msal.') || k.startsWith('madero_') || k === 'msal_force_login')) remove.push(k);
+    }
+    remove.forEach(function(k){ localStorage.removeItem(k); });
+    window.location.reload(true);
+  } catch(e) { window.location.reload(true); }
+}
+
 function appGearLogout() {
   document.getElementById('app-gear-menu').style.display = 'none';
 
@@ -8833,6 +8863,14 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     op.needsCal  = true;
     op.calResult = null;
     op.valcalNote = 'Solicitado desde Monitor — ' + tecNombre;
+    // Freeze timer
+    var _mvcKey = of.of_sap+'_'+op.id;
+    if (DB.timers[_mvcKey] && DB.timers[_mvcKey].running) {
+      DB.timers[_mvcKey].elapsed = (DB.timers[_mvcKey].elapsed||0) + (Date.now()-DB.timers[_mvcKey].start);
+      DB.timers[_mvcKey].start   = null;
+      DB.timers[_mvcKey].running = false;
+      appSaveTimerToSP(_mvcKey).catch(function(){});
+    }
     await appSaveOpToSP(of.of_sap, op.id);
     appNtfyNotificar('mon_val_calidad', {
       of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
@@ -12390,6 +12428,14 @@ appConfirmValCal = function(){
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  // ── Freeze timer so elapsed is preserved when calidad liberates ─
+  var _valCalKey = ctx.of_sap+'_'+ctx.op_id;
+  if (DB.timers[_valCalKey] && DB.timers[_valCalKey].running) {
+    DB.timers[_valCalKey].elapsed = (DB.timers[_valCalKey].elapsed||0) + (Date.now() - DB.timers[_valCalKey].start);
+    DB.timers[_valCalKey].start   = null;
+    DB.timers[_valCalKey].running = false;
+    appSaveTimerToSP(_valCalKey).catch(function(){});
+  }
   appNtfyNotificar('val_solicitada', {of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion, nota:note}).catch(function(){});
   appPlayNotifSound('calidad');
   closeAppModal('app-modal-valcal'); renderApp();
