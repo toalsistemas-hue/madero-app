@@ -7207,11 +7207,15 @@ async function _appLoadDataFromSP_impl() {
       }
     });
     const allOps = Object.values(opsSeen);
-    // Diagnostic: log Programado_Hoy values to understand what PA returns
-    if (ofs.length > 0 && ofs.length <= 5) {
-      console.log('[Diag] Programado_Hoy values:', ofs.slice(0,3).map(function(f){
-        return f.OF_SAP + ':' + JSON.stringify(f.Programado_Hoy) + '(' + typeof f.Programado_Hoy + ')';
-      }));
+    // Diagnostic: log actual field values from PA to understand mapping
+    if (ofs.length > 0) {
+      var _progSample = ofs.slice(0,4).map(function(f){
+        return (f.OF_SAP||f.Title||'?') + ':PH=' + JSON.stringify(f.Programado_Hoy);
+      });
+      console.log('[Diag] Programado_Hoy sample:', _progSample.join(' | '));
+      // Also log Status values from ops
+      var _statusSample = rawOps.slice(0,4).map(function(o){ return o.OF_SAP+':'+o.Status; });
+      console.log('[Diag] Op Status sample:', _statusSample.join(' | '));
     }
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
