@@ -7076,11 +7076,22 @@ var APP_FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.en
 
 async function appFlowGet(lista, top) {
   top = top || 500;
-  var res = await fetch(APP_FLOW_URL_LEER, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lista: lista, filtro: '', top: top })
-  });
+  const ctrl = new AbortController();
+  const tid = setTimeout(function(){ ctrl.abort(); }, 20000);
+  let res;
+  try {
+    res = await fetch(APP_FLOW_URL_LEER, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lista: lista, filtro: '', top: top }),
+      signal: ctrl.signal
+    });
+    clearTimeout(tid);
+  } catch(fe) {
+    clearTimeout(tid);
+    if (fe.name === 'AbortError') throw new Error('AppFlow GET ' + lista + ' timeout');
+    throw fe;
+  }
   if (!res.ok) throw new Error('AppFlow GET ' + lista + ' ' + res.status);
   var data = await res.json();
   var arr = Array.isArray(data) ? data : (data.value || []);
@@ -7119,16 +7130,23 @@ async function appFlowEscribir(lista, operacion, itemId, datos) {
   return result;
 }
 
-var _appLoadDataInProgress = false;  // re-entrant lock
+var _appLoadDataInProgress = false;  // re-entrant guard
+var _appLoadDataLastStart = 0;       // timestamp of last start
 
 async function appLoadDataFromSP() {
-  if (_appLoadDataInProgress) {
+  var now = Date.now();
+  // Skip if already loading AND it started less than 30 seconds ago
+  // (safety valve: if it's been >30s, something is stuck — allow retry)
+  if (_appLoadDataInProgress && (now - _appLoadDataLastStart) < 30000) {
     console.log('[appLoadData] Skipped — already loading');
     return;
   }
   _appLoadDataInProgress = true;
+  _appLoadDataLastStart = now;
   try {
     return await _appLoadDataFromSP_impl();
+  } catch(e) {
+    console.warn('[appLoadData] Error:', e.message);
   } finally {
     _appLoadDataInProgress = false;
   }
