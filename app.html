@@ -8423,7 +8423,11 @@ function monitorRenderOp(of, op) {
   card += '<div style="font-weight:700;font-size:.85rem;color:#e6edf3;line-height:1.3;">';
   card += esc(of.descripcion_padre||of.descripcion||'')+'</div>';
   card += '</div>';
-  card += '<div style="margin-left:8px;text-align:right;">';
+  card += '<div style="margin-left:8px;text-align:right;flex-shrink:0;">';
+  // Queue number badge
+  if (op.cola != null) {
+    card += '<div style="background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:1px 7px;font-size:.65rem;color:#58a6ff;font-weight:700;margin-bottom:3px;">#'+op.cola+'</div>';
+  }
   card += '<div style="display:inline-block;background:rgba('+
     (isRunning?'34,197,94':isConcluded?'245,158,11':isValidating?'167,139,250':isPending?'139,148,158':'251,146,60')+
     ',.15);color:'+color+';border-radius:5px;padding:2px 8px;font-size:.62rem;font-weight:700;">';
@@ -8615,72 +8619,74 @@ async function monitorPinSubmit() {
   if (!ctx || !pin || pin.length !== 4) return;
 
   var errEl = document.getElementById('monitor-pin-error');
-  errEl.textContent = 'Verificando...';
-
   var op = ctx.op;
   var tec = null;
 
-  // If op has assigned technician — find their PIN
+  // ── Phase 2: Confirming a new PIN ────────────────────────────────
+  if (ctx._confirmingPin) {
+    if (pin !== ctx._confirmingPin) {
+      errEl.textContent = 'Los PINs no coinciden. Intenta de nuevo.';
+      _MON.pinDigits = '';
+      monitorPinRefresh();
+      ctx._confirmingPin = null;
+      // Restore original sub text
+      document.getElementById('monitor-pin-sub').textContent =
+        ctx.op.tecnico ? ('PIN de ' + ctx.op.tecnico) : 'PIN del operador';
+      return;
+    }
+    // PINs match — PIN already saved in phase 1, proceed to action
+    errEl.textContent = '';
+    document.getElementById('monitor-pin-modal').style.display = 'none';
+    _MON.pinDigits = '';
+    var savedTec = ctx._newTec;
+    var savedCtx = ctx;
+    _MON.pinCtx = null;
+    monitorExecuteAction(savedCtx.accion, savedCtx.of, savedCtx.op, savedTec.nombre);
+    return;
+  }
+
+  // ── Phase 1: First validation ─────────────────────────────────────
+  errEl.textContent = 'Verificando...';
+
   if (op.tecnico) {
+    // Op has assigned technician — find and verify their PIN
     tec = _MON.technicians.find(function(t) {
       return t.nombre.trim().toUpperCase() === op.tecnico.trim().toUpperCase();
     });
     if (!tec) {
-      errEl.textContent = 'Técnico no encontrado en el sistema. Contacta al Supervisor.';
-      _MON.pinDigits = '';
-      monitorPinRefresh();
-      return;
+      errEl.textContent = 'Técnico no encontrado. Contacta al Supervisor.';
+      _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
-    // First time setup — no PIN yet
     if (!tec.pin) {
-      if (pin.length === 4) {
-        await monitorSavePin(tec, pin);
-        tec.pin = pin;
-        errEl.textContent = 'PIN registrado. Confirma de nuevo.';
-        _MON.pinDigits = '';
-        monitorPinRefresh();
-        // Ask to confirm
-        document.getElementById('monitor-pin-sub').textContent = 'Confirma tu PIN de 4 dígitos';
-        _MON.pinCtx._confirmingPin = pin;
-        return;
-      }
-    }
-    if (_MON.pinCtx._confirmingPin) {
-      if (pin === _MON.pinCtx._confirmingPin) {
-        // Already saved, proceed
-        errEl.textContent = '';
-      } else {
-        errEl.textContent = 'Los PINs no coinciden. Intenta de nuevo.';
-        _MON.pinDigits = '';
-        monitorPinRefresh();
-        _MON.pinCtx._confirmingPin = null;
-        return;
-      }
-    } else if (tec.pin && pin !== tec.pin) {
-      errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
-      _MON.pinDigits = '';
-      monitorPinRefresh();
+      // First time — save PIN and ask to confirm
+      await monitorSavePin(tec, pin);
+      tec.pin = pin;
+      errEl.textContent = 'PIN registrado. Confirma de nuevo.';
+      _MON.pinDigits = ''; monitorPinRefresh();
+      document.getElementById('monitor-pin-sub').textContent = 'Confirma tu PIN de 4 dígitos';
+      ctx._confirmingPin = pin;
+      ctx._newTec = tec;
       return;
+    }
+    if (pin !== tec.pin) {
+      errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
+      _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
   } else {
-    // No technician assigned — find by PIN or register new
+    // No technician assigned — find by PIN
     tec = _MON.technicians.find(function(t) { return t.pin === pin; });
     if (!tec) {
       errEl.textContent = 'PIN no encontrado. Pide al Supervisor que te asigne.';
-      _MON.pinDigits = '';
-      monitorPinRefresh();
-      return;
+      _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
   }
 
-  // PIN validated — execute action
+  // PIN validated — execute action immediately
   errEl.textContent = '';
   document.getElementById('monitor-pin-modal').style.display = 'none';
   _MON.pinDigits = '';
   _MON.pinCtx = null;
-
-  var tecNombre = tec ? tec.nombre : op.tecnico;
-  monitorExecuteAction(ctx.accion, ctx.of, ctx.op, tecNombre);
+  monitorExecuteAction(ctx.accion, ctx.of, ctx.op, tec ? tec.nombre : op.tecnico);
 }
 
 async function monitorSavePin(tec, pin) {
@@ -8695,22 +8701,92 @@ async function monitorSavePin(tec, pin) {
 }
 
 // ── Execute actions after PIN validated ───────────────────────────
+function monitorShowConfirm(title, msg, onOk) {
+  var existing = document.getElementById('monitor-confirm-modal');
+  if (existing) existing.remove();
+  var d = document.createElement('div');
+  d.id = 'monitor-confirm-modal';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:700;display:flex;align-items:center;justify-content:center;';
+  d.innerHTML = '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(320px,90vw);padding:22px;">' +
+    '<div style="font-weight:700;font-size:.95rem;color:#f59e0b;margin-bottom:10px;">'+title+'</div>' +
+    '<div style="font-size:.8rem;color:#e6edf3;line-height:1.6;white-space:pre-line;margin-bottom:18px;">'+msg+'</div>' +
+    '<div style="display:flex;gap:10px;">' +
+    '<button onclick="document.getElementById(\'monitor-confirm-modal\').remove()" ' +
+      'style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">Cancelar</button>' +
+    '<button id="monitor-confirm-ok" ' +
+      'style="flex:1;background:#1565C0;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">▶ Iniciar de todas formas</button>' +
+    '</div></div>';
+  document.body.appendChild(d);
+  document.getElementById('monitor-confirm-ok').onclick = function() {
+    d.remove();
+    onOk();
+  };
+}
+
+async function monitorDoIniciar(of, op, tecNombre) {
+  var timeStr = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  op.status  = 'running';
+  op.inicio  = timeStr;
+  op.fecha_inicio_real = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+timeStr;
+  if (!op.tecnico) op.tecnico = tecNombre;
+  if (typeof DB.timers === 'undefined') DB.timers = {};
+  DB.timers[of.of_sap+'_'+op.id] = { start: Date.now(), elapsed: 0, running: true };
+  await appSaveOpToSP(of.of_sap, op.id);
+  appNtfyNotificar('mon_op_iniciada', {
+    of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion, tecnico: tecNombre, operador: tecNombre
+  }).catch(function(){});
+  console.log('[Monitor] Iniciada:', op.nombre, 'por', tecNombre);
+  monitorRender();
+}
+
 async function monitorExecuteAction(accion, of, op, tecNombre) {
   var now = new Date();
   var timeStr = now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
   if (accion === 'iniciar') {
-    op.status  = 'running';
-    op.inicio  = timeStr;
-    if (!op.tecnico) op.tecnico = tecNombre;
-    if (typeof DB.timers === 'undefined') DB.timers = {};
-    DB.timers[of.of_sap+'_'+op.id] = { start: Date.now(), elapsed: 0, running: true };
-    await appSaveOpToSP(of.of_sap, op.id);
-    appNtfyNotificar('mon_op_iniciada', {
-      of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion,
-      tecnico: tecNombre
-    }).catch(function(){});
-    console.log('[Monitor] Iniciada:', op.nombre, 'por', tecNombre);
+    // ── Queue check — same logic as FabTracker ────────────────────
+    var q = DB.colaEstacion && DB.colaEstacion[op.estacion] ? DB.colaEstacion[op.estacion] : [];
+
+    // Check: station already has a running op
+    var stationRunning = null;
+    DB.activeOFs.forEach(function(aof) {
+      aof.ops.forEach(function(o) {
+        if (o.estacion === op.estacion && o.status === 'running' && o.id !== op.id) stationRunning = o;
+      });
+    });
+
+    if (stationRunning) {
+      // Show confirm dialog
+      document.getElementById('monitor-pin-modal').style.display = 'none';
+      monitorShowConfirm(
+        '⚠ Estación ocupada',
+        'La estación "' + op.estacion + '" ya tiene una operación en curso:\n"' + stationRunning.nombre + '".\n\n¿Iniciar esta operación de todas formas?',
+        function() { monitorDoIniciar(of, op, tecNombre); }
+      );
+      return;
+    }
+
+    // Check queue order
+    if (q.length > 0) {
+      var firstPending = null;
+      for (var qi = 0; qi < q.length; qi++) {
+        var qaof = DB.activeOFs.find(function(a) { return a.of_sap === q[qi].of_sap; });
+        var qop  = qaof ? qaof.ops.find(function(o) { return o.id === q[qi].op_id; }) : null;
+        if (qop && qop.status === 'pending') { firstPending = qop; break; }
+      }
+      if (firstPending && firstPending.id !== op.id) {
+        document.getElementById('monitor-pin-modal').style.display = 'none';
+        monitorShowConfirm(
+          '⚠ Orden de cola',
+          'Esta operación es la #' + (op.cola||'?') + ' en cola de "' + op.estacion + '".\n\nDebe iniciar primero la #' + (firstPending.cola||1) + ': "' + firstPending.nombre + '".\n\n¿Iniciar de todas formas?',
+          function() { monitorDoIniciar(of, op, tecNombre); }
+        );
+        return;
+      }
+    }
+
+    monitorDoIniciar(of, op, tecNombre);
+    return;
 
   } else if (accion === 'concluir') {
     op.status = 'op_concluded';
