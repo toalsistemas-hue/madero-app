@@ -8264,14 +8264,26 @@ function monitorStartPolling() {
 // ── Technicians cache ─────────────────────────────────────────────
 async function monitorLoadTechnicians() {
   try {
-    var res = await appFlowGet('FT_Tecnicos', 200);
+    // Use Graph directly to get all fields including PIN_Monitor
+    // (appFlowGet may not return custom columns added after flow creation)
+    var siteId = await appGetSiteId();
+    var res = await appGraphGet('sites/'+siteId+'/lists/FT_Tecnicos/items?$expand=fields&$top=200');
     _MON.technicians = (res.value || []).map(function(i) {
-      var f = i.fields || i;
-      return { nombre: f.Title||f.Nombre||'', pin: f.PIN_Monitor||'', _id: i.id||f.ID||0 };
+      var f = i.fields || {};
+      return { nombre: f.Title||f.Nombre||'', pin: f.PIN_Monitor||'', _id: i.id||0 };
     });
-    console.log('[Monitor] Técnicos cargados:', _MON.technicians.length);
+    console.log('[Monitor] Técnicos cargados:', _MON.technicians.length,
+      '| Con PIN:', _MON.technicians.filter(function(t){return t.pin;}).length);
   } catch(e) {
-    console.warn('[Monitor] Error cargando técnicos:', e.message);
+    console.warn('[Monitor] Error Graph, fallback a flow:', e.message);
+    // Fallback to flow
+    try {
+      var res2 = await appFlowGet('FT_Tecnicos', 200);
+      _MON.technicians = (res2.value || []).map(function(i) {
+        var f = i.fields || i;
+        return { nombre: f.Title||f.Nombre||'', pin: f.PIN_Monitor||'', _id: i.id||f.ID||0 };
+      });
+    } catch(e2) { console.warn('[Monitor] Error cargando técnicos:', e2.message); }
   }
 }
 
@@ -8504,7 +8516,7 @@ function monitorRenderOp(of, op) {
 
   if (isPending) {
     card += '<button data-mon-accion="iniciar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
-      'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
+      'onclick="var b=this;monitorCheckQueueThenAskPin(b.dataset.monOf,b.dataset.monOp)" '+
       'style="background:#1565C0;border:none;border-radius:8px;padding:9px 16px;'+
       'color:#fff;font-size:.78rem;font-weight:600;cursor:pointer;">'+
       '▶ Iniciar</button>';
@@ -8588,6 +8600,53 @@ function monitorRenderTerminadas(ops) {
 }
 
 // ── PIN system ────────────────────────────────────────────────────
+// ── Check queue/station before asking PIN for iniciar ───────────
+function monitorCheckQueueThenAskPin(ofSap, opId) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op) return;
+
+  var q = DB.colaEstacion && DB.colaEstacion[op.estacion] ? DB.colaEstacion[op.estacion] : [];
+
+  // Check: station already has a running op
+  var stationRunning = null;
+  DB.activeOFs.forEach(function(aof) {
+    aof.ops.forEach(function(o) {
+      if (o.estacion===op.estacion && o.status==='running' && o.id!==op.id) stationRunning=o;
+    });
+  });
+
+  if (stationRunning) {
+    monitorShowConfirm(
+      '⚠ Estación ocupada',
+      'La estación "'+op.estacion+'" ya tiene una operación en curso:\n"'+stationRunning.nombre+'".\n\n¿Iniciar esta operación de todas formas?',
+      function() { monitorAskPin('iniciar', ofSap, opId); }
+    );
+    return;
+  }
+
+  // Check queue order
+  if (q.length > 0) {
+    var firstPending = null;
+    for (var qi=0; qi<q.length; qi++) {
+      var qaof = DB.activeOFs.find(function(a){ return a.of_sap===q[qi].of_sap; });
+      var qop  = qaof ? qaof.ops.find(function(o){ return o.id===q[qi].op_id; }) : null;
+      if (qop && qop.status==='pending') { firstPending=qop; break; }
+    }
+    if (firstPending && firstPending.id !== op.id) {
+      monitorShowConfirm(
+        '⚠ Orden de cola',
+        'Esta operación es la #'+(op.cola||'?')+' en cola de "'+op.estacion+'".\n\nDebe iniciar primero la #'+(firstPending.cola||1)+':\n"'+firstPending.nombre+'".\n\n¿Iniciar de todas formas?',
+        function() { monitorAskPin('iniciar', ofSap, opId); }
+      );
+      return;
+    }
+  }
+
+  // Queue OK — proceed to PIN
+  monitorAskPin('iniciar', ofSap, opId);
+}
+
 function monitorAskPin(accion, ofSap, opId) {
   // Ensure 4-digit mode (restore if admin was last)
   if (_MON._adminMode) {
@@ -8617,6 +8676,8 @@ function monitorAskPin(accion, ofSap, opId) {
   _MON.pinCtx = { accion: accion, ofSap: ofSap, opId: opId, of: of, op: op };
   _MON.pinDigits = '';
   monitorPinRefresh();
+  // Reload technicians to get latest PINs from SP
+  monitorLoadTechnicians().catch(function(){});
 
   document.getElementById('monitor-pin-icon').textContent  = icons[accion];
   document.getElementById('monitor-pin-title').textContent = titles[accion];
@@ -8782,7 +8843,11 @@ async function monitorDoIniciar(of, op, tecNombre) {
   op.fecha_inicio_real = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+timeStr;
   if (!op.tecnico) op.tecnico = tecNombre;
   if (typeof DB.timers === 'undefined') DB.timers = {};
-  DB.timers[of.of_sap+'_'+op.id] = { start: Date.now(), elapsed: 0, running: true };
+  // Only create timer if not already running (don't overwrite existing timers)
+  var _timerKey = of.of_sap+'_'+op.id;
+  if (!DB.timers[_timerKey] || !DB.timers[_timerKey].running) {
+    DB.timers[_timerKey] = { start: Date.now(), elapsed: 0, running: true };
+  }
   await appSaveOpToSP(of.of_sap, op.id);
   appNtfyNotificar('mon_op_iniciada', {
     of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion, tecnico: tecNombre, operador: tecNombre
@@ -8796,47 +8861,7 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
   var timeStr = now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
   if (accion === 'iniciar') {
-    // ── Queue check — same logic as FabTracker ────────────────────
-    var q = DB.colaEstacion && DB.colaEstacion[op.estacion] ? DB.colaEstacion[op.estacion] : [];
-
-    // Check: station already has a running op
-    var stationRunning = null;
-    DB.activeOFs.forEach(function(aof) {
-      aof.ops.forEach(function(o) {
-        if (o.estacion === op.estacion && o.status === 'running' && o.id !== op.id) stationRunning = o;
-      });
-    });
-
-    if (stationRunning) {
-      // Show confirm dialog
-      document.getElementById('monitor-pin-modal').style.display = 'none';
-      monitorShowConfirm(
-        '⚠ Estación ocupada',
-        'La estación "' + op.estacion + '" ya tiene una operación en curso:\n"' + stationRunning.nombre + '".\n\n¿Iniciar esta operación de todas formas?',
-        function() { monitorDoIniciar(of, op, tecNombre); }
-      );
-      return;
-    }
-
-    // Check queue order
-    if (q.length > 0) {
-      var firstPending = null;
-      for (var qi = 0; qi < q.length; qi++) {
-        var qaof = DB.activeOFs.find(function(a) { return a.of_sap === q[qi].of_sap; });
-        var qop  = qaof ? qaof.ops.find(function(o) { return o.id === q[qi].op_id; }) : null;
-        if (qop && qop.status === 'pending') { firstPending = qop; break; }
-      }
-      if (firstPending && firstPending.id !== op.id) {
-        document.getElementById('monitor-pin-modal').style.display = 'none';
-        monitorShowConfirm(
-          '⚠ Orden de cola',
-          'Esta operación es la #' + (op.cola||'?') + ' en cola de "' + op.estacion + '".\n\nDebe iniciar primero la #' + (firstPending.cola||1) + ': "' + firstPending.nombre + '".\n\n¿Iniciar de todas formas?',
-          function() { monitorDoIniciar(of, op, tecNombre); }
-        );
-        return;
-      }
-    }
-
+    // Queue already checked before PIN — go directly to action
     monitorDoIniciar(of, op, tecNombre);
     return;
 
