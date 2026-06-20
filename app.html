@@ -7182,7 +7182,8 @@ async function _appLoadDataFromSP_impl() {
       descripcion: f.Descripcion_Articulo||'', pedido: f.Numero_Pedido||'',
       cliente: f.Cliente||'', prioridad: (f.Prioridad||'Normal').toLowerCase(),
       rotacion: f.Rotacion||'', sub_articulos: f.Sub_Articulos?f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean):[],
-      programadoHoy: f.Programado_Hoy===true, status: f.Status||'Sin programar',
+      programadoHoy: f.Programado_Hoy===true || f.Programado_Hoy==='true' || f.Programado_Hoy===1 || f.Programado_Hoy==='1',
+      status: f.Status||'Sin programar',
     }));
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
@@ -7206,9 +7207,20 @@ async function _appLoadDataFromSP_impl() {
       }
     });
     const allOps = Object.values(opsSeen);
+    // Diagnostic: log Programado_Hoy values to understand what PA returns
+    if (ofs.length > 0 && ofs.length <= 5) {
+      console.log('[Diag] Programado_Hoy values:', ofs.slice(0,3).map(function(f){
+        return f.OF_SAP + ':' + JSON.stringify(f.Programado_Hoy) + '(' + typeof f.Programado_Hoy + ')';
+      }));
+    }
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
-    DB.activeOFs = ofs.filter(f=>f.Programado_Hoy===true).map(f => ({
+    // Helper: normalize Programado_Hoy from PA flow (may be bool, string, or number)
+    var isProgramado = function(f) {
+      var v = f.Programado_Hoy;
+      return v===true || v==='true' || v===1 || v==='1';
+    };
+    DB.activeOFs = ofs.filter(isProgramado).map(f => ({
       of_sap:      f.OF_SAP||f.Title||'',
       pedido:      f.Numero_Pedido||f.Pedido||'',
       cliente:     f.Cliente||'',
