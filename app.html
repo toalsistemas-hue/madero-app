@@ -3567,7 +3567,12 @@ function appConfirmPause(){
       DB.timers[ak].running=false;
     }
   });
-  closeAppModal("app-modal-pause");renderApp();_refreshStationViews();
+  closeAppModal("app-modal-pause");
+  // Save to SP immediately (don't wait for async) so timer SP state is correct
+  // before next poll. Use a flag to prevent poll from overwriting local pause state.
+  var _pauseTimerKey = ctx.of_sap+'_'+ctx.op_id;
+  if (DB.timers[_pauseTimerKey]) DB.timers[_pauseTimerKey]._localPause = true;
+  renderApp();_refreshStationViews();
   // Guardar pausa en SP — siempre intentar, obtener siteId si no está cargado
   (async function(){
     try {
@@ -7114,7 +7119,22 @@ async function appFlowEscribir(lista, operacion, itemId, datos) {
   return result;
 }
 
+var _appLoadDataInProgress = false;  // re-entrant lock
+
 async function appLoadDataFromSP() {
+  if (_appLoadDataInProgress) {
+    console.log('[appLoadData] Skipped — already loading');
+    return;
+  }
+  _appLoadDataInProgress = true;
+  try {
+    return await _appLoadDataFromSP_impl();
+  } finally {
+    _appLoadDataInProgress = false;
+  }
+}
+
+async function _appLoadDataFromSP_impl() {
   try {
     var emptyFn = function(){ return {value:[]}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
@@ -7275,16 +7295,27 @@ async function appLoadDataFromSP() {
     });
     sqSyncColaNumbers();
     // Garantizar que ops con status=running tengan timer activo en memoria
+    // IMPORTANT: Only restore timer if there isn't already a valid local timer
+    // (avoid overwriting a timer that was set correctly by appConfirmPause or appDoResumeOp)
     DB.activeOFs.forEach(function(aof){
       aof.ops.forEach(function(op){
         if(op.status === 'running'){
           var timerKey = aof.of_sap + '_' + op.id;
-          if(!DB.timers[timerKey] || !DB.timers[timerKey].running){
-            // Crear/reparar timer en memoria basado en op.inicio (hora de inicio)
+          var existing = DB.timers[timerKey];
+          // If timer already running locally with a recent start — keep it
+          if(existing && existing.running && existing.start && (Date.now()-existing.start) < 3600000*48) {
+            return; // Timer is fine, don't touch it
+          }
+          // If timer is locally paused but SP says running — the SP save may be in flight
+          // Don't overwrite a locally paused timer (it will re-sync when SP confirms)
+          if(existing && !existing.running) {
+            return; // Local pause not yet confirmed by SP — keep local state
+          }
+          // Only restore if there's no local timer at all
+          if(!existing) {
             var nowMs = Date.now();
-            var startMs = nowMs; // fallback: asumir que acaba de iniciar
+            var startMs = nowMs;
             if(op.inicio){
-              // Convertir "06:36 p.m." a timestamp de hoy
               var parts = op.inicio.match(/(\d+):(\d+)\s*(a|p)\.m\./i);
               if(parts){
                 var h = parseInt(parts[1]); var m2 = parseInt(parts[2]);
@@ -7296,14 +7327,8 @@ async function appLoadDataFromSP() {
                 startMs = d.getTime();
               }
             }
-            var existingTimer = DB.timers[timerKey];
-            DB.timers[timerKey] = {
-              start: startMs,
-              elapsed: existingTimer ? (existingTimer.elapsed||0) : 0,
-              running: true,
-              _spId: existingTimer ? existingTimer._spId : null
-            };
-            console.log('Timer restaurado para op running:', timerKey, 'inicio:', op.inicio);
+            DB.timers[timerKey] = { start: startMs, elapsed: 0, running: true, _spId: null };
+            console.log('Timer creado (sin timer previo):', timerKey);
           }
         }
       });
@@ -8253,9 +8278,18 @@ function monitorExit() {
 // ── Polling ───────────────────────────────────────────────────────
 function monitorStartPolling() {
   if (_MON.pollTimer) clearInterval(_MON.pollTimer);
+  var _monPollCount = 0;
   _MON.pollTimer = setInterval(async function() {
+    if (_appLoadDataInProgress) return; // avoid conflict with FabTracker poll
+    _monPollCount++;
     try {
-      await appLoadDataFromSP();  // Full reload — updates DB.activeOFs with latest tecnico/ayudantes
+      if (_monPollCount % 4 === 0) {
+        // Full reload every ~2 min to pick up tecnico/ayudantes changes
+        await appLoadDataFromSP();
+      } else {
+        // Lightweight poll — only check for changes
+        await spPollCheck();
+      }
       monitorRender();
     } catch(e) { console.warn('[Monitor] Poll error:', e.message); }
   }, 30000);
@@ -8927,8 +8961,14 @@ function _monTvTap() {
   if (_monTvTapCount >= 5) {
     _monTvTapCount = 0;
     var dbg = document.getElementById('debug-console');
-    if (dbg) { dbg.style.display = (dbg.style.display === 'none' || !dbg.style.display) ? 'flex' : 'none'; }
-    else { _debugTapCount = 5; _onAvatarTap(); }
+    if (!dbg) { _debugTapCount = 5; _onAvatarTap(); return; }
+    var isHidden = dbg.style.display === 'none' || !dbg.style.display;
+    if (isHidden) {
+      dbg.style.display = 'flex';
+      dbg.style.zIndex  = '1000'; // above monitor-screen (z-index:200)
+    } else {
+      dbg.style.display = 'none';
+    }
   } else {
     _monTvTapTimer = setTimeout(function(){ _monTvTapCount = 0; }, 1500);
   }
@@ -13875,7 +13915,7 @@ function startSPPolling() {
         console.warn('SP poll error:', e.message);
       }
     }
-  }, 15000); // cada 15 segundos para seguimiento en tiempo real
+  }, 20000); // cada 20 segundos — staggered from monitor poll (30s)
 }
 
 async function spPollCheck() {
