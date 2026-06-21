@@ -7156,22 +7156,10 @@ async function _appLoadDataFromSP_impl() {
   try {
     var emptyFn = function(){ return {value:[], _error:true}; };
     // Graph returns {value:[{id, fields:{...}}]} — same structure as flow
-    // Ensure siteId is loaded before Graph calls
-    if (!appSiteId) await appGetSiteId();
-    // Use Graph directly for critical lists to bypass flow filters/cache
-    var _gGet = async function(list, top) {
-      if (!appSiteId) return appFlowGet(list, top).catch(emptyFn);
-      try {
-        var r = await appGraphGet('sites/'+appSiteId+'/lists/'+list+'/items?$expand=fields&$top='+(top||500));
-        return r;
-      } catch(e) {
-        console.warn('[GraphGet] '+list+' failed, using flow:', e.message);
-        return appFlowGet(list, top).catch(emptyFn);
-      }
-    };
+    // Use flow for all lists — Graph list names differ from display names in this tenant
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
-      _gGet('FT_OrdenesFabricacion', 2000),
-      _gGet('FT_Operaciones', 5000),
+      appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
+      appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
       appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
@@ -7350,6 +7338,26 @@ async function _appLoadDataFromSP_impl() {
         _spId: o.ID||o._itemId||null,
       })),
     }));
+    // Sync timer state to op.status (flow may return stale status)
+    // This fixes the running:0 issue when flow caches/filters ops
+    DB.activeOFs.forEach(function(aof) {
+      aof.ops.forEach(function(op) {
+        var key = aof.of_sap + '_' + op.id;
+        var t = DB.timers[key];
+        if (!t) return;
+        // If timer says running but op says pending — trust timer
+        if (t.running && t.start && op.status === 'pending') {
+          op.status = 'running';
+          console.log('[TimerSync] Restored running:', key);
+        }
+        // If timer says paused (has elapsed but not running) and op says pending
+        if (!t.running && t.elapsed > 0 && op.status === 'pending') {
+          op.status = 'paused';
+          console.log('[TimerSync] Restored paused:', key);
+        }
+      });
+    });
+
     DB.activeOFs.forEach(function(aof){
       if (aof.ops.length === 0 && aof.articulo) {
         var tplKey = aof.articulo;
