@@ -7755,6 +7755,8 @@ async function appSaveQueueToSP(of_sap) {
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
+    // Snapshot ops to avoid mutation during async saves
+    var opsSnapshot = aof.ops.slice();
 
     // ── Pre-compute positions for all new ops before any SP call ──────────
     // Prevents all ops getting pos=1 when saved together in one loop
@@ -7770,14 +7772,16 @@ async function appSaveQueueToSP(of_sap) {
     });
     // Step 2: assign positions to ops that don't have one yet
     aof.ops.forEach(function(op) {
-      if (!op.estacion || op._queueSpId || op._colaPos) return; // skip existing
+      if (!op.estacion) return;
+      if (op._queueSpId) return; // already in SP
+      if (op._colaPos !== undefined && op._colaPos !== null && op._colaPos > 0) return; // already assigned
       _stationMax[op.estacion] = (_stationMax[op.estacion] || 0) + 1;
       op._colaPos = _stationMax[op.estacion];
     });
 
     // ── Save each op ──────────────────────────────────────────────────────
-    for (var i = 0; i < aof.ops.length; i++) {
-      var op = aof.ops[i];
+    for (var i = 0; i < opsSnapshot.length; i++) {
+      var op = opsSnapshot[i];
       if (!op.estacion) continue;
       var isDone = op.status === 'done';
       try {

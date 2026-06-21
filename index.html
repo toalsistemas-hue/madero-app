@@ -5316,9 +5316,11 @@ async function ftLoadDataFromSP() {
     var _spPrio={running:5,paused:4,validating:3,done:2,pending:1};
     var _seen={};
     _rawOps.forEach(function(o){
-      var _opIdKey = o.Op_ID || o.op_id || o.OpID || ('sp_'+(o._itemId||o.ID||''));
+      // Use SP item ID as guaranteed-unique key (_itemId is always set from i.id)
+      // Op_ID may not be returned by the flow — use it when available, else SP item ID
+      var _opIdKey = o.Op_ID || o.op_id || o.OpID || ('sp_'+(o._itemId||''));
       var k=(o.OF_SAP||'')+'__'+_opIdKey;
-      if(!o.OF_SAP || !_opIdKey) return;
+      if(!o.OF_SAP || !_opIdKey) { console.warn('[DiagOp] Op sin clave:', JSON.stringify(o).slice(0,100)); return; }
       var ex=_seen[k];
       if(!ex){_seen[k]=o;return;}
       var nP=_spPrio[o.Status||'pending']||1,eP=_spPrio[ex.Status||'pending']||1;
@@ -5326,16 +5328,21 @@ async function ftLoadDataFromSP() {
     });
     const allOps=Object.values(_seen);
     if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
-    // Diagnostic: show field names for first op to identify mapping issues
+    // Diagnostic
     if(_rawOps.length > 0) {
-      var _sample = _rawOps[0];
-      console.log('[DiagOp] Campos del primer op:', Object.keys(_sample).filter(function(k){return !k.startsWith('@')}).join(', '));
-      console.log('[DiagOp] OF_SAP='+_sample.OF_SAP+' Op_ID='+_sample.Op_ID+' Nombre='+_sample.Nombre+' Title='+_sample.Title);
+      var _s = _rawOps[0];
+      var _keys = Object.keys(_s).filter(function(k){return !k.startsWith('@') && !k.startsWith('_');});
+      console.log('[DiagOp] Campos:', _keys.join(', '));
+      console.log('[DiagOp] Muestra:', JSON.stringify({OF_SAP:_s.OF_SAP,Op_ID:_s.Op_ID,Nombre:_s.Nombre,Title:_s.Title,Estacion:_s.Estacion}));
+      // Show ALL raw keys to find real field name for Op_ID
+      console.log('[DiagOp] Todos los campos del op:', JSON.stringify(_s).slice(0,400));
     }
-    // Show ops per OF to detect dedup issues
     var _ofOpCount = {};
-    allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount[s]=(_ofOpCount[s]||0)+1; });
-    console.log('[DiagOp] Ops por OF:', JSON.stringify(_ofOpCount));
+    _rawOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount[s]=(_ofOpCount[s]||0)+1; });
+    console.log('[DiagOp] RAW ops por OF:', JSON.stringify(_ofOpCount));
+    var _ofOpCount2 = {};
+    allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount2[s]=(_ofOpCount2[s]||0)+1; });
+    console.log('[DiagOp] DEDUP ops por OF:', JSON.stringify(_ofOpCount2));
     DB.activeOFs = ofs
       .filter(f => {
         if(f.Programado_Hoy === true) return true;
@@ -5359,7 +5366,7 @@ async function ftLoadDataFromSP() {
             .filter(o => String(o.OF_SAP||'').trim() === String(ofSap).trim())
             .sort((a,b) => (parseInt(a.Secuencia)||0)-(parseInt(b.Secuencia)||0))
             .map(o => ({
-              id: o.Op_ID || o.op_id || o.OpID || ('op_' + (o._itemId||o.ID||'')),
+              id: o.Op_ID || o.op_id || o.OpID || ('op_' + (o._itemId||o._numId||o.ID||'')),
               nombre: o.Nombre || o.Title || '',
               estacion: o.Estacion || '',
               tipo: o.Tipo || o.tipo || 'Secuencial',
@@ -6008,9 +6015,12 @@ async function ftSaveQueueToSP(of_sap) {
         }
       });
     });
-    // Assign positions to new ops (no _queueSpId yet) before any SP call
+    // Assign positions to new ops before any SP call
+    // Use strict undefined check — 0 is falsy but means "not set yet"
     aof.ops.forEach(function(op){
-      if (!op.estacion || op._queueSpId || op._colaPos) return;
+      if (!op.estacion) return;
+      if (op._queueSpId) return; // already in SP — skip
+      if (op._colaPos !== undefined && op._colaPos !== null && op._colaPos > 0) return; // already assigned
       _stationMaxPos[op.estacion] = (_stationMaxPos[op.estacion]||0) + 1;
       op._colaPos = _stationMaxPos[op.estacion];
     });
