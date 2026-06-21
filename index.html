@@ -5343,6 +5343,13 @@ async function ftLoadDataFromSP() {
     var _ofOpCount2 = {};
     allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount2[s]=(_ofOpCount2[s]||0)+1; });
     console.log('[DiagOp] DEDUP ops por OF:', JSON.stringify(_ofOpCount2));
+    // Preserve existing ops from memory when SP returns empty allOps
+    // (happens on first load before async SP saves complete)
+    var _existingOpsMap = {};
+    (DB.activeOFs||[]).forEach(function(aof){
+      if(aof.ops && aof.ops.length) _existingOpsMap[aof.of_sap] = aof.ops;
+    });
+
     DB.activeOFs = ofs
       .filter(f => {
         if(f.Programado_Hoy === true) return true;
@@ -5351,6 +5358,14 @@ async function ftLoadDataFromSP() {
       })
       .map(f => {
         const ofSap = f.OF_SAP || f.Title || '';
+        // Get ops from SP allOps, merge with existing in-memory ops
+        var spOps = allOps
+          .filter(o => String(o.OF_SAP||'').trim() === String(ofSap).trim())
+          .sort((a,b) => (parseInt(a.Secuencia)||0)-(parseInt(b.Secuencia)||0));
+        var existingOps = _existingOpsMap[ofSap] || [];
+        // If SP returned ops — use them, merging _spId/_queueSpId/_colaPos from existing
+        // If SP returned nothing — keep existing in-memory ops
+        var useSpOps = spOps.length > 0;
         return {
           of_sap:      ofSap,
           articulo:    f.Numero_Articulo || '',
@@ -5362,9 +5377,7 @@ async function ftLoadDataFromSP() {
           status:      f.Status || '',
           padre:       null,
           subarts:     [],
-          ops: allOps
-            .filter(o => String(o.OF_SAP||'').trim() === String(ofSap).trim())
-            .sort((a,b) => (parseInt(a.Secuencia)||0)-(parseInt(b.Secuencia)||0))
+          ops: useSpOps ? spOps
             .map(o => ({
               id: o.Op_ID || o.op_id || o.OpID || ('op_' + (o._itemId||o._numId||o.ID||'')),
               nombre: o.Nombre || o.Title || '',
@@ -5387,7 +5400,7 @@ async function ftLoadDataFromSP() {
               qty_chat: parseInt(o.Qty_Chat||0),
               qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
               qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||0),
-              cola: 0, // se asigna desde FT_Cola_Estacion después, no desde el campo Cola de SP
+              cola: 0,
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
               turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}return [];})(),
@@ -5395,8 +5408,18 @@ async function ftLoadDataFromSP() {
               valcalNote: o.ValCalNote || '',
               calResult: o.CalResult || '',
               calComment: o.CalComment || '',
-              _spId: o._itemId || String(o.ID||''), // REST item id for PATCH
-            })),
+              _spId: o._itemId || String(o.ID||''),
+            })).map(function(op){
+              // Merge _spId, _queueSpId, _colaPos from existing in-memory ops
+              var ex = existingOps.find(function(e){ return e.id === op.id; });
+              if(ex) {
+                if(!op._spId && ex._spId) op._spId = ex._spId;
+                if(!op._queueSpId && ex._queueSpId) op._queueSpId = ex._queueSpId;
+                if(ex._colaPos > 0) op._colaPos = ex._colaPos;
+              }
+              return op;
+            })
+            : existingOps, // SP returned 0 ops — keep existing in-memory ops
         };
       });
 
@@ -5561,7 +5584,23 @@ async function ftLoadDataFromSP() {
             for (var oi = 0; oi < aofToSave.ops.length; oi++) {
               await ftSaveOpToSP(sapId, aofToSave.ops[oi].id);
             }
-            await ftSaveQueueToSP(sapId);
+          }
+          // ── Assign global positions AFTER all ops created ──────────
+          // Compute MAX per station across ALL OFs before saving any queue
+          var _globalMax = {};
+          for (var gi = 0; gi < ofsNeedingSpCreate.length; gi++) {
+            var gSap = ofsNeedingSpCreate[gi];
+            var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
+            if (!gAof) continue;
+            gAof.ops.forEach(function(op) {
+              if (!op.estacion) return;
+              _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
+              op._colaPos = _globalMax[op.estacion];
+            });
+          }
+          // Now save queue for all OFs with correct positions
+          for (var gi2 = 0; gi2 < ofsNeedingSpCreate.length; gi2++) {
+            await ftSaveQueueToSP(ofsNeedingSpCreate[gi2]);
           }
           console.log('✅ Ops creadas en SP desde plantilla');
         } catch(e) {
