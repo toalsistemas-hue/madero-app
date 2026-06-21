@@ -7325,13 +7325,7 @@ async function _appLoadDataFromSP_impl() {
 
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
-    // ONE-TIME field dump from main load
-    if (rawOps.length > 0 && !window._mainOpFieldsDumped) {
-      window._mainOpFieldsDumped = true;
-      var _mf = rawOps[0];
-      console.log('[MainFieldDump] keys:', Object.keys(_mf).filter(function(k){return !k.startsWith('@');}).join(', '));
-      console.log('[MainFieldDump] sample:', JSON.stringify({Title:_mf.Title,OF_SAP:_mf.OF_SAP,Op_ID:_mf.Op_ID,Nombre:_mf.Nombre,Estacion:_mf.Estacion,Status:_mf.Status}).slice(0,300));
-    }
+
     // Helper: normalize Programado_Hoy from PA flow (may be bool, string, or number)
     var isProgramado = function(f) {
       var v = f.Programado_Hoy;
@@ -7348,7 +7342,7 @@ async function _appLoadDataFromSP_impl() {
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
-        nombre: o.Nombre||o.Title||'', estacion: o.Estacion||'',
+        nombre: (o.Nombre&&o.Nombre.trim())||o.Title||'', estacion: o.Estacion||'',
         tipo: o.Tipo||o.tipo||'Secuencial',
         tecnico: o.Tecnico||'',
         ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
@@ -14194,13 +14188,7 @@ async function appReloadOpsFromSP() {
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
     var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
     var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields||i; return f; });
-    // ONE-TIME diagnostic — log raw field names from first op
-    if (rawOpsR.length > 0 && !window._opFieldsDumped) {
-      window._opFieldsDumped = true;
-      var _f = rawOpsR[0];
-      console.log('[FieldDump] FT_Operaciones keys:', Object.keys(_f).filter(function(k){return !k.startsWith('@');}).join(', '));
-      console.log('[FieldDump] Muestra:', JSON.stringify({Title:_f.Title,OF_SAP:_f.OF_SAP,Op_ID:_f.Op_ID,Nombre:_f.Nombre,Estacion:_f.Estacion,Status:_f.Status}));
-    }
+
     var seenR = {};
     rawOpsR.forEach(function(o){
       var _kId = o.Op_ID || o.op_id || o.OpID || ('sp_'+(o.ID||o._itemId||''));
