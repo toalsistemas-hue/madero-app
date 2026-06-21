@@ -7274,7 +7274,7 @@ async function _appLoadDataFromSP_impl() {
         OF_SAP: f.OF_SAP || f.Title || '',
         Op_ID:  opId,
         ID:     id,
-        Nombre: f.Nombre || f.Nombre_Op || '',
+        Nombre: (f.Nombre && f.Nombre.trim()) || f.Title || f.Nombre_Op || '',
         Estacion: f.Estacion || '',
         Tipo:   f.Tipo || 'Secuencial',
         Tecnico: f.Tecnico || '',
@@ -9189,7 +9189,7 @@ function _monTvTap() {
   clearTimeout(_monTvTapTimer);
   if (_monTvTapCount >= 5) {
     _monTvTapCount = 0;
-    var dbg = document.getElementById('debug-console');
+    var dbg = document.getElementById('debug-panel');
     if (!dbg) { _debugTapCount = 5; _onAvatarTap(); return; }
     var isHidden = dbg.style.display === 'none' || !dbg.style.display;
     if (isHidden) {

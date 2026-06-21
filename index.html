@@ -4452,7 +4452,7 @@ async function ftSaveProgramacionToSP() {
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
-  showLoadingModal('Programando Fabricaciones', 'Guardando en SharePoint...\nPor favor espera.');
+  showLoadingModal('Programando Fabricaciones', 'Guardando programación...\nPor favor espera.');
   try {
     const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const itemMap = {};
@@ -5575,11 +5575,31 @@ async function ftLoadDataFromSP() {
     if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
       var _ofsToCreate = ofsNeedingSpCreate.slice();
       console.log('Auto-creando ops en SP para', _ofsToCreate.length, 'OFs:', _ofsToCreate);
-      showLoadingModal('Cargando Fabricaciones', 'Creando operaciones en SharePoint...\nPor favor espera, no navegues hasta que termine.');
+      showLoadingModal('Cargando Fabricaciones', 'Creando operaciones en el sistema...\nPor favor espera, no navegues hasta que termine.');
       (async function(){
         try {
           // Suprimir notificaciones de polling durante creación masiva
           window._suppressCoordNotifs = true;
+          // ── Pre-cleanup: delete any existing FT_Cola_Estacion records for these OFs ──
+          // Prevents stale/duplicate records from previous failed or partial runs
+          try {
+            var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
+            var _existingColaItems = (_existingColaRaw.value || []).filter(function(item) {
+              return _ofsToCreate.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
+            });
+            if (_existingColaItems.length > 0) {
+              console.log('  🧹 Limpiando', _existingColaItems.length, 'registros de cola previos...');
+              for (var ci = 0; ci < _existingColaItems.length; ci++) {
+                var _cItem = _existingColaItems[ci];
+                var _cId = _cItem.id || (_cItem.fields||{}).ID;
+                if (_cId) {
+                  try { await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(_cId)); }
+                  catch(cErr) { console.warn('  ⚠️ No se pudo borrar cola item', _cId, cErr.message); }
+                }
+              }
+              console.log('  ✅ Cola previa limpiada');
+            }
+          } catch(cleanErr) { console.warn('  ⚠️ Error limpiando cola previa:', cleanErr.message); }
           for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
             var sapId = _ofsToCreate[ni];
             var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
@@ -5939,6 +5959,8 @@ async function ftSaveOpToSP(of_sap, opId) {
       Ayudantes_JSON: (op.ayudantes||[]).join(','), PauseReason: op.pauseReason||'',
       Tip: op.tipo||'Secuencial',
     };
+    // Always include Secuencia if we can derive it (ensures it's never left as 0)
+    if (op.secuencia && op.secuencia > 0) fields.Secuencia = op.secuencia;
     if (op.needsCal===true) fields.NeedsCal=true;
     if (op.valcalNote && op.valcalNote.charAt(0)!=='{') fields.ValCalNote=op.valcalNote;
     if (op.isRetrabajo===true) fields.isRetrabajo=true;
@@ -5956,7 +5978,8 @@ async function ftSaveOpToSP(of_sap, opId) {
 }
 async function ftCreateOpInSP(of_sap, op, aof) {
   if (!op) return;
-  const seqNum = aof ? (aof.ops.indexOf(op) + 1) : 1;
+  const _opIdx = aof ? aof.ops.indexOf(op) : -1;
+  const seqNum = (_opIdx >= 0) ? (_opIdx + 1) : (aof ? (aof.ops.findIndex(function(o){ return o.id === op.id; }) + 1) || 1 : 1);
   // Use HARDCODED internal SP field names (confirmed from col map logs)
   // 'tipo' display name → 'Tip' internal name (confirmed)
   // All other custom fields have matching display/internal names
