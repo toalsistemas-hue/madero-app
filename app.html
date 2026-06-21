@@ -7263,12 +7263,52 @@ async function _appLoadDataFromSP_impl() {
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
     // Si mismo status, mantener el de ID mayor (más reciente)
-    var rawOps = (opsRes.value||[]).map(function(i){ return _normOp(i.fields||i, i.id||null); });
+    // Map flow response directly — field names as returned by PA flow
+    var rawOps = (opsRes.value||[]).map(function(i){
+      var f = i.fields || i; // flow returns flat; Graph returns nested .fields
+      var id = i.id || f.ID || '';
+      // Op_ID is the key field — try multiple possible names
+      var opId = f.Op_ID || f.op_id || f.OpID || '';
+      if (!opId && id) opId = 'op_sp_' + id; // fallback: use SP item ID
+      return {
+        OF_SAP: f.OF_SAP || f.Title || '',
+        Op_ID:  opId,
+        ID:     id,
+        Nombre: f.Nombre || f.Nombre_Op || '',
+        Estacion: f.Estacion || '',
+        Tipo:   f.Tipo || 'Secuencial',
+        Tecnico: f.Tecnico || '',
+        Ayudantes_JSON: f.Ayudantes_JSON || f.Ayudantes || '',
+        Status: f.Status || 'pending',
+        Inicio: f.Inicio || '',
+        Fin:    f.Fin || '',
+        Fecha_Inicio: f.Fecha_Inicio || '',
+        Fecha_Fin:    f.Fecha_Fin || '',
+        Mins:   f.Mins || 0,
+        Qty_Total: f.Qty_Total || 0,
+        Qty_OK:    f.Qty_OK || 0,
+        Qty_Def:   f.Qty_Def || 0,
+        Qty_Rej:   f.Qty_Rej || 0,
+        Qty_Def_Chatarra:  f.Qty_Def_Chatarra || 0,
+        Qty_Def_Retrabajo: f.Qty_Def_Retrabajo || 0,
+        Cola:      f.Cola || 0,
+        Secuencia: f.Secuencia || 0,
+        PauseReason: f.PauseReason || '',
+        NeedsCal:  f.NeedsCal,
+        CalResult: f.CalResult || null,
+        CalComment: f.CalComment || null,
+        ValCalNote: f.ValCalNote || null,
+        TurnoData:  f.TurnoData || '',
+        isRetrabajo: f.isRetrabajo === true,
+      };
+    });
     var statusPriority = {running:5, paused:4, validating:3, done:2, pending:1};
     var opsSeen = {};
     rawOps.forEach(function(o){
-      var key = (o.OF_SAP||'')+'__'+(o.Op_ID||'');
-      if(!key || key === '__') return; // skip invalid
+      // Dedup key: use Op_ID if available, else use SP item ID
+      var opIdKey = o.Op_ID || ('sp_' + (o.ID||''));
+      var key = (o.OF_SAP||'') + '__' + opIdKey;
+      if(!o.OF_SAP || !opIdKey) return; // skip invalid
       var existing = opsSeen[key];
       if(!existing){
         opsSeen[key] = o;
@@ -7747,16 +7787,19 @@ async function appSaveQueueToSP(of_sap) {
             Activo:   !isDone,
           });
         } else {
+          // Activo = true only when the OF is actually programmed (in DB.activeOFs with programadoHoy)
+          var _aofChk = DB.activeOFs.find(function(a){ return a.of_sap===of_sap; });
+          var _isProg = _aofChk ? (_aofChk.programadoHoy===true) : false;
           var res = await appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
             Title:     op.estacion,
             OF_SAP:    of_sap,
             Op_ID:     op.id,
             Posicion:  op._colaPos,
             Tipo_Cola: 'normal',
-            Activo:    true,
+            Activo:    _isProg,
           });
           if (res && res.id) op._queueSpId = res.id;
-          console.log('✅ FT_Cola POST: '+op.id+' pos='+op._colaPos);
+          console.log('✅ FT_Cola POST: '+op.id+' pos='+op._colaPos+' activo='+_isProg);
         }
       } catch(e) { console.warn('FT_Cola error op '+op.id+':', e.message); }
     }

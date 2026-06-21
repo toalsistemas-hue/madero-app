@@ -5316,8 +5316,9 @@ async function ftLoadDataFromSP() {
     var _spPrio={running:5,paused:4,validating:3,done:2,pending:1};
     var _seen={};
     _rawOps.forEach(function(o){
-      var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
-      if(!k||k==='__') return;
+      var _opIdKey = o.Op_ID || o.op_id || o.OpID || ('sp_'+(o._itemId||o.ID||''));
+      var k=(o.OF_SAP||'')+'__'+_opIdKey;
+      if(!o.OF_SAP || !_opIdKey) return;
       var ex=_seen[k];
       if(!ex){_seen[k]=o;return;}
       var nP=_spPrio[o.Status||'pending']||1,eP=_spPrio[ex.Status||'pending']||1;
@@ -5346,7 +5347,7 @@ async function ftLoadDataFromSP() {
             .filter(o => String(o.OF_SAP||'').trim() === String(ofSap).trim())
             .sort((a,b) => (parseInt(a.Secuencia)||0)-(parseInt(b.Secuencia)||0))
             .map(o => ({
-              id: o.Op_ID || ('op_' + (o._itemId||o.ID||'')),
+              id: o.Op_ID || o.op_id || o.OpID || ('op_' + (o._itemId||o.ID||'')),
               nombre: o.Nombre || o.Title || '',
               estacion: o.Estacion || '',
               tipo: o.Tipo || o.tipo || 'Secuencial',
@@ -5558,28 +5559,28 @@ async function ftLoadDataFromSP() {
     // Restore queue from SP — reset primero para evitar duplicados
     window.DB_STATION_QUEUE = {};
     window.STATIONS.forEach(s => { window.DB_STATION_QUEUE[s]=[]; });
-    const colaItems = (colaRes.value||[]).map(i=>i.fields).filter(f=>f.Activo!==false&&f.Activo!==0).sort((a,b)=>(a.Posicion||0)-(b.Posicion||0));
-    colaItems.forEach(c => {
-      const st = c.Estacion || c.Title || '';
+    // Load FT_Cola_Estacion — keep item id for _queueSpId and Posicion for _colaPos
+    const colaItemsRaw = (colaRes.value||[])
+      .filter(function(i){ var f=i.fields||{}; return f.Activo!==false && f.Activo!==0; })
+      .sort(function(a,b){ return (a.fields.Posicion||0)-(b.fields.Posicion||0); });
+    colaItemsRaw.forEach(function(item) {
+      var c  = item.fields || {};
+      var st = c.Estacion || c.Title || '';
       if (!window.DB_STATION_QUEUE[st]) window.DB_STATION_QUEUE[st] = [];
-      // Guard: no insertar si ya existe esa combinación of_sap+op_id
-      const alreadyIn = window.DB_STATION_QUEUE[st].find(function(x){ return x.of_sap===c.OF_SAP && x.op_id===c.Op_ID; });
-      if (!alreadyIn) window.DB_STATION_QUEUE[st].push({ of_sap: c.OF_SAP||'', op_id: c.Op_ID||'', tipo: c.Tipo_Cola||'normal' });
-    });
-
-    // Populate op.cola from FT_Cola_Estacion queue positions (authoritative source)
-    DB.activeOFs.forEach(function(aof){
-      aof.ops.forEach(function(op){
-        if (window.DB_STATION_QUEUE && op.estacion) {
-          var q = window.DB_STATION_QUEUE[op.estacion];
-          if (q) {
-            var qIdx = q.findIndex(function(e){ return e.of_sap===aof.of_sap && e.op_id===op.id; });
-            if (qIdx >= 0) {
-              op._colaPos = op._colaPos || (qIdx + 1); // keep existing _colaPos if already set
+      var alreadyIn = window.DB_STATION_QUEUE[st].find(function(x){ return x.of_sap===c.OF_SAP && x.op_id===c.Op_ID; });
+      if (!alreadyIn) {
+        window.DB_STATION_QUEUE[st].push({ of_sap: c.OF_SAP||'', op_id: c.Op_ID||'', tipo: c.Tipo_Cola||'normal' });
+        // Store absolute SP position and item ID on the op
+        DB.activeOFs.forEach(function(aof){
+          if (aof.of_sap === c.OF_SAP) {
+            var op = aof.ops.find(function(o){ return o.id === c.Op_ID; });
+            if (op) {
+              op._queueSpId = item.id;
+              op._colaPos   = parseInt(c.Posicion||0) || 0; // absolute SP position
             }
           }
-        }
-      });
+        });
+      }
     });
     // Re-render
     renderProg(); renderTpls(); renderSeg(); renderApp();
@@ -5982,10 +5983,10 @@ async function ftSaveQueueToSP(of_sap) {
       });
     });
 
-    // ── Step 3: Upsert each op via Flow ───────────────────────────────────
-    // _colaPos = absolute SP position (set on first save, never recalculated)
-    // op.cola  = relative display rank (local only, not saved to SP)
-    // Compute max position across all ops currently in queue per station
+    // ── Step 3: Pre-compute positions, then upsert each op ──────────────
+    // _colaPos = absolute SP position (never recalculated, only set on first save)
+    // op.cola  = relative display rank (computed by sqSyncColaNumbers, never saved)
+    // Pre-compute MAX positions per station across ALL activeOFs first
     var _stationMaxPos = {};
     DB.activeOFs.forEach(function(a){
       a.ops.forEach(function(o){
@@ -5995,29 +5996,28 @@ async function ftSaveQueueToSP(of_sap) {
         }
       });
     });
+    // Assign positions to new ops (no _queueSpId yet) before any SP call
+    aof.ops.forEach(function(op){
+      if (!op.estacion || op._queueSpId || op._colaPos) return;
+      _stationMaxPos[op.estacion] = (_stationMaxPos[op.estacion]||0) + 1;
+      op._colaPos = _stationMaxPos[op.estacion];
+    });
 
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
       var isDone = op.status === 'done';
-      var colaVal;
-      if (isDone) {
-        colaVal = 0;
-      } else if (op._colaPos) {
-        colaVal = op._colaPos; // use existing absolute position
-      } else {
-        // First time: assign MAX+1 for this station
-        _stationMaxPos[op.estacion] = (_stationMaxPos[op.estacion]||0) + 1;
-        colaVal = _stationMaxPos[op.estacion];
-        op._colaPos = colaVal;
-      }
+      // Activo = true only if OF is programmed AND op is not done
+      var aofCheck = DB.activeOFs.find(function(a){ return a.of_sap===of_sap; });
+      var ofProgramada = aofCheck ? (aofCheck.programadoHoy === true ||
+        aofCheck.status === 'En Fabricacion' || aofCheck.status === 'Planeacion') : false;
       var fields = {
         Title:     op.estacion || of_sap,
         OF_SAP:    of_sap,
         Op_ID:     op.id,
-        Posicion:  colaVal,
+        Posicion:  isDone ? 0 : (op._colaPos||0),
         Tipo_Cola: 'normal',
-        Activo:    !isDone,
+        Activo:    !isDone && ofProgramada,
       };
       try {
         if (op._queueSpId) {
@@ -6025,6 +6025,7 @@ async function ftSaveQueueToSP(of_sap) {
         } else {
           var res = await spEscribir('FT_Cola_Estacion', fields, null);
           if(res&&res.id){ op._queueSpId=res.id; window._queueSpIdCache[op.id]=res.id; }
+          console.log('✅ FT_Cola POST: '+op.id+' pos='+op._colaPos);
         }
       } catch(e) { ftErrNotify('ftSaveQueueToSP (op)', e, 'FT_Cola_Estacion'); }
     }
