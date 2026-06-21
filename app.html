@@ -2325,18 +2325,21 @@ function sqAddOF(of_sap){
 
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
+  // op.cola = RELATIVE rank among pending ops in that station (1,2,3...)
+  // This is display-only — SP stores absolute Posicion which never resets
+  // Running/paused/done ops get cola=null (no queue number shown)
   STATIONS.forEach(function(st){
-    var q=sqGetQueue(st);
-    var colaIdx=1;
+    var q = sqGetQueue(st);
+    var rank = 1;
     q.forEach(function(item){
-      var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-      if(!aof) return;
-      var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(!op) return;
-      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
-        op.cola=null;
-      } else if(op.status==='pending'||op.status==='retrabajo'){
-        op.cola=colaIdx++;
+      var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
+      if (!aof) return;
+      var op = aof.ops.find(function(o){ return o.id===item.op_id; });
+      if (!op) return;
+      if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'){
+        op.cola = null; // active ops: no queue number
+      } else if (op.status==='pending'||op.status==='retrabajo'){
+        op.cola = rank++; // relative rank among pending
       }
     });
   });
@@ -2361,15 +2364,23 @@ function sqPrioritizeOF(of_sap){
 
 // Move item up/down in queue for a station
 function sqMove(estacion, idx, dir){
-  var q=sqGetQueue(estacion);
-  var newIdx=idx+dir;
-  if(newIdx<0||newIdx>=q.length) return;
-  // Don't move running ops
-  var item=q[idx];
-  var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-  var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
-  if(op&&op.status==='running') return; // check conflict handled by caller
-  var tmp=q[idx]; q[idx]=q[newIdx]; q[newIdx]=tmp;
+  var q = sqGetQueue(estacion);
+  var newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= q.length) return;
+  var itemA = q[idx], itemB = q[newIdx];
+  var aofA = DB.activeOFs.find(function(a){ return a.of_sap===itemA.of_sap; });
+  var opA  = aofA ? aofA.ops.find(function(o){ return o.id===itemA.op_id; }) : null;
+  if (opA && opA.status==='running') return;
+  // Swap queue array entries
+  var tmp = q[idx]; q[idx] = q[newIdx]; q[newIdx] = tmp;
+  // Swap _colaPos so SP absolute positions follow the reorder
+  var aofB = DB.activeOFs.find(function(a){ return a.of_sap===itemB.of_sap; });
+  var opB  = aofB ? aofB.ops.find(function(o){ return o.id===itemB.op_id; }) : null;
+  if (opA && opB) {
+    var posA = opA._colaPos, posB = opB._colaPos;
+    opA._colaPos = posB;
+    opB._colaPos = posA;
+  }
   sqSyncColaNumbers();
 }
 
@@ -6335,14 +6346,21 @@ async function appQueueSave(){
         var aof = DB.activeOFs[ai];
         if(!savedOFs[aof.of_sap]){ savedOFs[aof.of_sap]=true; await appSaveQueueToSP(aof.of_sap); }
       }
+      // op.cola is display-only (relative rank) — no longer saved to FT_Operaciones
+      // Absolute positions are managed via FT_Cola_Estacion._colaPos
       for(var ai2=0; ai2<DB.activeOFs.length; ai2++){
         var aof2 = DB.activeOFs[ai2];
         for(var oi=0; oi<aof2.ops.length; oi++){
           var op = aof2.ops[oi];
-          if(!op._spId) continue;
-          try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
-                console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
-          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          if(!op._spId || !op._colaPos) continue;
+          // Only save if position changed (avoid unnecessary writes)
+          if (op._colaPos !== op._savedColaPos) {
+            try {
+              await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola: op._colaPos||0});
+              op._savedColaPos = op._colaPos;
+              console.log('✅ Cola SP: '+op.id+' → '+op._colaPos);
+            } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
         }
       }
@@ -7405,11 +7423,14 @@ async function _appLoadDataFromSP_impl() {
       const alreadyIn=window.DB_STATION_QUEUE[st].find(function(x){return x.of_sap===c.fields.OF_SAP&&x.op_id===c.fields.Op_ID;});
       if(!alreadyIn){
         window.DB_STATION_QUEUE[st].push({of_sap:c.fields.OF_SAP||'',op_id:c.fields.Op_ID||'',tipo:c.fields.Tipo_Cola||'normal'});
-        // Mapear _queueSpId en la op correspondiente para poder hacer PATCH en lugar de POST
+        // Store SP ID and absolute position on the op
         DB.activeOFs.forEach(function(aof){
           if(aof.of_sap===c.fields.OF_SAP){
             var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
-            if(op) op._queueSpId=c.id;
+            if(op){
+              op._queueSpId = c.id;
+              op._colaPos   = parseInt(c.fields.Posicion||0); // absolute SP position
+            }
           }
         });
       }
@@ -7679,6 +7700,8 @@ async function appSaveTimerToSP(key) {
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
 async function appSaveQueueToSP(of_sap) {
+  // _colaPos = absolute position in SP (never recalculated, only set on creation or explicit reorder)
+  // op.cola  = relative display rank (recalculated locally by sqSyncColaNumbers)
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
@@ -7686,32 +7709,41 @@ async function appSaveQueueToSP(of_sap) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
       var isDone = op.status === 'done';
-      var colaPos = isDone ? 0 : (op.cola||0);
+      // Use absolute SP position (_colaPos), NOT the relative display rank (op.cola)
+      var colaPos = isDone ? 0 : (op._colaPos || op._spColaPos || 999);
       try {
         if (op._queueSpId) {
+          // PATCH existing record — only update Activo and Posicion (reorder use case)
           await appFlowEscribir('FT_Cola_Estacion', 'actualizar', parseInt(op._queueSpId), {
-            OF_SAP:    of_sap,
-            Op_ID:     op.id,
             Posicion:  colaPos,
-            Tipo_Cola: 'normal',
             Activo:    !isDone,
           });
-          console.log('✅ FT_Cola PATCH: '+op.id+' → pos '+colaPos);
+          console.log('✅ FT_Cola PATCH: '+op.id+' pos='+colaPos);
         } else {
+          // POST new record — assign MAX position in this station + 1
+          var stationQueue = sqGetQueue(op.estacion);
+          var maxPos = 0;
+          stationQueue.forEach(function(item) {
+            var oof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
+            var oop = oof ? oof.ops.find(function(o){ return o.id===item.op_id; }) : null;
+            if (oop && oop._colaPos && oop._colaPos > maxPos) maxPos = oop._colaPos;
+          });
+          var newPos = maxPos + 1;
+          op._colaPos = newPos;  // store absolute position on the op
           var res = await appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
             Title:     op.estacion,
             OF_SAP:    of_sap,
             Op_ID:     op.id,
-            Posicion:  colaPos,
+            Posicion:  newPos,
             Tipo_Cola: 'normal',
-            Activo:    !isDone,
+            Activo:    true,
           });
           if (res && res.id) op._queueSpId = res.id;
-          console.log('✅ FT_Cola POST: '+op.id);
+          console.log('✅ FT_Cola POST: '+op.id+' pos='+newPos);
         }
-      } catch(e) { appErrNotify('Guardar cola (op)', e, 'FT_Cola_Estacion'); }
+      } catch(e) { console.warn('FT_Cola error op '+op.id+':', e.message); }
     }
-  } catch(e) { appErrNotify('Guardar cola', e, 'FT_Cola_Estacion'); }
+  } catch(e) { console.warn('appSaveQueueToSP error:', e.message); }
 }
 
 // ── Save FT_Status_Estacion from app ──────────────────────
@@ -9523,18 +9555,21 @@ function sqAddOF(of_sap){
 
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
+  // op.cola = RELATIVE rank among pending ops in that station (1,2,3...)
+  // This is display-only — SP stores absolute Posicion which never resets
+  // Running/paused/done ops get cola=null (no queue number shown)
   STATIONS.forEach(function(st){
-    var q=sqGetQueue(st);
-    var colaIdx=1;
+    var q = sqGetQueue(st);
+    var rank = 1;
     q.forEach(function(item){
-      var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-      if(!aof) return;
-      var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(!op) return;
-      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
-        op.cola=null;
-      } else if(op.status==='pending'||op.status==='retrabajo'){
-        op.cola=colaIdx++;
+      var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
+      if (!aof) return;
+      var op = aof.ops.find(function(o){ return o.id===item.op_id; });
+      if (!op) return;
+      if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'){
+        op.cola = null; // active ops: no queue number
+      } else if (op.status==='pending'||op.status==='retrabajo'){
+        op.cola = rank++; // relative rank among pending
       }
     });
   });
@@ -9559,15 +9594,23 @@ function sqPrioritizeOF(of_sap){
 
 // Move item up/down in queue for a station
 function sqMove(estacion, idx, dir){
-  var q=sqGetQueue(estacion);
-  var newIdx=idx+dir;
-  if(newIdx<0||newIdx>=q.length) return;
-  // Don't move running ops
-  var item=q[idx];
-  var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-  var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
-  if(op&&op.status==='running') return; // check conflict handled by caller
-  var tmp=q[idx]; q[idx]=q[newIdx]; q[newIdx]=tmp;
+  var q = sqGetQueue(estacion);
+  var newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= q.length) return;
+  var itemA = q[idx], itemB = q[newIdx];
+  var aofA = DB.activeOFs.find(function(a){ return a.of_sap===itemA.of_sap; });
+  var opA  = aofA ? aofA.ops.find(function(o){ return o.id===itemA.op_id; }) : null;
+  if (opA && opA.status==='running') return;
+  // Swap queue array entries
+  var tmp = q[idx]; q[idx] = q[newIdx]; q[newIdx] = tmp;
+  // Swap _colaPos so SP absolute positions follow the reorder
+  var aofB = DB.activeOFs.find(function(a){ return a.of_sap===itemB.of_sap; });
+  var opB  = aofB ? aofB.ops.find(function(o){ return o.id===itemB.op_id; }) : null;
+  if (opA && opB) {
+    var posA = opA._colaPos, posB = opB._colaPos;
+    opA._colaPos = posB;
+    opB._colaPos = posA;
+  }
   sqSyncColaNumbers();
 }
 
@@ -13649,14 +13692,21 @@ async function appQueueSave(){
         var aof = DB.activeOFs[ai];
         if(!savedOFs[aof.of_sap]){ savedOFs[aof.of_sap]=true; await appSaveQueueToSP(aof.of_sap); }
       }
+      // op.cola is display-only (relative rank) — no longer saved to FT_Operaciones
+      // Absolute positions are managed via FT_Cola_Estacion._colaPos
       for(var ai2=0; ai2<DB.activeOFs.length; ai2++){
         var aof2 = DB.activeOFs[ai2];
         for(var oi=0; oi<aof2.ops.length; oi++){
           var op = aof2.ops[oi];
-          if(!op._spId) continue;
-          try { await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola:op.cola||0});
-                console.log('✅ Cola SP: '+op.id+' → '+(op.cola||0));
-          } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          if(!op._spId || !op._colaPos) continue;
+          // Only save if position changed (avoid unnecessary writes)
+          if (op._colaPos !== op._savedColaPos) {
+            try {
+              await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), {Cola: op._colaPos||0});
+              op._savedColaPos = op._colaPos;
+              console.log('✅ Cola SP: '+op.id+' → '+op._colaPos);
+            } catch(e){ console.warn('⚠ Cola SP error '+op.id+':', e.message); }
+          }
           if(oi < aof2.ops.length-1) await new Promise(function(r){setTimeout(r,100);});
         }
       }

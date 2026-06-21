@@ -5962,18 +5962,41 @@ async function ftSaveQueueToSP(of_sap) {
     });
 
     // ── Step 3: Upsert each op via Flow ───────────────────────────────────
+    // _colaPos = absolute SP position (set on first save, never recalculated)
+    // op.cola  = relative display rank (local only, not saved to SP)
+    // Compute max position across all ops currently in queue per station
+    var _stationMaxPos = {};
+    DB.activeOFs.forEach(function(a){
+      a.ops.forEach(function(o){
+        if (o._colaPos && o.estacion) {
+          if (!_stationMaxPos[o.estacion] || o._colaPos > _stationMaxPos[o.estacion])
+            _stationMaxPos[o.estacion] = o._colaPos;
+        }
+      });
+    });
+
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
-      var colaVal = (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded')
-                    ? 0 : (op.cola || 0);
+      var isDone = op.status === 'done';
+      var colaVal;
+      if (isDone) {
+        colaVal = 0;
+      } else if (op._colaPos) {
+        colaVal = op._colaPos; // use existing absolute position
+      } else {
+        // First time: assign MAX+1 for this station
+        _stationMaxPos[op.estacion] = (_stationMaxPos[op.estacion]||0) + 1;
+        colaVal = _stationMaxPos[op.estacion];
+        op._colaPos = colaVal;
+      }
       var fields = {
         Title:     op.estacion || of_sap,
         OF_SAP:    of_sap,
         Op_ID:     op.id,
         Posicion:  colaVal,
         Tipo_Cola: 'normal',
-        Activo:    op.status !== 'done',
+        Activo:    !isDone,
       };
       try {
         if (op._queueSpId) {
