@@ -5326,6 +5326,16 @@ async function ftLoadDataFromSP() {
     });
     const allOps=Object.values(_seen);
     if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
+    // Diagnostic: show field names for first op to identify mapping issues
+    if(_rawOps.length > 0) {
+      var _sample = _rawOps[0];
+      console.log('[DiagOp] Campos del primer op:', Object.keys(_sample).filter(function(k){return !k.startsWith('@')}).join(', '));
+      console.log('[DiagOp] OF_SAP='+_sample.OF_SAP+' Op_ID='+_sample.Op_ID+' Nombre='+_sample.Nombre+' Title='+_sample.Title);
+    }
+    // Show ops per OF to detect dedup issues
+    var _ofOpCount = {};
+    allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount[s]=(_ofOpCount[s]||0)+1; });
+    console.log('[DiagOp] Ops por OF:', JSON.stringify(_ofOpCount));
     DB.activeOFs = ofs
       .filter(f => {
         if(f.Programado_Hoy === true) return true;
@@ -5341,6 +5351,8 @@ async function ftLoadDataFromSP() {
           pedido:      f.Numero_Pedido || f.Pedido || '',
           cliente:     f.Cliente || '',
           prioridad:   (f.Prioridad||'Normal').toLowerCase(),
+          programadoHoy: f.Programado_Hoy === true,
+          status:      f.Status || '',
           padre:       null,
           subarts:     [],
           ops: allOps
@@ -6009,8 +6021,11 @@ async function ftSaveQueueToSP(of_sap) {
       var isDone = op.status === 'done';
       // Activo = true only if OF is programmed AND op is not done
       var aofCheck = DB.activeOFs.find(function(a){ return a.of_sap===of_sap; });
-      var ofProgramada = aofCheck ? (aofCheck.programadoHoy === true ||
-        aofCheck.status === 'En Fabricacion' || aofCheck.status === 'Planeacion') : false;
+      // Use DB.ofs (has programadoHoy) as primary source, fallback to activeOFs
+      var ofsRec = DB.ofs.find(function(o){ return o.of_sap===of_sap; });
+      var ofProgramada = (ofsRec && ofsRec.programadoHoy === true) ||
+        (aofCheck && (aofCheck.programadoHoy === true ||
+         (aofCheck.status||'').indexOf('Fabricacion') >= 0));
       var fields = {
         Title:     op.estacion || of_sap,
         OF_SAP:    of_sap,
