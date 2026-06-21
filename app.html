@@ -14051,35 +14051,18 @@ function startSPPolling() {
 }
 
 async function spPollCheck() {
-  const siteId = appSiteId;
-  // Strategy: use lastModifiedDateTime on items (no $expand needed, no 400 errors)
-  // Only reload if we detect a REAL change from a KNOWN baseline
-  
-  // Skip poll if token is unavailable to avoid monitor_window_timeout spam
+  // Skip poll if token is unavailable
   if (!appToken && !appMsalInstance) return;
+  // Use flow-based reload — Graph direct access to SP lists is not available in this app token
   try {
-    // Check FT_Operaciones for any change (modified by supervisor via app)
-    var opsRes = await appGraphGet(
-      'sites/'+siteId+'/lists/FT_Operaciones/items' +
-      '?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
-    );
-    var latestOpMod = (opsRes.value && opsRes.value.length) ? (opsRes.value[0].lastModifiedDateTime||'') : '';
-
-    // Only trigger if we have a valid baseline AND a real new timestamp
-    if (_spLastOpsHash && latestOpMod && latestOpMod !== _spLastOpsHash) {
-      console.log('🔔 Poll OPS cambio detectado →', latestOpMod);
-      _spLastOpsHash = latestOpMod;
-      try {
-        await appReloadOpsFromSP();
-        console.log('✅ Ops reload completo — actualizando UI');
-        renderApp();
-        _refreshStationViews();
-      } catch(pe){ console.warn('❌ Poll ops reload error:', pe.message||pe); }
+    await appReloadOpsFromSP();
+    renderApp();
+    _refreshStationViews();
+  } catch(e) {
+    if (e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch') && !e.message.includes('timeout')) {
+      console.warn('Poll ops error:', e.message);
     }
-    if (!_spLastOpsHash && latestOpMod) {
-      _spLastOpsHash = latestOpMod;
-    }
-  } catch(e) { if(e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch')) console.warn('Poll ops error:', e.message); }
+  }
   // Also check FT_Cola_Estacion for queue reorder changes from coordinator
   try {
     var colaRes = await appGraphGet(
@@ -14134,11 +14117,10 @@ async function spPollCheck() {
 // Lightweight reload — only refresh ops without rebuilding DB.ofs
 async function appReloadOpsFromSP() {
   try {
-    const siteId = await appGetSiteId();
-    var opsRes = await appGraphGet('sites/'+siteId+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
+    var opsRes = await appFlowGet('FT_Operaciones', 5000);
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
     var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
-    var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields; f.ID=i.id; return f; });
+    var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields||i; return f; });
     var seenR = {};
     rawOpsR.forEach(function(o){
       var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
