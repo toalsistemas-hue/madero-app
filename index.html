@@ -5328,21 +5328,11 @@ async function ftLoadDataFromSP() {
     });
     const allOps=Object.values(_seen);
     if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
-    // Diagnostic
-    if(_rawOps.length > 0) {
-      var _s = _rawOps[0];
-      var _keys = Object.keys(_s).filter(function(k){return !k.startsWith('@') && !k.startsWith('_');});
-      console.log('[DiagOp] Campos:', _keys.join(', '));
-      console.log('[DiagOp] Muestra:', JSON.stringify({OF_SAP:_s.OF_SAP,Op_ID:_s.Op_ID,Nombre:_s.Nombre,Title:_s.Title,Estacion:_s.Estacion}));
-      // Show ALL raw keys to find real field name for Op_ID
-      console.log('[DiagOp] Todos los campos del op:', JSON.stringify(_s).slice(0,400));
+    if(allOps.length > 0) {
+      var _ofCnt = {};
+      allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofCnt[s]=(_ofCnt[s]||0)+1; });
+      console.log('[Ops] Cargadas desde SP por OF:', JSON.stringify(_ofCnt));
     }
-    var _ofOpCount = {};
-    _rawOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount[s]=(_ofOpCount[s]||0)+1; });
-    console.log('[DiagOp] RAW ops por OF:', JSON.stringify(_ofOpCount));
-    var _ofOpCount2 = {};
-    allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofOpCount2[s]=(_ofOpCount2[s]||0)+1; });
-    console.log('[DiagOp] DEDUP ops por OF:', JSON.stringify(_ofOpCount2));
     // Preserve existing ops from memory when SP returns empty allOps
     // (happens on first load before async SP saves complete)
     var _existingOpsMap = {};
@@ -5366,6 +5356,11 @@ async function ftLoadDataFromSP() {
         // If SP returned ops — use them, merging _spId/_queueSpId/_colaPos from existing
         // If SP returned nothing — keep existing in-memory ops
         var useSpOps = spOps.length > 0;
+        // If SP ops have no names, they came from a flow that doesn't return Nombre
+        // In that case prefer existingOps which have names from template memory
+        if (useSpOps && spOps.every(function(o){ return !o.Nombre && !o.Title; })) {
+          useSpOps = false; // fall back to in-memory ops with names
+        }
         return {
           of_sap:      ofSap,
           articulo:    f.Numero_Articulo || '',
@@ -5586,21 +5581,32 @@ async function ftLoadDataFromSP() {
             }
           }
           // ── Assign global positions AFTER all ops created ──────────
-          // Compute MAX per station across ALL OFs before saving any queue
+          // Reset all positions and queue SP IDs — start fresh
+          // This ensures sequential numbering across all OFs per station
           var _globalMax = {};
           for (var gi = 0; gi < ofsNeedingSpCreate.length; gi++) {
             var gSap = ofsNeedingSpCreate[gi];
             var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
             if (!gAof) continue;
             gAof.ops.forEach(function(op) {
+              op._colaPos   = undefined; // reset so pre-compute assigns fresh value
+              op._queueSpId = undefined; // force POST not PATCH
+            });
+          }
+          // Now assign sequential positions per station across all OFs
+          for (var gi2 = 0; gi2 < ofsNeedingSpCreate.length; gi2++) {
+            var gSap2 = ofsNeedingSpCreate[gi2];
+            var gAof2 = DB.activeOFs.find(function(a){ return a.of_sap===gSap2; });
+            if (!gAof2) continue;
+            gAof2.ops.forEach(function(op) {
               if (!op.estacion) return;
               _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
               op._colaPos = _globalMax[op.estacion];
             });
           }
-          // Now save queue for all OFs with correct positions
-          for (var gi2 = 0; gi2 < ofsNeedingSpCreate.length; gi2++) {
-            await ftSaveQueueToSP(ofsNeedingSpCreate[gi2]);
+          // Save queue for all OFs with correct positions
+          for (var gi3 = 0; gi3 < ofsNeedingSpCreate.length; gi3++) {
+            await ftSaveQueueToSP(ofsNeedingSpCreate[gi3]);
           }
           console.log('✅ Ops creadas en SP desde plantilla');
         } catch(e) {
@@ -7208,7 +7214,7 @@ function renderHist(){
     if(pending.length){
       h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
       pending.forEach(function(x,qi){
-        var colaN = x.op.cola || (qi+1);
+        var colaN = qi + 1; // always relative rank (1,2,3...) not absolute SP position
         h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
         h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
