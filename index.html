@@ -5363,6 +5363,11 @@ async function ftLoadDataFromSP() {
         // If SP returned ops — use them, merging _spId/_queueSpId/_colaPos from existing
         // If SP returned nothing — keep existing in-memory ops
         var useSpOps = spOps.length > 0;
+        // Don't replace in-memory ops for OFs currently being created (race condition guard)
+        if (useSpOps && window._ftCreatingOFs && window._ftCreatingOFs.indexOf(ofSap) >= 0) {
+          // SP may only have partial ops; keep the full in-memory set from template
+          useSpOps = false;
+        }
         // If SP ops have no names, they came from a flow that doesn't return Nombre
         // In that case prefer existingOps which have names from template memory
         if (useSpOps && spOps.every(function(o){ return !o.Nombre && !o.Title; })) {
@@ -5580,6 +5585,7 @@ async function ftLoadDataFromSP() {
         try {
           // Suprimir notificaciones de polling durante creación masiva
           window._suppressCoordNotifs = true;
+          window._ftCreatingOFs = _ofsToCreate.slice(); // lock: prevent poll from overwriting ops during creation
           // ── Pre-cleanup: delete any existing FT_Cola_Estacion records for these OFs ──
           // Prevents stale/duplicate records from previous failed or partial runs
           try {
@@ -5665,6 +5671,7 @@ async function ftLoadDataFromSP() {
           // Re-activar notificaciones y actualizar baseline del polling
           hideLoadingModal();
           window._suppressCoordNotifs = false;
+          window._ftCreatingOFs = null; // release lock
           window._coordLastOpsMod = ''; // Reset para que el próximo poll establezca nueva baseline
         }
       })();
@@ -5757,6 +5764,8 @@ async function ftLoadDataFromSP() {
             var spOps=allOps.filter(function(o){return o.OF_SAP===aof.of_sap;})
                             .sort(function(a,b){return (a.Secuencia||0)-(b.Secuencia||0);});
             if(!spOps.length) return;
+            // Skip overwriting ops for OFs currently being created (race condition guard)
+            if(window._ftCreatingOFs && window._ftCreatingOFs.indexOf(aof.of_sap) >= 0) return;
             aof.ops=spOps.map(function(o){
               var ex=aof.ops.find(function(e){return e.id===(o.Op_ID||o.Title||'');});
               var newStatus=o.Status||'pending';
@@ -5779,6 +5788,7 @@ async function ftLoadDataFromSP() {
                 qty_chat:parseInt(o.Qty_Chat||0),
                 qty_def_retrabajo:parseInt(o.Qty_Def_Retrabajo||0),
                 qty_def_chatarra:parseInt(o.Qty_Def_Chatarra||0),
+                secuencia:parseInt(o.Secuencia||0)||0,
                 cola:0,
                 isRetrabajo:o.isRetrabajo===true,pauseReason:o.PauseReason||'',
                 turnos:(function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}return [];})(),
