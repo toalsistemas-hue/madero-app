@@ -7155,9 +7155,19 @@ async function appLoadDataFromSP() {
 async function _appLoadDataFromSP_impl() {
   try {
     var emptyFn = function(){ return {value:[], _error:true}; };
+    // Graph returns {value:[{id, fields:{...}}]} — same structure as flow
+    // Use Graph directly for critical lists (flow has timeouts and filters)
+    // Use flow for secondary lists
+    var _graphBase = 'sites/'+appSiteId+'/lists/';
+    var _gGet = function(list, top) {
+      return appGraphGet(_graphBase+list+'/items?$expand=fields&$top='+(top||500)).catch(function(e){
+        console.warn('[GraphGet] '+list+' failed, fallback to flow:', e.message);
+        return appFlowGet(list, top).catch(emptyFn);
+      });
+    };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
-      appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
-      appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
+      _gGet('FT_OrdenesFabricacion', 2000),
+      _gGet('FT_Operaciones', 5000),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
       appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
@@ -7176,7 +7186,11 @@ async function _appLoadDataFromSP_impl() {
       return; // preserve DB.activeOFs, don't wipe it
     }
 
-    const ofs = (ofsRes.value||[]).map(i => i.fields);
+    // Normalize: Graph returns {id, fields:{...}}, Flow returns fields directly
+    var _normalize = function(items) {
+      return (items||[]).map(function(i){ return i.fields ? i.fields : i; });
+    };
+    const ofs = _normalize(ofsRes.value);
     DB.ofs = ofs.map(f => ({
       of_sap: f.OF_SAP||f.Title||'', articulo: f.Numero_Articulo||'',
       descripcion: f.Descripcion_Articulo||'', pedido: f.Numero_Pedido||'',
@@ -7188,7 +7202,7 @@ async function _appLoadDataFromSP_impl() {
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
     // Si mismo status, mantener el de ID mayor (más reciente)
-    var rawOps = (opsRes.value||[]).map(function(i){ var f=i.fields; f.ID=i.id; return f; });
+    var rawOps = (opsRes.value||[]).map(function(i){ var f=i.fields||i; if(i.id) f.ID=i.id; return f; });
     var statusPriority = {running:5, paused:4, validating:3, done:2, pending:1};
     var opsSeen = {};
     rawOps.forEach(function(o){
@@ -7207,16 +7221,7 @@ async function _appLoadDataFromSP_impl() {
       }
     });
     const allOps = Object.values(opsSeen);
-    // Diagnostic: log actual field values from PA to understand mapping
-    if (ofs.length > 0) {
-      var _progSample = ofs.slice(0,4).map(function(f){
-        return (f.OF_SAP||f.Title||'?') + ':PH=' + JSON.stringify(f.Programado_Hoy);
-      });
-      console.log('[Diag] Programado_Hoy sample:', _progSample.join(' | '));
-      // Also log Status values from ops
-      var _statusSample = rawOps.slice(0,4).map(function(o){ return o.OF_SAP+':'+o.Status; });
-      console.log('[Diag] Op Status sample:', _statusSample.join(' | '));
-    }
+
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
     // Helper: normalize Programado_Hoy from PA flow (may be bool, string, or number)
@@ -7240,7 +7245,16 @@ async function _appLoadDataFromSP_impl() {
         tecnico: o.Tecnico||'',
         ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
                  : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
-        status: o.Status||'pending',
+        status: (function(){
+          // If local timer says running but SP says pending — trust local timer
+          // (flow may filter out running ops from FT_Operaciones)
+          var spStatus = o.Status||'pending';
+          var key = (f.OF_SAP||f.Title||'') + '_' + (o.Op_ID||('op_'+(o.ID||'')));
+          var localTimer = DB.timers && DB.timers[key];
+          if (spStatus === 'pending' && localTimer && localTimer.running) return 'running';
+          if (spStatus === 'pending' && localTimer && !localTimer.running && localTimer.elapsed > 0) return 'paused';
+          return spStatus;
+        })(),
         inicio: o.Inicio||'', fin: o.Fin||'',
         fecha_inicio_real: o.Fecha_Inicio||'',
         fecha_fin_real: o.Fecha_Fin||'', mins: parseInt(o.Mins||0),
@@ -8299,6 +8313,12 @@ async function monitorInit() {
     }
   } catch(e) { console.warn('[Monitor] PIN SP load:', e.message); }
   await monitorLoadTechnicians();
+  // Stop FabTracker polling when Monitor takes over
+  if (_spPollTimer) {
+    clearInterval(_spPollTimer);
+    _spPollTimer = null;
+    console.log('[Monitor] FabTracker poll detenido');
+  }
   if (!_MON.estaciones.length) {
     monitorGoConfig();
   } else {
@@ -8313,10 +8333,15 @@ function monitorUpdateClock() {
 }
 
 function monitorExit() {
-  if (_MON.pollTimer)  clearInterval(_MON.pollTimer);
-  if (_MON.clockTimer) clearInterval(_MON.clockTimer);
+  if (_MON.pollTimer)  { clearInterval(_MON.pollTimer);  _MON.pollTimer  = null; }
+  if (_MON.clockTimer) { clearInterval(_MON.clockTimer); _MON.clockTimer = null; }
   var screen = document.getElementById('monitor-screen');
   if (screen) screen.style.display = 'none';
+  // Restart FabTracker polling when leaving Monitor
+  if (!_spPollTimer) {
+    startSPPolling();
+    console.log('[Monitor] FabTracker poll reiniciado');
+  }
 }
 
 // ── Polling ───────────────────────────────────────────────────────
