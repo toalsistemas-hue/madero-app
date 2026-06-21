@@ -4447,6 +4447,7 @@ async function ftSaveProgramacionToSP() {
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
+  showLoadingModal('Programando Fabricaciones', 'Guardando en SharePoint...\nPor favor espera.');
   try {
     const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const itemMap = {};
@@ -4467,7 +4468,8 @@ async function ftSaveProgramacionToSP() {
         .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
-  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
+    hideLoadingModal();
+  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); hideLoadingModal(); }
 }
 
 // -- SP Persistence: Save Prioridad changes --------------------------------
@@ -5566,13 +5568,15 @@ async function ftLoadDataFromSP() {
 
     // Persist ops a SP en background (no bloquea el render)
     if (ofsNeedingSpCreate.length && !state.isDemoMode && state.token) {
-      console.log('Auto-creando ops en SP para', ofsNeedingSpCreate.length, 'OFs:', ofsNeedingSpCreate);
+      var _ofsToCreate = ofsNeedingSpCreate.slice();
+      console.log('Auto-creando ops en SP para', _ofsToCreate.length, 'OFs:', _ofsToCreate);
+      showLoadingModal('Cargando Fabricaciones', 'Creando operaciones en SharePoint...\nPor favor espera, no navegues hasta que termine.');
       (async function(){
         try {
           // Suprimir notificaciones de polling durante creación masiva
           window._suppressCoordNotifs = true;
           for (var ni = 0; ni < ofsNeedingSpCreate.length; ni++) {
-            var sapId = ofsNeedingSpCreate[ni];
+            var sapId = _ofsToCreate[ni];
             var aofToSave = DB.activeOFs.find(function(a){ return a.of_sap === sapId; });
             if (!aofToSave || !aofToSave.ops.length) continue;
             console.log('  Creando', aofToSave.ops.length, 'ops en SP para OF', sapId);
@@ -5584,8 +5588,8 @@ async function ftLoadDataFromSP() {
           // Must run AFTER all ops are created in SP (ftSaveOpToSP calls above)
           var _globalMax = {};
           // Pass 1: reset positions and flag
-          for (var gi = 0; gi < ofsNeedingSpCreate.length; gi++) {
-            var gSap = ofsNeedingSpCreate[gi];
+          for (var gi = 0; gi < _ofsToCreate.length; gi++) {
+            var gSap = _ofsToCreate[gi];
             var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
             if (!gAof) continue;
             gAof.ops.forEach(function(op) {
@@ -5595,8 +5599,8 @@ async function ftLoadDataFromSP() {
             });
           }
           // Pass 2: assign sequential positions globally per station
-          for (var gi2 = 0; gi2 < ofsNeedingSpCreate.length; gi2++) {
-            var gSap2 = ofsNeedingSpCreate[gi2];
+          for (var gi2 = 0; gi2 < _ofsToCreate.length; gi2++) {
+            var gSap2 = _ofsToCreate[gi2];
             var gAof2 = DB.activeOFs.find(function(a){ return a.of_sap===gSap2; });
             if (!gAof2) continue;
             gAof2.ops.forEach(function(op) {
@@ -5607,13 +5611,14 @@ async function ftLoadDataFromSP() {
             });
           }
           // Pass 3: save queue inline — bypass ftSaveQueueToSP to avoid any re-computation
-          for (var gi3 = 0; gi3 < ofsNeedingSpCreate.length; gi3++) {
-            var gSap3  = ofsNeedingSpCreate[gi3];
+          for (var gi3 = 0; gi3 < _ofsToCreate.length; gi3++) {
+            var gSap3  = _ofsToCreate[gi3];
             var gAof3  = DB.activeOFs.find(function(a){ return a.of_sap===gSap3; });
             if (!gAof3) continue;
             for (var oi3 = 0; oi3 < gAof3.ops.length; oi3++) {
               var gOp3 = gAof3.ops[oi3];
-              if (!gOp3.estacion || !gOp3._colaPos) continue;
+              if (!gOp3.estacion) continue;
+              if (!gOp3._colaPos || gOp3._colaPos <= 0) continue;
               try {
                 var gRes3 = await spEscribir('FT_Cola_Estacion', {
                   Title:     gOp3.estacion,
@@ -5633,6 +5638,7 @@ async function ftLoadDataFromSP() {
           console.error('Error creando ops en SP:', e.message);
         } finally {
           // Re-activar notificaciones y actualizar baseline del polling
+          hideLoadingModal();
           window._suppressCoordNotifs = false;
           window._coordLastOpsMod = ''; // Reset para que el próximo poll establezca nueva baseline
         }
@@ -12212,5 +12218,18 @@ function ftRptExportExcel(){
 </script>
 
 
+
+  <!-- Loading modal -->
+  <div id="modal-cargando" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+    <div style="background:#161b22;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:28px 36px;text-align:center;max-width:360px;">
+      <div style="font-size:1.6rem;margin-bottom:10px;">⏳</div>
+      <div id="modal-cargando-titulo" style="font-weight:700;font-size:1rem;margin-bottom:6px;color:#e6edf3;">Procesando…</div>
+      <div id="modal-cargando-msg" style="font-size:.82rem;color:#8b949e;line-height:1.5;white-space:pre-line;">Por favor espera.</div>
+      <div style="margin-top:14px;height:4px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;">
+        <div style="height:100%;width:100%;background:linear-gradient(90deg,transparent,#58a6ff,transparent);animation:cargando-bar 1.4s linear infinite;"></div>
+      </div>
+    </div>
+  </div>
+  <style>@keyframes cargando-bar{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}</style>
 </body>
 </html>
