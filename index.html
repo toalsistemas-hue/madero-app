@@ -5574,7 +5574,9 @@ async function ftLoadDataFromSP() {
           var q = window.DB_STATION_QUEUE[op.estacion];
           if (q) {
             var qIdx = q.findIndex(function(e){ return e.of_sap===aof.of_sap && e.op_id===op.id; });
-            if (qIdx >= 0) op.cola = qIdx + 1;
+            if (qIdx >= 0) {
+              op._colaPos = op._colaPos || (qIdx + 1); // keep existing _colaPos if already set
+            }
           }
         }
       });
@@ -5604,7 +5606,16 @@ async function ftLoadDataFromSP() {
     console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, 'registros');
     console.log('FabTracker SP load OK — OFs:', DB.ofs.length, 'ActiveOFs:', DB.activeOFs.length, 'con ops:', DB.activeOFs.filter(function(a){return a.ops.length>0;}).length);
     DB.activeOFs.forEach(function(aof){ if(typeof sqAddOF==='function') try{sqAddOF(aof.of_sap);}catch(e){} });
-    // Renumerar cola DESPUÉS de sqAddOF para que la queue esté completamente poblada
+    // Sort each station queue by _colaPos BEFORE computing relative ranks
+    Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st) {
+      window.DB_STATION_QUEUE[st].sort(function(a, b) {
+        var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
+        var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
+        var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
+        var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
+        return ((op_a&&op_a._colaPos)||999)-((op_b&&op_b._colaPos)||999);
+      });
+    });
     if(typeof sqPurge==='function') sqPurge();
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
     // Re-render con números de cola ya corregidos
@@ -5677,8 +5688,8 @@ async function ftLoadDataFromSP() {
                     var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
                     if(op){
                       op._queueSpId=c.id;
-                      if(op.status!=='running'&&op.status!=='paused'&&op.status!=='validating'&&op.status!=='op_concluded')
-                        op.cola=parseInt(c.fields.Posicion||0)||0;
+                      op._colaPos = parseInt(c.fields.Posicion||0)||0; // absolute position
+                      // op.cola (relative rank) is computed by sqSyncColaNumbers, not set directly
                     }
                   }
                 });
@@ -5688,6 +5699,16 @@ async function ftLoadDataFromSP() {
           // Refresh queue order based on Cola values loaded from SP
           DB.activeOFs.forEach(function(aof){
             if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
+          });
+          // Sort each station queue by absolute _colaPos before computing relative ranks
+          Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st) {
+            window.DB_STATION_QUEUE[st].sort(function(a, b) {
+              var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
+              var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
+              var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
+              var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
+              return ((op_a&&op_a._colaPos)||999)-((op_b&&op_b._colaPos)||999);
+            });
           });
           if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
           // Inicializar timers para ops running que no tienen timer en memoria

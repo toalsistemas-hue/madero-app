@@ -7435,6 +7435,16 @@ async function _appLoadDataFromSP_impl() {
         });
       }
     });
+    // Sort each station queue by absolute _colaPos to ensure correct order
+    Object.keys(window.DB_STATION_QUEUE).forEach(function(st) {
+      window.DB_STATION_QUEUE[st].sort(function(a, b) {
+        var aof_a = DB.activeOFs.find(function(x){ return x.of_sap===a.of_sap; });
+        var op_a  = aof_a ? aof_a.ops.find(function(o){ return o.id===a.op_id; }) : null;
+        var aof_b = DB.activeOFs.find(function(x){ return x.of_sap===b.of_sap; });
+        var op_b  = aof_b ? aof_b.ops.find(function(o){ return o.id===b.op_id; }) : null;
+        return ((op_a && op_a._colaPos)||999) - ((op_b && op_b._colaPos)||999);
+      });
+    });
     sqSyncColaNumbers();
     // Garantizar que ops con status=running tengan timer activo en memoria
     // IMPORTANT: Only restore timer if there isn't already a valid local timer
@@ -7705,41 +7715,48 @@ async function appSaveQueueToSP(of_sap) {
   try {
     var aof = DB.activeOFs.find(function(a){ return a.of_sap === of_sap; });
     if (!aof) return;
+
+    // ── Pre-compute positions for all new ops before any SP call ──────────
+    // Prevents all ops getting pos=1 when saved together in one loop
+    // Step 1: find highest existing position per station across ALL activeOFs
+    var _stationMax = {};
+    DB.activeOFs.forEach(function(a) {
+      a.ops.forEach(function(o) {
+        if (o._colaPos && o.estacion) {
+          if (!_stationMax[o.estacion] || o._colaPos > _stationMax[o.estacion])
+            _stationMax[o.estacion] = o._colaPos;
+        }
+      });
+    });
+    // Step 2: assign positions to ops that don't have one yet
+    aof.ops.forEach(function(op) {
+      if (!op.estacion || op._queueSpId || op._colaPos) return; // skip existing
+      _stationMax[op.estacion] = (_stationMax[op.estacion] || 0) + 1;
+      op._colaPos = _stationMax[op.estacion];
+    });
+
+    // ── Save each op ──────────────────────────────────────────────────────
     for (var i = 0; i < aof.ops.length; i++) {
       var op = aof.ops[i];
       if (!op.estacion) continue;
       var isDone = op.status === 'done';
-      // Use absolute SP position (_colaPos), NOT the relative display rank (op.cola)
-      var colaPos = isDone ? 0 : (op._colaPos || op._spColaPos || 999);
       try {
         if (op._queueSpId) {
-          // PATCH existing record — only update Activo and Posicion (reorder use case)
           await appFlowEscribir('FT_Cola_Estacion', 'actualizar', parseInt(op._queueSpId), {
-            Posicion:  colaPos,
-            Activo:    !isDone,
+            Posicion: isDone ? 0 : op._colaPos,
+            Activo:   !isDone,
           });
-          console.log('✅ FT_Cola PATCH: '+op.id+' pos='+colaPos);
         } else {
-          // POST new record — assign MAX position in this station + 1
-          var stationQueue = sqGetQueue(op.estacion);
-          var maxPos = 0;
-          stationQueue.forEach(function(item) {
-            var oof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
-            var oop = oof ? oof.ops.find(function(o){ return o.id===item.op_id; }) : null;
-            if (oop && oop._colaPos && oop._colaPos > maxPos) maxPos = oop._colaPos;
-          });
-          var newPos = maxPos + 1;
-          op._colaPos = newPos;  // store absolute position on the op
           var res = await appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
             Title:     op.estacion,
             OF_SAP:    of_sap,
             Op_ID:     op.id,
-            Posicion:  newPos,
+            Posicion:  op._colaPos,
             Tipo_Cola: 'normal',
             Activo:    true,
           });
           if (res && res.id) op._queueSpId = res.id;
-          console.log('✅ FT_Cola POST: '+op.id+' pos='+newPos);
+          console.log('✅ FT_Cola POST: '+op.id+' pos='+op._colaPos);
         }
       } catch(e) { console.warn('FT_Cola error op '+op.id+':', e.message); }
     }
