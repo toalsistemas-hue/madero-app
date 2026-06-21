@@ -5606,9 +5606,27 @@ async function ftLoadDataFromSP() {
               op._colaAssigned = true;
             });
           }
-          // Pass 3: save queue — ftSaveQueueToSP must not override _colaAssigned ops
+          // Pass 3: save queue inline — bypass ftSaveQueueToSP to avoid any re-computation
           for (var gi3 = 0; gi3 < ofsNeedingSpCreate.length; gi3++) {
-            await ftSaveQueueToSP(ofsNeedingSpCreate[gi3]);
+            var gSap3  = ofsNeedingSpCreate[gi3];
+            var gAof3  = DB.activeOFs.find(function(a){ return a.of_sap===gSap3; });
+            if (!gAof3) continue;
+            for (var oi3 = 0; oi3 < gAof3.ops.length; oi3++) {
+              var gOp3 = gAof3.ops[oi3];
+              if (!gOp3.estacion || !gOp3._colaPos) continue;
+              try {
+                var gRes3 = await spEscribir('FT_Cola_Estacion', {
+                  Title:     gOp3.estacion,
+                  OF_SAP:    gSap3,
+                  Op_ID:     gOp3.id,
+                  Posicion:  gOp3._colaPos,
+                  Tipo_Cola: 'normal',
+                  Activo:    false, // will be activated when OF is programmed
+                }, null); // always POST (fresh records)
+                if (gRes3 && gRes3.id) gOp3._queueSpId = gRes3.id;
+                console.log('  ✅ Cola guardada:', gOp3.id, 'pos='+gOp3._colaPos);
+              } catch(e3) { console.warn('  ❌ Cola error:', gOp3.id, e3.message); }
+            }
           }
           console.log('✅ Ops creadas en SP desde plantilla');
         } catch(e) {
@@ -10818,9 +10836,9 @@ function renderHist(){
     });
     if(pending.length){
       h2+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola</div>';
-      pending.forEach(function(x){
+      pending.forEach(function(x,qi2){
         h2+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
-        h2+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+(x.op.cola||'—')+'</span>';
+        h2+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+(qi2+1)+'</span>';
         h2+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
         h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.62rem;color:var(--dim);">OF'+esc(x.aof.of_sap)+'</span>';
         if(x.op.tecnico) h2+='<span style="font-size:.62rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
