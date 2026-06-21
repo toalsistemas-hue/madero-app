@@ -14051,68 +14051,20 @@ function startSPPolling() {
 }
 
 async function spPollCheck() {
-  // Skip poll if token is unavailable
+  // All SP list access via flow — Graph list access not available with this app token
   if (!appToken && !appMsalInstance) return;
-  // Use flow-based reload — Graph direct access to SP lists is not available in this app token
   try {
     await appReloadOpsFromSP();
     renderApp();
     _refreshStationViews();
   } catch(e) {
-    if (e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch') && !e.message.includes('timeout')) {
-      console.warn('Poll ops error:', e.message);
+    if (e.message && !e.message.includes('404') && !e.message.includes('itemNotFound')
+        && !e.message.includes('fetch') && !e.message.includes('timeout')) {
+      console.warn('Poll error:', e.message);
     }
   }
-  // Also check FT_Cola_Estacion for queue reorder changes from coordinator
-  try {
-    var colaRes = await appGraphGet(
-      'sites/'+siteId+'/lists/FT_Cola_Estacion/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
-    );
-    var latestColaMod = (colaRes.value&&colaRes.value.length) ? colaRes.value[0].lastModifiedDateTime||'' : '';
-    if(!window._spLastColaMod && latestColaMod){ window._spLastColaMod = latestColaMod; }
-    else if(window._spLastColaMod && latestColaMod && latestColaMod !== window._spLastColaMod){
-      window._spLastColaMod = latestColaMod;
-      console.log('🔔 Poll COLA cambio detectado →', latestColaMod);
-      console.log('🔄 Iniciando reload de ops...');
-      try {
-        await appReloadOpsFromSP();
-        console.log('✅ Reload OK — llamando renderApp');
-        renderApp();
-        _refreshStationViews();
-        console.log('✅ UI actualizada por poll cola');
-      } catch(pe){ console.warn('❌ Poll cola reload error:', pe.message||pe); }
-    }
-  } catch(e){ /* silencioso */ }
-
-  try {
-    // Check FT_OrdenesFabricacion for programacion changes
-    var ofsRes = await appGraphGet(
-      'sites/'+siteId+'/lists/FT_OrdenesFabricacion/items' +
-      '?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc'
-    );
-    var latestOfsMod = (ofsRes.value && ofsRes.value.length) ? (ofsRes.value[0].lastModifiedDateTime||'') : '';
-
-    if (_spLastProgramadas && latestOfsMod && latestOfsMod !== _spLastProgramadas) {
-      console.log('Poll: programación cambió →', latestOfsMod);
-      _spLastProgramadas = latestOfsMod;
-      await appLoadDataFromSP();
-      // Only notify if programadoHoy actually changed (compare activeOFs count)
-      var exists = DB.notifications.some(function(n){
-        return n.type==='coord' && n.msg.indexOf('programación')>=0 && !n.read;
-      });
-      if (!exists) {
-        DB.notifications.push({id:'poll_'+Date.now(), type:'coord', icon:'📅',
-          msg:'📅 El Coordinador actualizó la programación', time:nowT(), read:false});
-        appPlayNotifSound('coord');
-      }
-      renderApp();
-      return;
-    }
-    if (!_spLastProgramadas && latestOfsMod) {
-      _spLastProgramadas = latestOfsMod;
-    }
-  } catch(e) { if(e.message && !e.message.includes('404') && !e.message.includes('itemNotFound') && !e.message.includes('fetch')) console.warn('Poll OFs error:', e.message); }
 }
+
 
 // Lightweight reload — only refresh ops without rebuilding DB.ofs
 async function appReloadOpsFromSP() {
@@ -14191,16 +14143,15 @@ async function appReloadOpsFromSP() {
     });
     console.log('Poll: ops recargadas OK');
     // Load FT_Cola_Estacion to get authoritative queue positions
-    // This reflects coordinator reorders immediately
     try {
-      var colaEstRes = await appGraphGet(
-        'sites/'+appSiteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500'
-      );
+      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
       // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
       (colaEstRes.value||[]).forEach(function(item){
-        if(item.fields && item.fields.Op_ID !== undefined){
-          _posMap[item.fields.Op_ID] = {pos: parseInt(item.fields.Posicion||999), spId: item.id};
+        var f = item.fields || item;
+        var id_val = item.id || f.ID;
+        if(f.Op_ID !== undefined){
+          _posMap[f.Op_ID] = {pos: parseInt(f.Posicion||999), spId: id_val};
         }
       });
       // Update op.cola y _queueSpId desde FT_Cola_Estacion
