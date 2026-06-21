@@ -7325,6 +7325,13 @@ async function _appLoadDataFromSP_impl() {
 
     console.log('SP ops cargadas:', rawOps.length, '→ deduplicadas:', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
+    // ONE-TIME field dump from main load
+    if (rawOps.length > 0 && !window._mainOpFieldsDumped) {
+      window._mainOpFieldsDumped = true;
+      var _mf = rawOps[0];
+      console.log('[MainFieldDump] keys:', Object.keys(_mf).filter(function(k){return !k.startsWith('@');}).join(', '));
+      console.log('[MainFieldDump] sample:', JSON.stringify({Title:_mf.Title,OF_SAP:_mf.OF_SAP,Op_ID:_mf.Op_ID,Nombre:_mf.Nombre,Estacion:_mf.Estacion,Status:_mf.Status}).slice(0,300));
+    }
     // Helper: normalize Programado_Hoy from PA flow (may be bool, string, or number)
     var isProgramado = function(f) {
       var v = f.Programado_Hoy;
@@ -14187,10 +14194,19 @@ async function appReloadOpsFromSP() {
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
     var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
     var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields||i; return f; });
+    // ONE-TIME diagnostic — log raw field names from first op
+    if (rawOpsR.length > 0 && !window._opFieldsDumped) {
+      window._opFieldsDumped = true;
+      var _f = rawOpsR[0];
+      console.log('[FieldDump] FT_Operaciones keys:', Object.keys(_f).filter(function(k){return !k.startsWith('@');}).join(', '));
+      console.log('[FieldDump] Muestra:', JSON.stringify({Title:_f.Title,OF_SAP:_f.OF_SAP,Op_ID:_f.Op_ID,Nombre:_f.Nombre,Estacion:_f.Estacion,Status:_f.Status}));
+    }
     var seenR = {};
     rawOpsR.forEach(function(o){
-      var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
-      if(!k||k==='__') return;
+      var _kId = o.Op_ID || o.op_id || o.OpID || ('sp_'+(o.ID||o._itemId||''));
+      var _kOf = o.OF_SAP || o.Of_SAP || o.Of_Sap || '';
+      var k = _kOf+'__'+_kId;
+      if(!_kOf || !_kId) return; // skip if truly missing both
       var ex=seenR[k];
       if(!ex){seenR[k]=o;return;}
       var nP=statusPrioR[o.Status||'pending']||1;
@@ -14215,7 +14231,7 @@ async function appReloadOpsFromSP() {
         var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
         return {
           id:          o.Op_ID || o.Title || '',
-          nombre:      o.Nombre || o.Title || '',
+          nombre:      o.Nombre || o.Nombre_Op || o.Title || '',
           estacion:    o.Estacion || '',
           tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
           tecnico:     o.Tecnico || '',
