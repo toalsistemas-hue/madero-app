@@ -14219,7 +14219,7 @@ async function appReloadOpsFromSP() {
         var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
         return {
           id:          o.Op_ID || o.Title || '',
-          nombre:      o.Nombre || o.Nombre_Op || o.Title || '',
+          nombre:      (o.Nombre&&o.Nombre.trim()) || o.Nombre_Op || o.Title || '',
           estacion:    o.Estacion || '',
           tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
           tecnico:     o.Tecnico || '',

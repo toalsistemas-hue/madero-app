@@ -5583,17 +5583,18 @@ async function ftLoadDataFromSP() {
           // ── Assign global sequential positions per station across all OFs ──
           // Must run AFTER all ops are created in SP (ftSaveOpToSP calls above)
           var _globalMax = {};
-          // First pass: reset all positions for fresh assignment
+          // Pass 1: reset positions and flag
           for (var gi = 0; gi < ofsNeedingSpCreate.length; gi++) {
             var gSap = ofsNeedingSpCreate[gi];
             var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
             if (!gAof) continue;
             gAof.ops.forEach(function(op) {
-              op._colaPos   = 0;         // 0 means unassigned (will be set below)
-              op._queueSpId = undefined; // force POST
+              op._colaPos      = 0;
+              op._colaAssigned = false; // explicit flag
+              op._queueSpId    = undefined;
             });
           }
-          // Second pass: assign consecutive positions per station
+          // Pass 2: assign sequential positions globally per station
           for (var gi2 = 0; gi2 < ofsNeedingSpCreate.length; gi2++) {
             var gSap2 = ofsNeedingSpCreate[gi2];
             var gAof2 = DB.activeOFs.find(function(a){ return a.of_sap===gSap2; });
@@ -5601,11 +5602,11 @@ async function ftLoadDataFromSP() {
             gAof2.ops.forEach(function(op) {
               if (!op.estacion) return;
               _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
-              op._colaPos = _globalMax[op.estacion];
-              console.log('  Pos asignada:', op.id, op.estacion, '→', op._colaPos);
+              op._colaPos      = _globalMax[op.estacion];
+              op._colaAssigned = true;
             });
           }
-          // Third pass: save queue for all OFs (ftSaveQueueToSP will respect _colaPos)
+          // Pass 3: save queue — ftSaveQueueToSP must not override _colaAssigned ops
           for (var gi3 = 0; gi3 < ofsNeedingSpCreate.length; gi3++) {
             await ftSaveQueueToSP(ofsNeedingSpCreate[gi3]);
           }
@@ -6061,14 +6062,15 @@ async function ftSaveQueueToSP(of_sap) {
         }
       });
     });
-    // Assign positions to new ops — only if not already set by global pre-compute
+    // Assign positions only to ops NOT already assigned by global pre-compute
     aof.ops.forEach(function(op){
       if (!op.estacion) return;
-      if (op._queueSpId) return; // already in SP — will PATCH
-      if (op._colaPos > 0) return; // already assigned by global pre-compute — keep it
-      // Fallback: local max (should rarely happen)
+      if (op._queueSpId) return;      // already in SP
+      if (op._colaAssigned) return;   // position set by global pre-compute
+      // Fallback for ops not in the global batch
       _stationMaxPos[op.estacion] = (_stationMaxPos[op.estacion]||0) + 1;
-      op._colaPos = _stationMaxPos[op.estacion];
+      op._colaPos      = _stationMaxPos[op.estacion];
+      op._colaAssigned = true;
     });
 
     for (var i = 0; i < aof.ops.length; i++) {
