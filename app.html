@@ -7156,14 +7156,18 @@ async function _appLoadDataFromSP_impl() {
   try {
     var emptyFn = function(){ return {value:[], _error:true}; };
     // Graph returns {value:[{id, fields:{...}}]} — same structure as flow
-    // Use Graph directly for critical lists (flow has timeouts and filters)
-    // Use flow for secondary lists
-    var _graphBase = 'sites/'+appSiteId+'/lists/';
-    var _gGet = function(list, top) {
-      return appGraphGet(_graphBase+list+'/items?$expand=fields&$top='+(top||500)).catch(function(e){
-        console.warn('[GraphGet] '+list+' failed, fallback to flow:', e.message);
+    // Ensure siteId is loaded before Graph calls
+    if (!appSiteId) await appGetSiteId();
+    // Use Graph directly for critical lists to bypass flow filters/cache
+    var _gGet = async function(list, top) {
+      if (!appSiteId) return appFlowGet(list, top).catch(emptyFn);
+      try {
+        var r = await appGraphGet('sites/'+appSiteId+'/lists/'+list+'/items?$expand=fields&$top='+(top||500));
+        return r;
+      } catch(e) {
+        console.warn('[GraphGet] '+list+' failed, using flow:', e.message);
         return appFlowGet(list, top).catch(emptyFn);
-      });
+      }
     };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
       _gGet('FT_OrdenesFabricacion', 2000),
@@ -7190,7 +7194,58 @@ async function _appLoadDataFromSP_impl() {
     var _normalize = function(items) {
       return (items||[]).map(function(i){ return i.fields ? i.fields : i; });
     };
-    const ofs = _normalize(ofsRes.value);
+    // Normalize OF fields: Graph uses internal SP names, Flow uses mapped names
+    var _normOF = function(f) {
+      return {
+        OF_SAP:               f.OF_SAP || f.Title || '',
+        Numero_Articulo:      f.Numero_Articulo || f.Numero_Art || '',
+        Descripcion_Articulo: f.Descripcion_Articulo || f.Descripcion || '',
+        Numero_Pedido:        f.Numero_Pedido || f.Pedido || '',
+        Cliente:              f.Cliente || '',
+        Prioridad:            f.Prioridad || 'Normal',
+        Rotacion:             f.Rotacion || f.OFV || '',
+        Sub_Articulos:        f.Sub_Articulos || '',
+        Programado_Hoy:       f.Programado_Hoy,
+        Status:               f.Status || f.Status_SAP || 'Sin programar',
+        Fecha_Entrega:        f.Fecha_Entrega || f.FechaEntrega || null,
+      };
+    };
+    // Normalize Op fields
+    var _normOp = function(f, id) {
+      return {
+        OF_SAP:        f.OF_SAP || f.Title || '',
+        Op_ID:         f.Op_ID || f.OpID || '',
+        Nombre:        f.Nombre || f.Title || '',
+        Estacion:      f.Estacion || '',
+        Tipo:          f.Tipo || 'Secuencial',
+        Tecnico:       f.Tecnico || '',
+        Ayudantes_JSON: f.Ayudantes_JSON || f.Ayudantes || '',
+        Status:        f.Status || 'pending',
+        Inicio:        f.Inicio || '',
+        Fin:           f.Fin || '',
+        Fecha_Inicio:  f.Fecha_Inicio || '',
+        Fecha_Fin:     f.Fecha_Fin || '',
+        Mins:          f.Mins || 0,
+        Qty_Total:     f.Qty_Total || 0,
+        Qty_OK:        f.Qty_OK || 0,
+        Qty_Def:       f.Qty_Def || 0,
+        Qty_Rej:       f.Qty_Rej || 0,
+        Qty_Chat:      f.Qty_Chat || 0,
+        Qty_Def_Retrabajo: f.Qty_Def_Retrabajo || 0,
+        Qty_Def_Chatarra:  f.Qty_Def_Chatarra || 0,
+        Cola:          f.Cola || 0,
+        Secuencia:     f.Secuencia || 0,
+        PauseReason:   f.PauseReason || '',
+        NeedsCal:      f.NeedsCal,
+        ValCalNote:    f.ValCalNote || null,
+        CalResult:     f.CalResult || null,
+        CalComment:    f.CalComment || null,
+        TurnoData:     f.TurnoData || '',
+        Tip:           f.Tip || f.Tipo || 'Secuencial',
+        ID:            id || f.ID || '',
+      };
+    };
+    const ofs = _normalize(ofsRes.value).map(_normOF);
     DB.ofs = ofs.map(f => ({
       of_sap: f.OF_SAP||f.Title||'', articulo: f.Numero_Articulo||'',
       descripcion: f.Descripcion_Articulo||'', pedido: f.Numero_Pedido||'',
@@ -7202,7 +7257,7 @@ async function _appLoadDataFromSP_impl() {
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
     // Si mismo status, mantener el de ID mayor (más reciente)
-    var rawOps = (opsRes.value||[]).map(function(i){ var f=i.fields||i; if(i.id) f.ID=i.id; return f; });
+    var rawOps = (opsRes.value||[]).map(function(i){ return _normOp(i.fields||i, i.id||null); });
     var statusPriority = {running:5, paused:4, validating:3, done:2, pending:1};
     var opsSeen = {};
     rawOps.forEach(function(o){
