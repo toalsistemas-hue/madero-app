@@ -8589,8 +8589,22 @@ function renderProg(){
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
       var ofEnCierre = of.pedidoCierre===true||of.status==='En proceso de cierre';
       h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":ofEnCierre?"opacity:.8;background:rgba(212,160,23,.03);":"")+"'>";
-      if(C.editingMode && !ofCancelada && !ofEnCierre) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">";
-      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":ofEnCierre?"rgba(212,160,23,.4)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":ofEnCierre?"🔒":of.programadoHoy?"✓":"")+"</div>";
+      if(C.editingMode && !ofCancelada && !ofEnCierre) {
+        var _pendingChecked2 = PENDING_PROG[of.of_sap] ? PENDING_PROG[of.of_sap].programadoHoy : of.programadoHoy;
+        var _esPendienteNueva2 = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
+        var _ordenActual2 = _esPendienteNueva2 ? (PENDING_COLA_ORDER[of.of_sap] || '') : '';
+        h+="<div style='display:flex;flex-direction:column;align-items:center;gap:2px;'>"
+         +"<input type='checkbox' class='prog-chk' "+(_pendingChecked2?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">"
+         +"<div id='cola-wrap-"+esc(of.of_sap)+"' style='display:"+(_esPendienteNueva2?"flex":"none")+";flex-direction:column;align-items:center;gap:1px;' title='Orden de cola'>"
+         +"<span style='font-size:.52rem;color:var(--dim);'>Cola</span>"
+         +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual2||'')+"'"
+         +" placeholder='#' oninput='PENDING_COLA_ORDER[\""+of.of_sap+"\"]=parseInt(this.value)||0'"
+         +" style='width:34px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;color:var(--accent-l);font-size:.7rem;text-align:center;padding:2px 2px;'>"
+         +"</div>"
+         +"</div>";
+      } else {
+        h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":ofEnCierre?"rgba(212,160,23,.4)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":ofEnCierre?"🔒":of.programadoHoy?"✓":"")+"</div>";
+      }
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
