@@ -11952,10 +11952,8 @@ async function getDocsDriveId() {
 
 // List files inside FT_Fotos/{of_sap}/{op_id} using drive items API
 async function getFotoItems(of_sap, op_id) {
-  const driveId = await getDocsDriveId();
-  if (!driveId) return [];
   const siteId = await getSiteId();
-  const base = 'drives/'+driveId;
+  const base = 'sites/'+siteId+'/drive';
   // Step 1: get OF folder (debug)
   var _step1url = base+'/root:/FT_Fotos/'+encodeURIComponent(String(of_sap));
   console.log('[Fotos] Step1 URL:', _step1url);
@@ -11963,7 +11961,10 @@ async function getFotoItems(of_sap, op_id) {
   console.log('[Fotos] ofFolder:', ofFolder ? ('id='+ofFolder.id) : 'null');
   if (!ofFolder || !ofFolder.id) return [];
   // Step 2: list subfolders of the OF folder
-  const subRes = await graphGet(base+'/items/'+ofFolder.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
+  var _step2url = base+'/items/'+ofFolder.id+'/children?$select=name,id,folder&$top=50';
+  console.log('[Fotos] Step2 URL:', _step2url);
+  const subRes = await graphGet(_step2url).catch(function(e){console.error('[Fotos] Step2 error:',e.message);return null;});
+  console.log('[Fotos] subRes:', subRes ? ('value.length='+((subRes.value||[]).length)) : 'null');
   if (!subRes || !subRes.value) return [];
   const subFolders = subRes.value.filter(function(f){return f.folder;});
   const candidateNames = [op_id];
@@ -11979,7 +11980,7 @@ async function getFotoItems(of_sap, op_id) {
   const foldersToSearch = [targetFolder];
   const items = [];
   for (var fi = 0; fi < foldersToSearch.length; fi++) {
-    const filesRes = await graphGet(base+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});
+    const filesRes = await graphGet(base+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=100').catch(function(){return null;});
     if (filesRes && filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._driveId=driveId; items.push(f);});
   }
   return items;
@@ -12026,7 +12027,7 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
     html+='</div><div style="margin-top:10px;font-size:.7rem;color:var(--dim);text-align:right;">'+items.length+' foto'+(items.length>1?'s':'')+'</div>';
     document.getElementById('coord-foto-body').innerHTML=html;
     // Load thumbnails via authenticated Graph content endpoint
-    var coordToken = await getAccessToken().catch(function(){ return null; });
+    var coordToken = await getToken().catch(function(){ return null; });
     items.forEach(function(item, idx) {
       if (!coordToken || !item.id) return;
       var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+(item._driveId||_cachedDocsDriveId||'')+'/items/'+item.id+'/content';
