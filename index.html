@@ -11981,7 +11981,7 @@ async function getFotoItems(of_sap, op_id) {
   const items = [];
   for (var fi = 0; fi < foldersToSearch.length; fi++) {
     const filesRes = await graphGet(base+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=100').catch(function(){return null;});
-    if (filesRes && filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._driveId=driveId; items.push(f);});
+    if (filesRes && filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){ items.push(f); });
   }
   return items;
 }
@@ -12028,9 +12028,10 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
     document.getElementById('coord-foto-body').innerHTML=html;
     // Load thumbnails via authenticated Graph content endpoint
     var coordToken = await getToken().catch(function(){ return null; });
+    var _siteIdForContent = await getSiteId().catch(function(){ return null; });
     items.forEach(function(item, idx) {
-      if (!coordToken || !item.id) return;
-      var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+(item._driveId||_cachedDocsDriveId||'')+'/items/'+item.id+'/content';
+      if (!coordToken || !item.id || !_siteIdForContent) return;
+      var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+_siteIdForContent+'/drive/items/'+item.id+'/content';
       fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + coordToken } })
         .then(function(r){ return r.blob(); })
         .then(function(blob){
@@ -12043,7 +12044,7 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
         });
     });
     // Store for zoom
-    window._coordFotoItemsDriveId = items.length > 0 && items[0]._driveId ? items[0]._driveId : await _cachedDocsDriveId;
+    window._coordFotoItemsSiteId = _siteIdForContent;
     window._coordFotoItemsToken = coordToken;
     window._coordFotoItemsList = items;
   } catch(e) {
@@ -12066,8 +12067,7 @@ function coordFotoZoom(type, idOrUrl, titulo){
     // Auth-gated load via Graph content endpoint
     var siteId = window._coordFotoItemsSiteId;
     var token  = window._coordFotoItemsToken;
-    var driveId = window._coordFotoItemsDriveId;
-    var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+driveId+'/items/'+idOrUrl+'/content';
+    var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+idOrUrl+'/content';
     fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + token } })
       .then(function(r){ return r.blob(); })
       .then(function(blob){ img.src = URL.createObjectURL(blob); if(loader) loader.style.display='none'; })
