@@ -11956,8 +11956,11 @@ async function getFotoItems(of_sap, op_id) {
   if (!driveId) return [];
   const siteId = await getSiteId();
   const base = 'drives/'+driveId;
-  // Step 1: get OF folder
-  const ofFolder = await graphGet(base+'/root:/FT_Fotos/'+encodeURIComponent(String(of_sap))).catch(function(){return null;});
+  // Step 1: get OF folder (debug)
+  var _step1url = base+'/root:/FT_Fotos/'+encodeURIComponent(String(of_sap));
+  console.log('[Fotos] Step1 URL:', _step1url);
+  const ofFolder = await graphGet(_step1url).catch(function(e){console.error('[Fotos] Step1 error:',e.message);return null;});
+  console.log('[Fotos] ofFolder:', ofFolder ? ('id='+ofFolder.id) : 'null');
   if (!ofFolder || !ofFolder.id) return [];
   // Step 2: list subfolders of the OF folder
   const subRes = await graphGet(base+'/items/'+ofFolder.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
@@ -11969,8 +11972,11 @@ async function getFotoItems(of_sap, op_id) {
     const op = aof ? aof.ops.find(function(o){return o.id===op_id;}) : null;
     if (op && op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));
   }
-  const targetFolder = subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
-  const foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+  // Exact match first, then prefix — never fall back to ALL subfolders (shows wrong op photos)
+  const targetFolder = subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c;});})
+    || subFolders.find(function(f){return candidateNames.some(function(c){return f.name.indexOf(c)>=0;});});
+  if(!targetFolder) return [];  // no matching folder for this op_id
+  const foldersToSearch = [targetFolder];
   const items = [];
   for (var fi = 0; fi < foldersToSearch.length; fi++) {
     const filesRes = await graphGet(base+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});

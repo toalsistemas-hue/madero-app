@@ -1932,10 +1932,16 @@ async function appVerFotos(of_sap, op_id) {
     }
     var _subRaw = await appGraphGet('drives/'+driveId+'/items/'+_ofFolderItem.id+'/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
     var _subFolders = (_subRaw && _subRaw.value ? _subRaw.value : []).filter(function(f){ return f.folder; });
+    // Match op folder by exact op_id first, then partial match — NEVER fallback to all folders
     var candidateNames = [op_id];
     if (op && op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));
-    var targetFolder = _subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0; }); });
-    var foldersToSearch = targetFolder ? [targetFolder] : _subFolders;
+    var targetFolder = _subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name===c; }); })
+      || _subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name.indexOf(c)>=0; }); });
+    if (!targetFolder) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas para esta operación.</div>';
+      return;
+    }
+    var foldersToSearch = [targetFolder];
     var items = [];
     for (var fi=0; fi<foldersToSearch.length; fi++) {
       var filesRes = await appGraphGet('drives/'+driveId+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=50').catch(function(){ return null; });
@@ -3539,8 +3545,6 @@ function renderAppOpsPanel(of){
       }
       if(op.qty_rej>0) h+="<div class='app-oq-item'><div class='app-oq-lbl' style='color:var(--ared)'>REC</div><div class='app-oq-val' style='color:var(--ared)'>"+op.qty_rej+"</div></div>";
       h+="</div>";
-      // Ver fotos button for done ops
-      h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" style='margin-top:5px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:5px 12px;color:var(--aaccent);font-size:.72rem;cursor:pointer;'>\uD83D\uDDBC Ver fotos</button>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
@@ -11265,8 +11269,6 @@ function renderAppOpsPanel(of){
       }
       if(op.qty_rej>0) h+="<div class='app-oq-item'><div class='app-oq-lbl' style='color:var(--ared)'>REC</div><div class='app-oq-val' style='color:var(--ared)'>"+op.qty_rej+"</div></div>";
       h+="</div>";
-      // Ver fotos button for done ops
-      h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" style='margin-top:5px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:5px 12px;color:var(--aaccent);font-size:.72rem;cursor:pointer;'>\uD83D\uDDBC Ver fotos</button>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
