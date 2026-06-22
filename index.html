@@ -6685,10 +6685,11 @@ function renderProg(){
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
       h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
       if(C.editingMode && !ofCancelada) {
-        h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
-        // Orden de cola — solo visible si está marcada para programar en esta sesión
+        // Checked state: pending value if exists, else DB value
+        var _pendingChecked = PENDING_PROG[of.of_sap] ? PENDING_PROG[of.of_sap].programadoHoy : of.programadoHoy;
+        h+="<input type='checkbox' class='prog-chk' "+(_pendingChecked?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
+        // Orden de cola — solo visible si está marcada para programar en esta sesión (nueva, no preexistente)
         var _esPendienteNueva = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
-        var _yaProgYNueva = of.programadoHoy; // ya estaba programada — no re-asignar orden
         if (_esPendienteNueva) {
           var _ordenActual = PENDING_COLA_ORDER[of.of_sap] || '';
           h+="<div style='display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:2px;' title='Orden en que sus operaciones se registran en cola'>"
@@ -8327,15 +8328,38 @@ function toggleProg(sap, val) {
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
   }
   PENDING_PROG[sap].programadoHoy = val;
-  if (val && !PENDING_COLA_ORDER[sap]) {
-    // Auto-assign next sequential order number for new OFs being programmed
-    var _usedOrders = Object.values(PENDING_COLA_ORDER).filter(function(n){return n>0;});
-    PENDING_COLA_ORDER[sap] = (_usedOrders.length ? Math.max.apply(null, _usedOrders) : 0) + 1;
-  } else if (!val) {
-    // Clear order when unchecked — don't leave gaps, but keep it simple
-    delete PENDING_COLA_ORDER[sap];
+  // Only act on OFs being newly added (not ones already programmed in DB)
+  var ofDb = DB.ofs.find(function(o){return o.of_sap===sap;});
+  var isNueva = ofDb && !ofDb.programadoHoy;
+  if (isNueva) {
+    if (val && !PENDING_COLA_ORDER[sap]) {
+      // Auto-assign next order number
+      var _usedOrders = Object.values(PENDING_COLA_ORDER).filter(function(n){return n>0;});
+      PENDING_COLA_ORDER[sap] = (_usedOrders.length ? Math.max.apply(null, _usedOrders) : 0) + 1;
+    } else if (!val) {
+      delete PENDING_COLA_ORDER[sap];
+    }
+    // Targeted DOM update: inject/remove cola order input without full re-render
+    // Find the row's checkbox and insert/remove the cola div after it
+    var chk = document.querySelector('input.prog-chk[onchange*="'+sap+'"]');
+    if (chk) {
+      var existingColaDiv = chk.nextElementSibling;
+      if (existingColaDiv && existingColaDiv.querySelector('input[id^="cola-ord-"]')) {
+        existingColaDiv.remove(); // was shown, now hidden
+      }
+      if (val) {
+        var div = document.createElement('div');
+        div.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:2px;';
+        div.title = 'Orden en que sus operaciones se registran en cola';
+        div.innerHTML = '<span style="font-size:.55rem;color:var(--dim);white-space:nowrap;">Cola</span>'
+          + '<input type="number" min="1" max="99" id="cola-ord-'+sap+'" value="'+(PENDING_COLA_ORDER[sap]||'')+'"'
+          + ' placeholder="#" oninput="PENDING_COLA_ORDER[\''+sap+'\']=parseInt(this.value)||0"'
+          + ' style="width:38px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;'
+          + 'color:var(--accent-l);font-size:.72rem;text-align:center;padding:2px 3px;">';
+        chk.parentNode.insertBefore(div, chk.nextSibling);
+      }
+    }
   }
-  renderProg(); // re-render to show/hide the order input
 }
 function updatePedidoPrio(pedido, val) {
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
