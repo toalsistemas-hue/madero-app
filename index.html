@@ -719,7 +719,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .prog-ped-hdr{padding:9px 13px;background:rgba(0,82,139,.1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
 .prog-ped-num{font-family:"DM Mono",monospace;font-size:.74rem;color:var(--accent-l);font-weight:600;}
 .prog-ped-cliente{font-size:.8rem;font-weight:600;}
-.prog-of-row{display:grid;grid-template-columns:22px 1fr auto auto auto;gap:8px;align-items:center;padding:8px 13px;border-bottom:1px solid var(--border);}
+.prog-of-row{display:grid;grid-template-columns:40px 1fr auto auto auto;gap:8px;align-items:start;padding:8px 13px;border-bottom:1px solid var(--border);}
 .prog-of-row:last-child{border-bottom:none;}
 .prog-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--accent-l);}
 
@@ -6687,21 +6687,23 @@ function renderProg(){
       if(C.editingMode && !ofCancelada) {
         // Checked state: pending value if exists, else DB value
         var _pendingChecked = PENDING_PROG[of.of_sap] ? PENDING_PROG[of.of_sap].programadoHoy : of.programadoHoy;
-        h+="<input type='checkbox' class='prog-chk' "+(_pendingChecked?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
-        // Orden de cola — solo visible si está marcada para programar en esta sesión (nueva, no preexistente)
+        // Orden de cola — solo visible si está marcada como nueva en esta sesión
         var _esPendienteNueva = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
-        if (_esPendienteNueva) {
-          var _ordenActual = PENDING_COLA_ORDER[of.of_sap] || '';
-          h+="<div style='display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:2px;' title='Orden en que sus operaciones se registran en cola'>"
-           +"<span style='font-size:.55rem;color:var(--dim);white-space:nowrap;'>Cola</span>"
-           +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual||'')+
-             "' placeholder='#' oninput='PENDING_COLA_ORDER[\""+of.of_sap+"\"]=parseInt(this.value)||0'"
-           +" style='width:38px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;"
-           +"color:var(--accent-l);font-size:.72rem;text-align:center;padding:2px 3px;'>"
-           +"</div>";
-        }
+        var _ordenActual = _esPendienteNueva ? (PENDING_COLA_ORDER[of.of_sap] || '') : '';
+        // Wrap checkbox + cola in a single flex container so it occupies the first grid column
+        h+="<div style='display:flex;flex-direction:column;align-items:center;gap:2px;'>"
+         +"<input type='checkbox' class='prog-chk' "+(_pendingChecked?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>"
+         +"<div id='cola-wrap-"+esc(of.of_sap)+"' style='display:"+(+_esPendienteNueva?"flex":"none")+";flex-direction:column;align-items:center;gap:1px;' title='Orden de cola'>"
+         +"<span style='font-size:.52rem;color:var(--dim);'>Cola</span>"
+         +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual||'')+
+           "' placeholder='#' oninput='PENDING_COLA_ORDER[\""+of.of_sap+"\"]=parseInt(this.value)||0'"
+         +" style='width:34px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;"
+         +"color:var(--accent-l);font-size:.7rem;text-align:center;padding:2px 2px;'>"
+         +"</div>"
+         +"</div>";
+      } else {
+        h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
       }
-      else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
@@ -8328,35 +8330,23 @@ function toggleProg(sap, val) {
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
   }
   PENDING_PROG[sap].programadoHoy = val;
-  // Only act on OFs being newly added (not ones already programmed in DB)
+  // Only manage cola order for OFs being newly added (not ones already in DB as programmed)
   var ofDb = DB.ofs.find(function(o){return o.of_sap===sap;});
   var isNueva = ofDb && !ofDb.programadoHoy;
   if (isNueva) {
     if (val && !PENDING_COLA_ORDER[sap]) {
-      // Auto-assign next order number
       var _usedOrders = Object.values(PENDING_COLA_ORDER).filter(function(n){return n>0;});
       PENDING_COLA_ORDER[sap] = (_usedOrders.length ? Math.max.apply(null, _usedOrders) : 0) + 1;
     } else if (!val) {
       delete PENDING_COLA_ORDER[sap];
     }
-    // Targeted DOM update: inject/remove cola order input without full re-render
-    // Find the row's checkbox and insert/remove the cola div after it
-    var chk = document.querySelector('input.prog-chk[onchange*="'+sap+'"]');
-    if (chk) {
-      var existingColaDiv = chk.nextElementSibling;
-      if (existingColaDiv && existingColaDiv.querySelector('input[id^="cola-ord-"]')) {
-        existingColaDiv.remove(); // was shown, now hidden
-      }
+    // Show/hide the pre-rendered cola-wrap div (already in DOM, just toggle visibility)
+    var wrap = document.getElementById('cola-wrap-'+sap);
+    if (wrap) {
+      wrap.style.display = val ? 'flex' : 'none';
       if (val) {
-        var div = document.createElement('div');
-        div.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:2px;';
-        div.title = 'Orden en que sus operaciones se registran en cola';
-        div.innerHTML = '<span style="font-size:.55rem;color:var(--dim);white-space:nowrap;">Cola</span>'
-          + '<input type="number" min="1" max="99" id="cola-ord-'+sap+'" value="'+(PENDING_COLA_ORDER[sap]||'')+'"'
-          + ' placeholder="#" oninput="PENDING_COLA_ORDER[\''+sap+'\']=parseInt(this.value)||0"'
-          + ' style="width:38px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;'
-          + 'color:var(--accent-l);font-size:.72rem;text-align:center;padding:2px 3px;">';
-        chk.parentNode.insertBefore(div, chk.nextSibling);
+        var inp = document.getElementById('cola-ord-'+sap);
+        if (inp && !inp.value) inp.value = PENDING_COLA_ORDER[sap] || '';
       }
     }
   }
