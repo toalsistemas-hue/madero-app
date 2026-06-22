@@ -604,58 +604,6 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
-  <!-- Modal: Reanudar Fin de Turno (Monitor) -->
-  <div id="monitor-turno-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
-       z-index:650;align-items:center;justify-content:center;">
-    <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
-         width:min(360px,94vw);padding:20px;max-height:90vh;overflow-y:auto;">
-      <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;margin-bottom:4px;">🔄 Reanudar Operación</div>
-      <div id="mon-turno-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
-           border-radius:7px;padding:8px;margin-bottom:12px;font-size:.75rem;color:#e6edf3;"></div>
-      <!-- Opciones -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
-        <button id="mon-turno-btn-mismo" onclick="monTurnoSetTipo('mismo')"
-          style="padding:10px;border-radius:8px;border:1px solid var(--aaccent);
-                 background:rgba(0,180,216,.12);color:var(--aaccent);font-size:.78rem;
-                 font-weight:600;cursor:pointer;">👤 Mismo técnico</button>
-        <button id="mon-turno-btn-otro" onclick="monTurnoSetTipo('otro')"
-          style="padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
-                 background:rgba(255,255,255,.04);color:#8b949e;font-size:.78rem;
-                 font-weight:600;cursor:pointer;">🤝 Traspaso turno B</button>
-      </div>
-      <!-- Sección traspaso (solo si tipo=otro) -->
-      <div id="mon-turno-traspaso-sec" style="display:none;padding:10px;background:rgba(139,92,246,.08);
-           border:1px solid rgba(139,92,246,.25);border-radius:7px;margin-bottom:12px;">
-        <div style="font-size:.72rem;color:#a78bfa;margin-bottom:6px;font-weight:600;">Asignar técnico turno B</div>
-        <select id="mon-turno-tech" style="width:100%;background:#0d1117;border:1px solid rgba(255,255,255,.15);
-                border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;margin-bottom:8px;"></select>
-        <div style="font-size:.72rem;color:#a78bfa;margin-bottom:4px;">Ayudantes</div>
-        <div id="mon-turno-ayud-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;"></div>
-        <div id="mon-turno-tech-error" style="font-size:.7rem;color:#f87171;margin-top:4px;min-height:14px;"></div>
-      </div>
-      <!-- PIN input (reutilizable) -->
-      <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
-        <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
-        <div style="display:flex;justify-content:center;gap:8px;margin-bottom:8px;">
-          <div id="mon-tp-d1" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
-          <div id="mon-tp-d2" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
-          <div id="mon-tp-d3" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
-          <div id="mon-tp-d4" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;" id="mon-turno-numpad"></div>
-        <div id="mon-turno-pin-error" style="text-align:center;font-size:.72rem;color:#f87171;min-height:14px;margin-bottom:4px;"></div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="monTurnoClose()"
-          style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
-                 background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
-        <button id="mon-turno-confirm-btn" onclick="monTurnoConfirm()"
-          style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--aaccent);
-                 color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">▶ Continuar</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Config screen (admin only, shown over monitor) -->
   <div id="monitor-config-screen" style="display:none;position:fixed;inset:0;background:#0a0f1a;
        z-index:400;flex-direction:column;">
@@ -677,78 +625,122 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
-  <!-- Monitor Finish Modal (position:fixed so it appears above monitor-screen z-index:200) -->
-  <div id="monitor-finish-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
-       z-index:660;align-items:center;justify-content:center;">
-    <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
-         width:min(360px,94vw);padding:20px;max-height:92vh;overflow-y:auto;">
-      <div style="font-size:1rem;font-weight:700;color:#22c55e;margin-bottom:8px;">✅ Confirmar conclusión</div>
-      <div id="mon-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
-           border-radius:7px;padding:8px;margin-bottom:10px;font-size:.75rem;color:#e6edf3;"></div>
-      <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;
-           padding:6px 8px;margin-bottom:8px;font-size:.7rem;color:#8b949e;">
-        Total asignadas: <strong id="mon-finish-total-lbl" style="color:#e6edf3;"></strong>
+</div>
+
+<!-- ═══ Monitor Modals — outside monitor-screen so display:none parent doesn't hide them ═══ -->
+
+<!-- Modal: Reanudar Fin de Turno (Monitor) -->
+<div id="monitor-turno-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
+     z-index:650;align-items:center;justify-content:center;">
+  <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+       width:min(360px,94vw);padding:20px;max-height:90vh;overflow-y:auto;">
+    <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;margin-bottom:4px;">🔄 Reanudar Operación</div>
+    <div id="mon-turno-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+         border-radius:7px;padding:8px;margin-bottom:12px;font-size:.75rem;color:#e6edf3;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <button id="mon-turno-btn-mismo" onclick="monTurnoSetTipo('mismo')"
+        style="padding:10px;border-radius:8px;border:1px solid var(--aaccent);
+               background:rgba(0,180,216,.12);color:var(--aaccent);font-size:.78rem;
+               font-weight:600;cursor:pointer;">👤 Mismo técnico</button>
+      <button id="mon-turno-btn-otro" onclick="monTurnoSetTipo('otro')"
+        style="padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+               background:rgba(255,255,255,.04);color:#8b949e;font-size:.78rem;
+               font-weight:600;cursor:pointer;">🤝 Traspaso turno B</button>
+    </div>
+    <div id="mon-turno-traspaso-sec" style="display:none;padding:10px;background:rgba(139,92,246,.08);
+         border:1px solid rgba(139,92,246,.25);border-radius:7px;margin-bottom:12px;">
+      <div style="font-size:.72rem;color:#a78bfa;margin-bottom:6px;font-weight:600;">Asignar técnico turno B</div>
+      <select id="mon-turno-tech" style="width:100%;background:#0d1117;border:1px solid rgba(255,255,255,.15);
+              border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;margin-bottom:8px;"></select>
+      <div style="font-size:.72rem;color:#a78bfa;margin-bottom:4px;">Ayudantes</div>
+      <div id="mon-turno-ayud-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;"></div>
+      <div id="mon-turno-tech-error" style="font-size:.7rem;color:#f87171;margin-top:4px;min-height:14px;"></div>
+    </div>
+    <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
+      <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
+      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:8px;">
+        <div id="mon-tp-d1" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+        <div id="mon-tp-d2" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+        <div id="mon-tp-d3" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+        <div id="mon-tp-d4" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
       </div>
-      <!-- Piezas -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <div style="font-size:.65rem;font-weight:700;color:#22c55e;text-align:center;">PIEZAS OK</div>
-          <input id="mon-finish-ok" type="number" min="0"
-            oninput="monFinishSync('ok')"
-            style="background:#0d1117;border:1px solid rgba(34,197,94,.3);border-radius:6px;
-                   padding:6px;color:#22c55e;font-size:.9rem;text-align:center;width:100%;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <div style="font-size:.65rem;font-weight:700;color:#f59e0b;text-align:center;">CON DEFECTO</div>
-          <input id="mon-finish-def" type="number" min="0"
-            oninput="monFinishSync('def')"
-            style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
-                   padding:6px;color:#f59e0b;font-size:.9rem;text-align:center;width:100%;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          <div style="font-size:.65rem;font-weight:700;color:#ef4444;text-align:center;">CHATARRA</div>
-          <input id="mon-finish-chat" type="number" min="0"
-            oninput="monFinishSync('chat')"
-            style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
-                   padding:6px;color:#ef4444;font-size:.9rem;text-align:center;width:100%;">
-        </div>
-      </div>
-      <div id="mon-finish-qty-warn" style="display:none;color:#f59e0b;font-size:.68rem;
-           padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;margin-bottom:6px;"></div>
-      <!-- Disposición defectos -->
-      <div id="mon-finish-def-disp" style="display:none;margin-bottom:8px;background:rgba(239,68,68,.06);
-           border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
-        <div style="font-size:.7rem;font-weight:700;color:#ef4444;margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
-        <div style="display:flex;gap:8px;">
-          <div style="flex:1;">
-            <div style="font-size:.65rem;color:#f59e0b;margin-bottom:3px;">→ Retrabajo</div>
-            <input id="mon-finish-def-ret" type="number" min="0" value="0"
-              oninput="monFinishSyncDisp()"
-              style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
-                     padding:6px;color:#f59e0b;font-size:.85rem;text-align:center;width:100%;">
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:.65rem;color:#ef4444;margin-bottom:3px;">→ Chatarra</div>
-            <input id="mon-finish-def-chat2" type="number" min="0" value="0"
-              oninput="monFinishSyncDisp()"
-              style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
-                     padding:6px;color:#ef4444;font-size:.85rem;text-align:center;width:100%;">
-          </div>
-        </div>
-        <div id="mon-finish-def-disp-warn" style="display:none;font-size:.68rem;color:#f59e0b;
-             margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button onclick="monFinishClose()"
-          style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
-                 background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
-        <button onclick="monFinishConfirm()"
-          style="flex:1;padding:10px;border-radius:8px;border:none;background:#22c55e;
-                 color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">✅ Registrar terminada</button>
-      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;" id="mon-turno-numpad"></div>
+      <div id="mon-turno-pin-error" style="text-align:center;font-size:.72rem;color:#f87171;min-height:14px;margin-bottom:4px;"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="monTurnoClose()"
+        style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
+               background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
+      <button id="mon-turno-confirm-btn" onclick="monTurnoConfirm()"
+        style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--aaccent);
+               color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">▶ Continuar</button>
     </div>
   </div>
+</div>
 
+<!-- Monitor Finish Modal -->
+<div id="monitor-finish-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
+     z-index:660;align-items:center;justify-content:center;">
+  <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+       width:min(360px,94vw);padding:20px;max-height:92vh;overflow-y:auto;">
+    <div style="font-size:1rem;font-weight:700;color:#22c55e;margin-bottom:8px;">✅ Confirmar conclusión</div>
+    <div id="mon-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+         border-radius:7px;padding:8px;margin-bottom:10px;font-size:.75rem;color:#e6edf3;"></div>
+    <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;
+         padding:6px 8px;margin-bottom:8px;font-size:.7rem;color:#8b949e;">
+      Total asignadas: <strong id="mon-finish-total-lbl" style="color:#e6edf3;"></strong>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div style="font-size:.65rem;font-weight:700;color:#22c55e;text-align:center;">PIEZAS OK</div>
+        <input id="mon-finish-ok" type="number" min="0" oninput="monFinishSync('ok')"
+          style="background:#0d1117;border:1px solid rgba(34,197,94,.3);border-radius:6px;
+                 padding:6px;color:#22c55e;font-size:.9rem;text-align:center;width:100%;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div style="font-size:.65rem;font-weight:700;color:#f59e0b;text-align:center;">CON DEFECTO</div>
+        <input id="mon-finish-def" type="number" min="0" oninput="monFinishSync('def')"
+          style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
+                 padding:6px;color:#f59e0b;font-size:.9rem;text-align:center;width:100%;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        <div style="font-size:.65rem;font-weight:700;color:#ef4444;text-align:center;">CHATARRA</div>
+        <input id="mon-finish-chat" type="number" min="0" oninput="monFinishSync('chat')"
+          style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
+                 padding:6px;color:#ef4444;font-size:.9rem;text-align:center;width:100%;">
+      </div>
+    </div>
+    <div id="mon-finish-qty-warn" style="display:none;color:#f59e0b;font-size:.68rem;
+         padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;margin-bottom:6px;"></div>
+    <div id="mon-finish-def-disp" style="display:none;margin-bottom:8px;background:rgba(239,68,68,.06);
+         border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
+      <div style="font-size:.7rem;font-weight:700;color:#ef4444;margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;">
+          <div style="font-size:.65rem;color:#f59e0b;margin-bottom:3px;">→ Retrabajo</div>
+          <input id="mon-finish-def-ret" type="number" min="0" value="0" oninput="monFinishSyncDisp()"
+            style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
+                   padding:6px;color:#f59e0b;font-size:.85rem;text-align:center;width:100%;">
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:.65rem;color:#ef4444;margin-bottom:3px;">→ Chatarra</div>
+          <input id="mon-finish-def-chat2" type="number" min="0" value="0" oninput="monFinishSyncDisp()"
+            style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
+                   padding:6px;color:#ef4444;font-size:.85rem;text-align:center;width:100%;">
+        </div>
+      </div>
+      <div id="mon-finish-def-disp-warn" style="display:none;font-size:.68rem;color:#f59e0b;
+           margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="monFinishClose()"
+        style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
+               background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
+      <button onclick="monFinishConfirm()"
+        style="flex:1;padding:10px;border-radius:8px;border:none;background:#22c55e;
+               color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">✅ Registrar terminada</button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ APP LAUNCHER ══════════════════════════════════════════════
