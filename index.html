@@ -8426,9 +8426,10 @@ function confirmProgMain() {
       }
       DB.activeOFs = DB.activeOFs.filter(function(a){return a.of_sap!==sap;});
     }
-    // Si se marca como nueva, crear activeOF con ops completas
+    // // Si se marca como nueva, crear activeOF con ops (si no existe ya en memoria)
     if (of.programadoHoy && !prev) {
-      if (!DB.activeOFs.find(function(a){return a.of_sap===sap;})) {
+      var _existingAof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+      if (!_existingAof) {
         var tpl = DB.templates[of.articulo];
         var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
         var ops = tpl ? tpl.ops.map(function(op,i){
@@ -8443,8 +8444,9 @@ function confirmProgMain() {
           ofv:of.ofv||'', articulo:of.articulo, descripcion:of.descripcion,
           prioridad:of.prioridad, padre:padre, subarts:tpl&&tpl.subarts?tpl.subarts.slice():[],
           ops:ops});
-        nuevasOfs.push(sap); // track for SP save
       }
+      // Always track for SP save — ops may exist in memory but not yet in FT_Operaciones
+      nuevasOfs.push(sap);
     }
     var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
     if (aof) aof.prioridad = of.prioridad;
