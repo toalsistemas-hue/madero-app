@@ -1839,15 +1839,148 @@ function appFotoBtnHTML(of_sap,op_id,tipo){
   var safeOp=op_id.replace(/[^a-z0-9]/gi,'_');
   var btnId='foto-btn-'+of_sap+'-'+safeOp;var countId='foto-count-'+of_sap+'-'+safeOp;
   var n=appFotoGetCount(of_sap,op_id);
-  return'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+  return'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
     +'<button id="'+btnId+'" onclick="appTakePhoto(\''+of_sap+'\',\''+op_id+'\',\''+tipo+'\')" '
-    +'style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">📷 Tomar foto</button>'
+    +'style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">\u{1F4F7} Tomar foto</button>'
     +'<span id="'+countId+'" style="font-size:.7rem;color:var(--aaccent);display:'+(n>0?'inline':'none')+';">'+(n>0?n+' foto'+(n>1?'s':''):'')+'</span>'
+    +(n>0?'<button onclick="appVerFotos(\''+of_sap+'\',\''+op_id+'\')" style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:8px 14px;color:var(--aaccent);font-size:.78rem;cursor:pointer;">\u{1F5BC} Ver fotos</button>':'')
     +'</div>';
 }
 
 
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// ── VISOR DE FOTOS — FabTracker (Supervisor + Calidad) ─────────────
+// ═══════════════════════════════════════════════════════════════════
+
+async function appVerFotos(of_sap, op_id) {
+  var modal = document.getElementById('app-foto-viewer-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'app-foto-viewer-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:12px;';
+    modal.innerHTML =
+      '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:12px;width:100%;max-width:480px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);">'
+      +'<div id="app-foto-title" style="font-size:.85rem;font-weight:600;color:#e6edf3;">📷 Fotos de operación</div>'
+      +'<button onclick="document.getElementById(\'app-foto-viewer-modal\').style.display=\'none\'" style="background:none;border:none;color:#8b949e;font-size:1.2rem;cursor:pointer;padding:2px 6px;">✕</button>'
+      +'</div>'
+      +'<div id="app-foto-body" style="overflow-y:auto;padding:12px;flex:1;"></div>'
+      +'</div>';
+    modal.addEventListener('click', function(e){ if(e.target===modal) modal.style.display='none'; });
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+  var aof = DB.activeOFs.find(function(a){ return a.of_sap===of_sap; });
+  var op  = aof ? aof.ops.find(function(o){ return o.id===op_id; }) : null;
+  document.getElementById('app-foto-title').innerHTML = '📷 Fotos — OF <span style="color:var(--aaccent);">' + esc(of_sap) + '</span>'
+    + (op ? ' · <span style="font-size:.74rem;font-weight:400;color:#8b949e;">' + esc(op.nombre.substring(0,35)) + '</span>' : '');
+  document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:24px;color:#8b949e;font-size:.8rem;">⏳ Cargando...</div>';
+
+  // Use session cache if photos were uploaded this session
+  var localFotos = _ftFotoUploads[of_sap+'_'+op_id] || [];
+  if (localFotos.length) {
+    _appRenderFotoGrid(localFotos.map(function(f){ return { name:f.name, url:f.url, tipo:f.tipo }; }));
+    return;
+  }
+
+  try {
+    var siteId = await appGetSiteId();
+    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
+    var res = await appGraphGet('sites/'+siteId+'/drive/root:/'+ofSeg+':/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
+    if (!res || !res.value || !res.value.length) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
+      return;
+    }
+    var subFolders = res.value.filter(function(f){ return f.folder; });
+    var candidateNames = [op_id];
+    if (op && op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));
+    var targetFolder = subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0; }); });
+    var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+    var items = [];
+    for (var fi=0; fi<foldersToSearch.length; fi++) {
+      var filesRes = await appGraphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=50').catch(function(){ return null; });
+      if (filesRes && filesRes.value) {
+        filesRes.value.filter(function(i){ return i.file; }).forEach(function(f){ f._folderId=foldersToSearch[fi].id; items.push(f); });
+      }
+    }
+    if (!items.length) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
+      return;
+    }
+    var token = await appGetToken();
+    var mapped = items.map(function(item) {
+      var n = item.name || '';
+      var tipo = n.indexOf('terminada')>=0?'✅ Terminada'
+        :n.indexOf('rechazo_calidad')>=0?'🔍 Calidad — Rechazo'
+        :n.indexOf('ok')>=0?'✅ Piezas OK'
+        :n.indexOf('retrabajo')>=0?'🔄 Retrabajo'
+        :n.indexOf('chatarra')>=0?'🗑 Chatarra'
+        :'📷 Foto';
+      var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+item.id+'/content';
+      return { name: n, url: contentUrl, tipo: tipo, itemId: item.id, token: token };
+    });
+    _appRenderFotoGrid(mapped);
+  } catch(e) {
+    document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: '+esc(e.message)+'</div>';
+  }
+}
+
+function _appRenderFotoGrid(items) {
+  if (!items.length) {
+    document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
+    return;
+  }
+  var html = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">';
+  items.forEach(function(item, idx) {
+    var fm = (item.name||'').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
+    var fStr = fm ? fm[4]+':'+fm[5]+' '+fm[3]+'/'+fm[2] : (item.name||'').substring(0,20);
+    html += '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;cursor:pointer;" onclick="_appFotoZoom('+idx+')">'
+      +'<div style="position:relative;padding-top:70%;background:#0a1020;">'
+      +'<img id="app-foto-thumb-'+idx+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" loading="lazy">'
+      +'</div>'
+      +'<div style="padding:5px 8px;">'
+      +'<div style="font-size:.68rem;font-weight:600;color:var(--aaccent);">'+item.tipo+'</div>'
+      +'<div style="font-size:.63rem;color:#8b949e;">'+fStr+'</div>'
+      +'</div></div>';
+  });
+  html += '</div><div style="margin-top:8px;text-align:right;font-size:.68rem;color:#8b949e;">'+items.length+' foto'+(items.length>1?'s':'')+' · Toca para ampliar</div>';
+  document.getElementById('app-foto-body').innerHTML = html;
+  window._appFotoItems = items;
+  // Load thumbnails with auth
+  items.forEach(function(item, idx) {
+    var img = document.getElementById('app-foto-thumb-'+idx);
+    if (!img) return;
+    if (item.token) {
+      fetch(item.url, { headers: { 'Authorization': 'Bearer ' + item.token } })
+        .then(function(r){ return r.blob(); })
+        .then(function(blob){ img.src = URL.createObjectURL(blob); })
+        .catch(function(){ img.style.opacity='.2'; });
+    } else { img.src = item.url; }
+  });
+}
+
+function _appFotoZoom(idx) {
+  var items = window._appFotoItems || [];
+  var item = items[idx]; if (!item) return;
+  var ex = document.getElementById('app-foto-zoom'); if (ex) ex.remove();
+  var z = document.createElement('div');
+  z.id = 'app-foto-zoom';
+  z.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;';
+  z.innerHTML = '<div style="font-size:.75rem;color:rgba(255,255,255,.5);">'+item.tipo+' · toca para cerrar</div>'
+    +'<img id="app-foto-zoom-img" style="max-width:95vw;max-height:80vh;border-radius:8px;object-fit:contain;">';
+  z.onclick = function(){ z.remove(); };
+  document.body.appendChild(z);
+  var img = document.getElementById('app-foto-zoom-img');
+  if (item.token) {
+    fetch(item.url, { headers: { 'Authorization': 'Bearer ' + item.token } })
+      .then(function(r){ return r.blob(); })
+      .then(function(blob){ img.src = URL.createObjectURL(blob); })
+      .catch(function(){ img.alt = 'No se pudo cargar'; });
+  } else { img.src = item.url; }
+}
+
 // ── PUSH NOTIFICATIONS — Sistema completo ──────────────────────────
 // Flujo: app solicita permiso → guarda suscripción en SP lista
 // FT_PushSubscriptions → Power Automate lee la suscripción y
@@ -2341,14 +2474,10 @@ async function appNtfyNotificar(evento, data) {
 
     // PuestoID → roles (same logic as portal)
     var puestoRolMap = {};
-    puestos.forEach(function(p){
+    puestos.forEach(function(p){\
       if (!p.PuestoID) return;
-      var n = (p.Nombre||p.Title||'').toLowerCase();
-      var roles = [];
-      if (n.includes('supervisor pro')) roles = ['supervisor','calidad_tiem'];
-      else if (n.includes('supervisor')) roles = ['supervisor'];
-      else if (n.includes('jefe de control') || n.includes('jefe_calidad')) roles = ['calidad_lin'];
-      else if (n.includes('analista')) roles = ['calidad_tiem'];
+      // Use the same puestoToAppRoles() that drives login — single source of truth
+      var roles = puestoToAppRoles(p.PuestoID) || puestoToAppRoles(p.NombrePuesto || p.Title || '');
       puestoRolMap[p.PuestoID] = roles;
     });
 
@@ -2356,8 +2485,12 @@ async function appNtfyNotificar(evento, data) {
     var enviados = {};
     var encontrados = 0;
     usuarios.forEach(function(u){
-      if (!u.Canal_Ntfy || u.Activo_App === false) return;
-      var roles = puestoRolMap[u.PuestoMovilID] || [];
+      // Harden Activo_App check: SP may return boolean, 0, "false", or null
+      var inactivo = u.Activo_App === false || u.Activo_App === 0 || u.Activo_App === 'false';
+      if (!u.Canal_Ntfy || inactivo) return;
+      // Try PuestoMovilID first, fall back to PuestoID (some lists use PuestoID directly)
+      var roles = puestoRolMap[u.PuestoMovilID] || puestoRolMap[u.PuestoID]
+                  || puestoToAppRoles(u.PuestoMovilID || '') || puestoToAppRoles(u.PuestoID || '');
       var tieneDestRol = roles.some(function(r){ return destRoles.indexOf(r) >= 0; });
       if (!tieneDestRol || enviados[u.Canal_Ntfy]) return;
       enviados[u.Canal_Ntfy] = true;
@@ -2387,7 +2520,20 @@ async function appNtfyNotificar(evento, data) {
         .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
     });
     console.log('[ntfy app] Canales encontrados para', evento, ':', encontrados, '| puestoRolMap:', JSON.stringify(puestoRolMap));
-    if (encontrados === 0) console.warn('[ntfy app] Sin canales para roles:', destRoles, '— verifica Canal_Ntfy en FT_UsuariosMovil');
+    if (encontrados === 0) {
+      console.warn('[ntfy app] Sin canales para roles:', destRoles, '— verifica Canal_Ntfy en FT_UsuariosMovil');
+      // Show in-app warning so supervisor knows ntfy notification wasn't sent
+      var _ntfyRoleLabel = { calidad_lin: 'Jefe de Calidad', calidad_tiem: 'Analista de Calidad', supervisor: 'Supervisor' };
+      var _rolDesc = destRoles.map(function(r){ return _ntfyRoleLabel[r] || r; }).join(' / ');
+      var _ntfyWarnMsg = '⚠ Notificación push no enviada — ' + _rolDesc + ' no tiene Canal_Ntfy configurado en la app.';
+      if (typeof appErrNotify === 'function') {
+        appErrNotify('ntfy: ' + evento, new Error(_ntfyWarnMsg), 'FT_UsuariosMovil');
+      } else if (typeof DB !== 'undefined' && DB.notifications) {
+        DB.notifications.push({ id: 'ntfy_warn_' + Date.now(), type: 'warning',
+          msg: _ntfyWarnMsg, time: (new Date()).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}), read: false });
+        if (typeof renderApp === 'function') renderApp();
+      }
+    }
   } catch(e) {
     console.warn('[ntfy app] Error cargando canales:', e.message);
   }
@@ -9342,7 +9488,15 @@ async function monitorPinSubmit() {
       _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
     if (!tec.pin) {
-      // First time — save PIN and ask to confirm
+      // First time — check PIN not already used by another technician
+      var pinConflict = _MON.technicians.find(function(t) {
+        return t.nombre !== tec.nombre && t.pin === pin;
+      });
+      if (pinConflict) {
+        errEl.textContent = 'NIP no disponible. Favor de teclear otro.';
+        _MON.pinDigits = ''; monitorPinRefresh(); return;
+      }
+      // Save and ask to confirm
       await monitorSavePin(tec, pin);
       tec.pin = pin;
       errEl.textContent = 'PIN registrado. Confirma de nuevo.';

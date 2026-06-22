@@ -4899,6 +4899,7 @@ async function ftLoadTecnicos() {
     if (window.TECHNICIANS) window.TECHNICIANS.length = 0;
     else window.TECHNICIANS = [];
     if (!window._ntfyCanales) window._ntfyCanales = {};
+    window._ftTecnicosCache = items; // populate cache for PIN validation and edit form
     items.filter(t=>t.Activo).forEach(t => {
       var n = t.Nombre||t.Title||'';
       window.TECHNICIANS.push(n);
@@ -4954,6 +4955,16 @@ async function ftSaveTecnico() {
   const pinEl  = document.getElementById('ft-tec-pin');
   const pin    = pinEl ? pinEl.value.trim().replace(/[^0-9]/g,'').slice(0,4) : '';
   if (!nombre) { alert('El nombre es requerido.'); return; }
+  // PIN duplicate check: verify no other active technician uses the same PIN
+  if (pin && window._ftTecnicosCache) {
+    var pinConflict = window._ftTecnicosCache.find(function(t) {
+      return t.PIN_Monitor === pin && t.Activo !== false && String(t.id) !== String(_ftEditTecId);
+    });
+    if (pinConflict) {
+      alert('Este NIP ya está asignado a otro técnico. Por favor usa un NIP diferente.');
+      return;
+    }
+  }
   const btn = document.querySelector('#ft-modal-tecnico .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
   try {
@@ -11962,7 +11973,7 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
       var targetFolder = subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
       var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
       for(var fi=0;fi<foldersToSearch.length;fi++){
-        var filesRes = await graphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,webUrl,@microsoft.graph.downloadUrl,file&$orderby=createdDateTime').catch(function(){return null;});
+        var filesRes = await graphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});
         if(filesRes&&filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._folder=foldersToSearch[fi].name;items.push(f);});
       }
     }
@@ -11971,34 +11982,78 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
       return;
     }
     var html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;">';
-    items.forEach(function(item){
-      var dl=item['@microsoft.graph.downloadUrl']||item.webUrl;
-      var tipo=item.name.indexOf('terminada')>=0?'✅ Terminada':item.name.indexOf('rechazo')>=0?'❌ Rechazo calidad':'📷 Foto';
+    items.forEach(function(item, idx){
+      var tipo=item.name.indexOf('terminada')>=0?'✅ Terminada'
+        :item.name.indexOf('rechazo_calidad')>=0?'🔍 Calidad — Rechazo'
+        :item.name.indexOf('ok')>=0?'✅ Piezas OK'
+        :item.name.indexOf('retrabajo')>=0?'🔄 Retrabajo'
+        :item.name.indexOf('chatarra')>=0?'🗑 Chatarra'
+        :'📷 Foto';
       var fm=item.name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
-      var fStr=fm?fm[3]+'/'+fm[2]+'/'+fm[1].slice(2)+' '+fm[4]+':'+fm[5]:item.name;
-      html+='<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;cursor:pointer;" onclick="coordFotoZoom(\''+dl.replace(/'/g,'%27')+'\',\''+esc(tipo)+'\')">'
+      var fStr=fm?fm[4]+':'+fm[5]+' '+fm[3]+'/'+fm[2]:item.name;
+      // Use item.id for content fetch (auth-gated, works with coordinator MSAL token)
+      html+='<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;overflow:hidden;cursor:pointer;" onclick="coordFotoZoom(\'item\',\''+item.id+'\',\''+esc(tipo)+'\')">'
         +'<div style="position:relative;padding-top:72%;background:#0a1020;overflow:hidden;">'
-        +'<img src="'+dl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'">'
-        +'<div style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.72rem;">No se pudo cargar</div></div>'
+        +'<img id="cf-thumb-'+idx+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" loading="lazy">'
+        +'<div id="cf-thumb-err-'+idx+'" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.72rem;">No se pudo cargar</div></div>'
         +'<div style="padding:6px 8px;"><div style="font-size:.7rem;font-weight:600;color:var(--accent-l);">'+tipo+'</div>'
         +'<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">'+fStr+'</div>'
-        +'<a href="'+item.webUrl+'" target="_blank" style="font-size:.64rem;color:var(--accent-l);text-decoration:none;opacity:.7;" onclick="event.stopPropagation()">↗ Abrir en SP</a>'
         +'</div></div>';
+    });
     });
     html+='</div><div style="margin-top:10px;font-size:.7rem;color:var(--dim);text-align:right;">'+items.length+' foto'+(items.length>1?'s':'')+'</div>';
     document.getElementById('coord-foto-body').innerHTML=html;
+    // Load thumbnails via authenticated Graph content endpoint
+    var coordToken = await getAccessToken().catch(function(){ return null; });
+    items.forEach(function(item, idx) {
+      if (!coordToken || !item.id) return;
+      var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+item.id+'/content';
+      fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + coordToken } })
+        .then(function(r){ return r.blob(); })
+        .then(function(blob){
+          var img = document.getElementById('cf-thumb-'+idx);
+          if (img) img.src = URL.createObjectURL(blob);
+        })
+        .catch(function(){
+          var errEl = document.getElementById('cf-thumb-err-'+idx);
+          if (errEl) errEl.style.display = 'flex';
+        });
+    });
+    // Store for zoom
+    window._coordFotoItemsSiteId = siteId;
+    window._coordFotoItemsToken = coordToken;
+    window._coordFotoItemsList = items;
   } catch(e) {
     document.getElementById('coord-foto-body').innerHTML='<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: '+esc(e.message)+'</div>';
     console.error('[coordVerFotos]',e);
   }
 }
 
-function coordFotoZoom(url,titulo){
+function coordFotoZoom(type, idOrUrl, titulo){
   var ex=document.getElementById('coord-foto-zoom');if(ex)ex.remove();
   var z=document.createElement('div');z.id='coord-foto-zoom';
   z.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-out;';
-  z.innerHTML='<div style="font-size:.78rem;color:rgba(255,255,255,.6);">'+titulo+' <span style="opacity:.5;font-size:.7rem;">(click para cerrar)</span></div><img src="'+url+'" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;" onerror="this.alt=\'No se pudo cargar\'">';
+  z.innerHTML='<div style="font-size:.78rem;color:rgba(255,255,255,.6);">'+titulo+' <span style="opacity:.5;font-size:.7rem;">(click para cerrar)</span></div>'
+    +'<img id="coord-foto-zoom-img" style="max-width:92vw;max-height:82vh;border-radius:8px;object-fit:contain;">'
+    +'<div id="coord-foto-zoom-loader" style="font-size:.72rem;color:rgba(255,255,255,.4);">⏳ Cargando...</div>';
   z.onclick=function(){z.remove();};document.body.appendChild(z);
+  var img = document.getElementById('coord-foto-zoom-img');
+  var loader = document.getElementById('coord-foto-zoom-loader');
+  if (type === 'item') {
+    // Auth-gated load via Graph content endpoint
+    var siteId = window._coordFotoItemsSiteId;
+    var token  = window._coordFotoItemsToken;
+    var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+idOrUrl+'/content';
+    fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + token } })
+      .then(function(r){ return r.blob(); })
+      .then(function(blob){ img.src = URL.createObjectURL(blob); if(loader) loader.style.display='none'; })
+      .catch(function(e){ if(loader) loader.textContent = '⚠️ No se pudo cargar: '+(e.message||''); });
+  } else {
+    // Legacy direct URL
+    img.src = idOrUrl;
+    img.onload = function(){ if(loader) loader.style.display='none'; };
+    img.onerror = function(){ if(loader) loader.textContent='⚠️ No se pudo cargar'; };
+  }
 }
 
 async function coordCheckFotos(of_sap, op_id) {
