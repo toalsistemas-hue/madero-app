@@ -5560,6 +5560,8 @@ async function ftLoadDataFromSP() {
 
     // For OFs with no FT_Operaciones records: fill from template AND persist to SP
     // NOTA: este bloque se ejecuta DESPUÉS de cargar DB.templates (línea ~4541)
+    // Solo crear ops en SP para OFs que ya están programadas (Programado_Hoy=true)
+    // Las OFs en estado Sin programar se crearán al programarlas desde Editar Programación
     var ofsNeedingSpCreate = [];
     DB.activeOFs.forEach(function(aof){
       if (aof.ops.length === 0 && aof.articulo) {
@@ -5579,7 +5581,11 @@ async function ftLoadDataFromSP() {
           });
           if (tpl.padre) aof.padre = {articulo: tpl.padre, nombre: DB.articles[tpl.padre]||''};
           if (tpl.subarts && tpl.subarts.length) aof.subarts = tpl.subarts.slice();
-          ofsNeedingSpCreate.push(aof.of_sap);
+          // Only queue for SP creation if the OF is actually programmed today
+          var ofDb = DB.ofs.find(function(o){ return o.of_sap === aof.of_sap; });
+          if (ofDb && ofDb.programadoHoy === true) {
+            ofsNeedingSpCreate.push(aof.of_sap);
+          }
         }
       }
     });
@@ -5624,6 +5630,8 @@ async function ftLoadDataFromSP() {
             console.log('  Creando', aofToSave.ops.length, 'ops en SP para OF', sapId);
             for (var oi = 0; oi < aofToSave.ops.length; oi++) {
               await ftSaveOpToSP(sapId, aofToSave.ops[oi].id);
+              // Small pause to avoid overwhelming the Power Automate Flow
+              if (oi < aofToSave.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
             }
           }
           // ── Assign global sequential positions per station across all OFs ──
@@ -8501,6 +8509,7 @@ function confirmProgMain() {
           console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
           for (var oi = 0; oi < aofNew.ops.length; oi++) {
             await ftSaveOpToSP(sap, aofNew.ops[oi].id);
+            if (oi < aofNew.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
           }
         }
         // Step 2: 3-pass global queue assignment
