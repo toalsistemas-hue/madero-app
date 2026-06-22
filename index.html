@@ -11963,15 +11963,17 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
   try {
     var siteId = await getSiteId();
     var items = [];
-    var ofSeg = ['FT_Fotos',of_sap].map(encodeURIComponent).join('/');
-    var foldersRes = await graphGet('sites/'+siteId+'/drive/root:/'+ofSeg+':/children?$select=name,id,folder&$top=50').catch(function(){return null;});
-    if (foldersRes && foldersRes.value && foldersRes.value.length) {
-      var subFolders = foldersRes.value.filter(function(f){return f.folder;});
+    // Two-step: resolve OF folder path → get ID → list children
+    // Two-step: resolve OF folder by path → get ID → list children
+    var _ofFolderRes = await graphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){return null;});
+    if (_ofFolderRes && _ofFolderRes.id) {
+      var _subFoldersRaw = await graphGet('sites/'+siteId+'/drive/items/'+_ofFolderRes.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
+      var _subFolders = (_subFoldersRaw && _subFoldersRaw.value ? _subFoldersRaw.value : []).filter(function(f){return f.folder;});
       var candidateNames = [op_id];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
       if(aof){var op=aof.ops.find(function(o){return o.id===op_id;});if(op&&op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));}
-      var targetFolder = subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
-      var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+      var targetFolder = _subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
+      var foldersToSearch = targetFolder ? [targetFolder] : _subFolders;
       for(var fi=0;fi<foldersToSearch.length;fi++){
         var filesRes = await graphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});
         if(filesRes&&filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._folder=foldersToSearch[fi].name;items.push(f);});
@@ -12061,8 +12063,11 @@ async function coordCheckFotos(of_sap, op_id) {
   _coordFotoCache[key]='pending';
   try {
     var siteId=await getSiteId();
-    var ofSeg=['FT_Fotos',of_sap].map(encodeURIComponent).join('/');
-    var res=await graphGet('sites/'+siteId+'/drive/root:/'+ofSeg+':/children?$select=name,id,folder&$top=50').catch(function(){return null;});
+    // Two-step: resolve OF folder → get ID → list children
+    var _ofRes=await graphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){return null;});
+    if(!_ofRes||!_ofRes.id){_coordFotoCache[key]=false;return;}
+    var _subRaw=await graphGet('sites/'+siteId+'/drive/items/'+_ofRes.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
+    var res={value:_subRaw?_subRaw.value:[]};
     if(!res||!res.value||!res.value.length){_coordFotoCache[key]=false;return;}
     var subFolders=res.value.filter(function(f){return f.folder;});
     var candidateNames=[op_id];

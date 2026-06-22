@@ -732,6 +732,8 @@ tr:last-child td{border-bottom:none;}
       <div id="mon-finish-def-disp-warn" style="display:none;font-size:.68rem;color:#f59e0b;
            margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
     </div>
+    <!-- Foto button -->
+    <div id="mon-finish-foto-wrap" style="margin-bottom:8px;"></div>
     <div style="display:flex;gap:8px;">
       <button onclick="monFinishClose()"
         style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
@@ -1887,9 +1889,15 @@ async function appVerFotos(of_sap, op_id) {
 
   try {
     var siteId = await appGetSiteId();
-    var ofSeg = ['FT_Fotos', of_sap].map(encodeURIComponent).join('/');
-    var res = await appGraphGet('sites/'+siteId+'/drive/root:/'+ofSeg+':/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
-    if (!res || !res.value || !res.value.length) {
+    // Two-step: resolve OF folder path → ID → list children
+    var _ofFolderItem = await appGraphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){ return null; });
+    if (!_ofFolderItem || !_ofFolderItem.id) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
+      return;
+    }
+    var _subRaw = await appGraphGet('sites/'+siteId+'/drive/items/'+_ofFolderItem.id+'/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
+    var res = { value: _subRaw ? _subRaw.value : [] };
+    if (!res.value.length) {
       document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
       return;
     }
@@ -8721,6 +8729,9 @@ function monitorConfirmOp(ofSap, opId) {
   }
 
   document.getElementById('mon-finish-qty-warn').style.display = 'none';
+  // Inject foto button
+  var fotoWrap = document.getElementById('mon-finish-foto-wrap');
+  if (fotoWrap) fotoWrap.innerHTML = appFotoBtnHTML(ofSap, opId, 'terminada');
   document.getElementById('monitor-finish-modal').style.display = 'flex';
 }
 
