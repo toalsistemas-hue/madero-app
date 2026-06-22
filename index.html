@@ -8515,8 +8515,9 @@ function confirmProgMain() {
         // All OFs ordered: existing first (preserve their queue), then new ones by supervisor order
         var _allSapsOrdered = _existingActiveSaps.concat(_newSapsSorted);
         // Pre-cleanup: only delete cola records for the NEW OFs being added
+        var _existingColaRaw = null;
         try {
-          var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
+          _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
           var _toDelete = (_existingColaRaw.value||[]).filter(function(item){
             return nuevasOfs.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
           });
@@ -8528,17 +8529,22 @@ function confirmProgMain() {
             }
           }
         } catch(cleanErr){ console.warn('Error limpiando cola:', cleanErr.message); }
-        // Read current max positions per station from existing OFs (to append after them)
+        // Step 2: compute _globalMax from actual SP records (including Activo:false)
+        // We already fetched _existingColaRaw above — reuse it
         var _globalMax = {};
-        _existingActiveSaps.forEach(function(sap) {
-          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
-          if (!aof) return;
-          aof.ops.forEach(function(op){
-            if (op.estacion && op._colaPos > 0) {
-              _globalMax[op.estacion] = Math.max(_globalMax[op.estacion]||0, op._colaPos);
-            }
-          });
+        var _allColaItems = (_existingColaRaw && _existingColaRaw.value) ? _existingColaRaw.value : [];
+        // Only consider items NOT belonging to the new OFs (those were just deleted)
+        _allColaItems.forEach(function(item) {
+          var f = item.fields || {};
+          var sap = String(f.OF_SAP || '');
+          if (nuevasOfs.indexOf(sap) >= 0) return; // skip — these were deleted
+          var est = f.Estacion || f.Title || '';
+          var pos = parseInt(f.Posicion || 0) || 0;
+          if (est && pos > 0) {
+            _globalMax[est] = Math.max(_globalMax[est] || 0, pos);
+          }
         });
+        console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
         // Assign positions to new OFs in supervisor's cola order
         _newSapsSorted.forEach(function(sap) {
           var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
