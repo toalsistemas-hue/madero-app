@@ -7951,7 +7951,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   if(!op)return;
   var key=sap+'_'+opId;
   var prev=DB.timers[key]?DB.timers[key].elapsed||0:0;
-  DB.timers[key]={start:Date.now()-prev,elapsed:prev,running:true};
+  DB.timers[key]={start:Date.now(),elapsed:prev,running:true};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original
   // Reanudar timers de ayudantes
@@ -7959,10 +7959,18 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now()-prev2,elapsed:prev2,running:true};
+    DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
   });
   renderApp();
   _refreshStationViews();
+  // Persist to SP so app.html picks up the resumed status and timer
+  (async function(){
+    try {
+      await ftSaveOpToSP(sap, opId);
+      await ftSaveTimerToSP(key);
+      console.log('✅ Reanudar SP OK — op:', opId);
+    } catch(e){ console.warn('❌ Reanudar SP error:', e.message||e); }
+  })();
 }
 function appOpenValCal(sap,opId){
   APP.currentOpCtx={of_sap:sap,op_id:opId};
@@ -10110,8 +10118,13 @@ function renderSeg(){
         if(op.status==='op_concluded') h+='<div style="font-size:.64rem;color:#f59e0b;margin-top:2px;">⏳ Aguarda confirmación Supervisor</div>';
         h+='</div>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);white-space:nowrap;">👷 '+esc(op.tecnico)+'</span>';
-        if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        if(op.status==='running'){
+          // Show live timer only (getEl already includes all accumulated time)
+          h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        } else if(op.mins>0){
+          // Not running — show saved minutes snapshot
+          h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
+        }
         h+='</div>';
         // Ayudantes
         if(op.ayudantes && op.ayudantes.length>0){
