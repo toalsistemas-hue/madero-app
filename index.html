@@ -8486,39 +8486,104 @@ function confirmProgMain() {
   ftSaveProgramacionToSP();
   // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
   if (!state.isDemoMode && state.token && nuevasOfs.length > 0) {
+    // Capture the sorted order snapshot for use inside the async block
+    var _colaSnapForSP = {};
+    nuevasOfs.forEach(function(sap){ _colaSnapForSP[sap] = _colaOrderSnapshot[sap] || 999; });
     setTimeout(async function(){
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-        console.log('Creando ops en SP para', nuevasOfs.length, 'OFs nuevas:', nuevasOfs);
+        showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera.');
+        // Step 1: save ops to FT_Operaciones for all new OFs
         for (var ni = 0; ni < nuevasOfs.length; ni++) {
           var sap = nuevasOfs[ni];
           var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
-          if (!aofNew || !aofNew.ops.length) {
-            console.warn('  OF', sap, 'sin ops — saltando');
-            continue;
-          }
-          console.log('  OF', sap, '→', aofNew.ops.length, 'ops');
+          if (!aofNew || !aofNew.ops.length) { console.warn('  OF', sap, 'sin ops — saltando'); continue; }
+          console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
           for (var oi = 0; oi < aofNew.ops.length; oi++) {
             await ftSaveOpToSP(sap, aofNew.ops[oi].id);
           }
-          await ftSaveQueueToSP(sap);
         }
-        console.log('✅ Ops creadas en SP:', nuevasOfs.join(', '));
-        // Show success toast to coordinator
+        // Step 2: 3-pass global queue assignment
+        // Include ALL active OFs (new + existing) to compute positions correctly
+        // Order: existing OFs first (keep their relative order from SP), then new OFs by cola order
+        var _existingActiveSaps = DB.activeOFs
+          .filter(function(a){ return nuevasOfs.indexOf(a.of_sap) < 0 && a.ops && a.ops.length > 0; })
+          .map(function(a){ return a.of_sap; });
+        var _newSapsSorted = nuevasOfs.slice().sort(function(a,b){
+          return (_colaSnapForSP[a]||999) - (_colaSnapForSP[b]||999);
+        });
+        // All OFs ordered: existing first (preserve their queue), then new ones by supervisor order
+        var _allSapsOrdered = _existingActiveSaps.concat(_newSapsSorted);
+        // Pre-cleanup: only delete cola records for the NEW OFs being added
+        try {
+          var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
+          var _toDelete = (_existingColaRaw.value||[]).filter(function(item){
+            return nuevasOfs.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
+          });
+          if (_toDelete.length) {
+            console.log('  🧹 Limpiando', _toDelete.length, 'registros de cola previos para OFs nuevas...');
+            for (var ci = 0; ci < _toDelete.length; ci++) {
+              var _cId = _toDelete[ci].id || (_toDelete[ci].fields||{}).ID;
+              if (_cId) try { await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(_cId)); } catch(e){}
+            }
+          }
+        } catch(cleanErr){ console.warn('Error limpiando cola:', cleanErr.message); }
+        // Read current max positions per station from existing OFs (to append after them)
+        var _globalMax = {};
+        _existingActiveSaps.forEach(function(sap) {
+          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+          if (!aof) return;
+          aof.ops.forEach(function(op){
+            if (op.estacion && op._colaPos > 0) {
+              _globalMax[op.estacion] = Math.max(_globalMax[op.estacion]||0, op._colaPos);
+            }
+          });
+        });
+        // Assign positions to new OFs in supervisor's cola order
+        _newSapsSorted.forEach(function(sap) {
+          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+          if (!aof) return;
+          aof.ops.forEach(function(op){
+            if (!op.estacion) return;
+            _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
+            op._colaPos = _globalMax[op.estacion];
+            op._colaAssigned = true;
+          });
+        });
+        // Save queue records for new OFs only
+        for (var gi = 0; gi < _newSapsSorted.length; gi++) {
+          var gSap = _newSapsSorted[gi];
+          var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
+          if (!gAof) continue;
+          for (var oi3 = 0; oi3 < gAof.ops.length; oi3++) {
+            var gOp = gAof.ops[oi3];
+            if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
+            try {
+              var gRes = await spEscribir('FT_Cola_Estacion', {
+                Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
+                Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
+              }, null);
+              if (gRes && gRes.id) gOp._queueSpId = gRes.id;
+              console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, '(OF cola orden:', _colaSnapForSP[gSap]+')');
+            } catch(e3){ console.warn('  ❌ Cola error:', gOp.id, e3.message); }
+          }
+        }
+        hideLoadingModal();
+        console.log('[Programación] Orden final:', _newSapsSorted.map(function(s){ return s+'('+(_colaSnapForSP[s]||'?')+')'; }).join(' → '));
         var toast = document.getElementById('toast-coord');
         if (toast) {
           toast.textContent = '✅ ' + nuevasOfs.length + ' OF(s) registradas en SharePoint';
           toast.style.opacity='1'; toast.style.transform='translateY(0)';
-          setTimeout(function(){toast.style.opacity='0'; toast.style.transform='translateY(10px)';}, 3000);
+          setTimeout(function(){ toast.style.opacity='0'; toast.style.transform='translateY(10px)'; }, 3000);
         }
       } catch(e) {
+        hideLoadingModal();
         console.error('Error creando ops en SP:', e.message, e);
-        // Show error to coordinator
         var toastE = document.getElementById('toast-coord');
         if (toastE) {
           toastE.textContent = '❌ Error SP: ' + e.message.substring(0, 80);
           toastE.style.opacity='1'; toastE.style.transform='translateY(0)';
-          setTimeout(function(){toastE.style.opacity='0'; toastE.style.transform='translateY(10px)';}, 5000);
+          setTimeout(function(){ toastE.style.opacity='0'; toastE.style.transform='translateY(10px)'; }, 5000);
         }
         alert('Error guardando operaciones en SharePoint:\n\n' + e.message + '\n\nAbre la consola (F12) para más detalles.');
       }
