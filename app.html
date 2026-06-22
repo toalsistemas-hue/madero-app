@@ -1789,6 +1789,16 @@ function appErrNotify(contexto, err, lista){
 // ── FOTOGRAFÍAS EN OPERACIONES (App Móvil) ─────────────────────────
 // ═══════════════════════════════════════════════════════════════════
 var _ftFotoUploads = {};
+var _appCachedDriveId = null;
+async function appGetDriveId() {
+  if (_appCachedDriveId) return _appCachedDriveId;
+  try {
+    var siteId = await appGetSiteId();
+    var res = await appGraphGet('sites/'+siteId+'/drive');
+    if (res && res.id) { _appCachedDriveId = res.id; return res.id; }
+  } catch(e) { console.warn('[appGetDriveId]', e.message); }
+  return null;
+}
 
 async function appUploadFoto(file, of_sap, op_id, tipo) {
   try {
@@ -1807,8 +1817,8 @@ async function appUploadFoto(file, of_sap, op_id, tipo) {
     var data=await resp.json();
     var key=of_sap+'_'+op_id;
     if(!_ftFotoUploads[key])_ftFotoUploads[key]=[];
-    _ftFotoUploads[key].push({name:name,url:data.webUrl||'',tipo:tipo,folder:folderOpName});
-    return{ok:true,name:name,url:data.webUrl||'',folder:folderOpName};
+    _ftFotoUploads[key].push({name:name,itemId:data.id||'',url:data.webUrl||'',tipo:tipo,folder:folderOpName});
+    return{ok:true,name:name,itemId:data.id||'',url:data.webUrl||'',folder:folderOpName};
   }catch(e){appErrNotify('Subir fotografía ('+tipo+')',e,'FT_Operaciones');return{ok:false,error:e.message};}
 }
 
@@ -1839,14 +1849,20 @@ function appFotoUpdateCount(of_sap,op_id){
 }
 function appFotoBtnHTML(of_sap,op_id,tipo){
   var safeOp=op_id.replace(/[^a-z0-9]/gi,'_');
-  var btnId='foto-btn-'+of_sap+'-'+safeOp;var countId='foto-count-'+of_sap+'-'+safeOp;
+  var btnId='foto-btn-'+of_sap+'-'+safeOp;
+  var countId='foto-count-'+of_sap+'-'+safeOp;
   var n=appFotoGetCount(of_sap,op_id);
-  return'<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-    +'<button id="'+btnId+'" onclick="appTakePhoto(\''+of_sap+'\',\''+op_id+'\',\''+tipo+'\')" '
-    +'style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">\u{1F4F7} Tomar foto</button>'
-    +'<span id="'+countId+'" style="font-size:.7rem;color:var(--aaccent);display:'+(n>0?'inline':'none')+';">'+(n>0?n+' foto'+(n>1?'s':''):'')+'</span>'
-    +(n>0?'<button onclick="appVerFotos(\''+of_sap+'\',\''+op_id+'\')" style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:8px 14px;color:var(--aaccent);font-size:.78rem;cursor:pointer;">\u{1F5BC} Ver fotos</button>':'')
-    +'</div>';
+  // Use data attributes to avoid quote issues in onclick handlers
+  var h='<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+  h+='<button id="'+btnId+'" data-s="'+of_sap.replace(/"/g,'&quot;')+'" data-i="'+op_id.replace(/"/g,'&quot;')+'" data-t="'+tipo.replace(/"/g,'&quot;')+'" ';
+  h+='onclick="var b=this;appTakePhoto(b.dataset.s,b.dataset.i,b.dataset.t)" ';
+  h+='style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 14px;color:var(--atext);font-size:.78rem;cursor:pointer;display:flex;align-items:center;gap:6px;">&#128247; Tomar foto</button>';
+  h+='<span id="'+countId+'" style="font-size:.7rem;color:var(--aaccent);display:'+(n>0?'inline':'none')+';">'+(n>0?n+' foto'+(n>1?'s':''):'')+'</span>';
+  h+='<button data-s="'+of_sap.replace(/"/g,'&quot;')+'" data-i="'+op_id.replace(/"/g,'&quot;')+'" ';
+  h+='onclick="var b=this;appVerFotos(b.dataset.s,b.dataset.i)" ';
+  h+='style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:8px 14px;color:var(--aaccent);font-size:.78rem;cursor:pointer;">&#128444; Ver fotos</button>';
+  h+='</div>';
+  return h;
 }
 
 
@@ -1883,34 +1899,48 @@ async function appVerFotos(of_sap, op_id) {
   // Use session cache if photos were uploaded this session
   var localFotos = _ftFotoUploads[of_sap+'_'+op_id] || [];
   if (localFotos.length) {
-    _appRenderFotoGrid(localFotos.map(function(f){ return { name:f.name, url:f.url, tipo:f.tipo }; }));
+    try {
+      var _driveId = await appGetDriveId();
+      var _tok = await appGetToken();
+      _appRenderFotoGrid(localFotos.map(function(f) {
+        var n = f.name || '';
+        var tipo = f.tipo || (n.indexOf('terminada')>=0?'✅ Terminada':n.indexOf('rechazo_calidad')>=0?'🔍 Calidad':n.indexOf('retrabajo')>=0?'🔄 Retrabajo':n.indexOf('chatarra')>=0?'🗑 Chatarra':'📷 Foto');
+        // Build authenticated Graph content URL if we have item ID
+        var url = (f.itemId && _driveId)
+          ? 'https://graph.microsoft.com/v1.0/drives/'+_driveId+'/items/'+f.itemId+'/content'
+          : f.url;
+        return { name:n, url:url, tipo:tipo, itemId:f.itemId||'', token:_tok };
+      }));
+    } catch(e) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: '+esc(e.message)+'</div>';
+    }
     return;
   }
 
   try {
     var siteId = await appGetSiteId();
-    // Two-step: resolve OF folder path → ID → list children
-    var _ofFolderItem = await appGraphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){ return null; });
+    // Use drives/{driveId} API for reliable folder access
+    var driveId = await appGetDriveId();
+    if (!driveId) {
+      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:24px;color:#f87171;font-size:.8rem;">⚠️ Error: no se pudo obtener el drive.</div>';
+      return;
+    }
+    var _ofFolderItem = await appGraphGet('drives/'+driveId+'/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){ return null; });
     if (!_ofFolderItem || !_ofFolderItem.id) {
       document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
       return;
     }
-    var _subRaw = await appGraphGet('sites/'+siteId+'/drive/items/'+_ofFolderItem.id+'/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
-    var res = { value: _subRaw ? _subRaw.value : [] };
-    if (!res.value.length) {
-      document.getElementById('app-foto-body').innerHTML = '<div style="text-align:center;padding:32px;color:#8b949e;font-size:.82rem;">📭 Sin fotos registradas.</div>';
-      return;
-    }
-    var subFolders = res.value.filter(function(f){ return f.folder; });
+    var _subRaw = await appGraphGet('drives/'+driveId+'/items/'+_ofFolderItem.id+'/children?$select=name,id,folder&$top=50').catch(function(){ return null; });
+    var _subFolders = (_subRaw && _subRaw.value ? _subRaw.value : []).filter(function(f){ return f.folder; });
     var candidateNames = [op_id];
     if (op && op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));
-    var targetFolder = subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0; }); });
-    var foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+    var targetFolder = _subFolders.find(function(f){ return candidateNames.some(function(c){ return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0; }); });
+    var foldersToSearch = targetFolder ? [targetFolder] : _subFolders;
     var items = [];
     for (var fi=0; fi<foldersToSearch.length; fi++) {
-      var filesRes = await appGraphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=50').catch(function(){ return null; });
+      var filesRes = await appGraphGet('drives/'+driveId+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$top=50').catch(function(){ return null; });
       if (filesRes && filesRes.value) {
-        filesRes.value.filter(function(i){ return i.file; }).forEach(function(f){ f._folderId=foldersToSearch[fi].id; items.push(f); });
+        filesRes.value.filter(function(i){ return i.file; }).forEach(function(f){ f._driveId=driveId; items.push(f); });
       }
     }
     if (!items.length) {
@@ -1926,7 +1956,7 @@ async function appVerFotos(of_sap, op_id) {
         :n.indexOf('retrabajo')>=0?'🔄 Retrabajo'
         :n.indexOf('chatarra')>=0?'🗑 Chatarra'
         :'📷 Foto';
-      var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+item.id+'/content';
+      var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+(item._driveId||'')+'/items/'+item.id+'/content';
       return { name: n, url: contentUrl, tipo: tipo, itemId: item.id, token: token };
     });
     _appRenderFotoGrid(mapped);
@@ -3509,6 +3539,8 @@ function renderAppOpsPanel(of){
       }
       if(op.qty_rej>0) h+="<div class='app-oq-item'><div class='app-oq-lbl' style='color:var(--ared)'>REC</div><div class='app-oq-val' style='color:var(--ared)'>"+op.qty_rej+"</div></div>";
       h+="</div>";
+      // Ver fotos button for done ops
+      h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" style='margin-top:5px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:5px 12px;color:var(--aaccent);font-size:.72rem;cursor:pointer;'>\uD83D\uDDBC Ver fotos</button>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
@@ -11233,9 +11265,18 @@ function renderAppOpsPanel(of){
       }
       if(op.qty_rej>0) h+="<div class='app-oq-item'><div class='app-oq-lbl' style='color:var(--ared)'>REC</div><div class='app-oq-val' style='color:var(--ared)'>"+op.qty_rej+"</div></div>";
       h+="</div>";
+      // Ver fotos button for done ops
+      h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" style='margin-top:5px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:7px;padding:5px 12px;color:var(--aaccent);font-size:.72rem;cursor:pointer;'>\uD83D\uDDBC Ver fotos</button>";
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
+    // Ver fotos button — supervisor & calidad for done/validating/op_concluded ops
+    if((op.status==='done'||op.status==='validating'||op.status==='op_concluded')&&
+       (_appRoleLocal==='supervisor'||_appRoleLocal==='calidad_lin'||appCan('finish')||appCan('cal'))){
+      h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" "+
+         "style='background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:5px;padding:3px 10px;"+
+         "cursor:pointer;color:var(--aaccent);font-size:.68rem;margin-top:3px;display:inline-block;'>🖼 Ver fotos</button>";
+    }
     if(op.status==="op_concluded"){
       h+="<div class='app-op-note' style='background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.25);color:#f59e0b;'>⏳ Operador concluyó — aguarda confirmación del Supervisor</div>";
       if(_appRoleLocal==='supervisor'||appCan('finish')){

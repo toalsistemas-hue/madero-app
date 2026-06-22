@@ -10178,23 +10178,9 @@ function renderSeg(){
           });
           h+='</div>';
         }
-        // Botón de fotos — debajo de comentarios, solo ops terminadas o rechazadas
+        // Botón de fotos — siempre visible para ops terminadas/rechazadas
         if(op.status==='done' || op.calResult==='rechazado') {
-          var fotoKey = aof.of_sap + '__' + op.id;
-          var hasFoto = _coordFotoCache[fotoKey];
-          if(hasFoto === true) {
-            var _fBtn='<div style="margin-top:5px;padding-left:14px;">'
-              +'<button'
-              +' data-of="'+aof.of_sap+'"'
-              +' data-op="'+op.id+'"'
-              +' data-nom="'+op.nombre.replace(/"/g,'&quot;')+'"'
-              +' onclick="var b=this;coordVerFotos(b.dataset.of,b.dataset.op,b.dataset.nom);event.stopPropagation()"'
-              +' style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">'
-              +'&#128247; Ver fotos</button></div>';
-            h+=_fBtn;
-          } else if(hasFoto === undefined || hasFoto === 'pending') {
-            coordCheckFotos(aof.of_sap, op.id);
-          }
+          h+='<div style="margin-top:5px;padding-left:14px;">'            +'<button'            +' data-of="'+aof.of_sap+'"'            +' data-op="'+op.id+'"'            +' data-nom="'+op.nombre.replace(/"/g,'&quot;')+'"'            +' onclick="var b=this;coordVerFotos(b.dataset.of,b.dataset.op,b.dataset.nom);event.stopPropagation()"'            +' style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--aaccent);font-size:.72rem;white-space:nowrap;">'            +'&#128247; Ver fotos</button></div>';
         }
         h+='</div>';
       });
@@ -11946,6 +11932,52 @@ function ftErrNotifyUpdateBadge(){
 // ── VISOR DE FOTOS — Portal Coordinador (Tiempo Real) ──────────────
 // ═══════════════════════════════════════════════════════════════════
 var _coordFotoCache = {};
+var _cachedDocsDriveId = null;
+
+// Get the default "Documentos" drive ID for reliable path-based access
+async function getDocsDriveId() {
+  if (_cachedDocsDriveId) return _cachedDocsDriveId;
+  try {
+    const siteId = await getSiteId();
+    // Try default drive first (usually "Documentos")
+    const driveRes = await graphGet('sites/'+siteId+'/drive');
+    if (driveRes && driveRes.id) {
+      _cachedDocsDriveId = driveRes.id;
+      console.log('[Fotos] driveId cargado:', driveRes.id, '| nombre:', driveRes.name);
+      return _cachedDocsDriveId;
+    }
+  } catch(e) { console.warn('[Fotos] getDocsDriveId error:', e.message); }
+  return null;
+}
+
+// List files inside FT_Fotos/{of_sap}/{op_id} using drive items API
+async function getFotoItems(of_sap, op_id) {
+  const driveId = await getDocsDriveId();
+  if (!driveId) return [];
+  const siteId = await getSiteId();
+  const base = 'drives/'+driveId;
+  // Step 1: get OF folder
+  const ofFolder = await graphGet(base+'/root:/FT_Fotos/'+encodeURIComponent(String(of_sap))).catch(function(){return null;});
+  if (!ofFolder || !ofFolder.id) return [];
+  // Step 2: list subfolders of the OF folder
+  const subRes = await graphGet(base+'/items/'+ofFolder.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
+  if (!subRes || !subRes.value) return [];
+  const subFolders = subRes.value.filter(function(f){return f.folder;});
+  const candidateNames = [op_id];
+  if (op_id) {
+    const aof = (typeof DB !== 'undefined' && DB.activeOFs) ? DB.activeOFs.find(function(a){return a.of_sap==of_sap;}) : null;
+    const op = aof ? aof.ops.find(function(o){return o.id===op_id;}) : null;
+    if (op && op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));
+  }
+  const targetFolder = subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
+  const foldersToSearch = targetFolder ? [targetFolder] : subFolders;
+  const items = [];
+  for (var fi = 0; fi < foldersToSearch.length; fi++) {
+    const filesRes = await graphGet(base+'/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});
+    if (filesRes && filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._driveId=driveId; items.push(f);});
+  }
+  return items;
+}
 
 async function coordVerFotos(of_sap, op_id, op_nombre) {
   var modal = document.getElementById('coord-foto-modal');
@@ -11961,25 +11993,8 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
   document.getElementById('coord-foto-title').innerHTML='📷 Fotos — <span style="color:var(--accent-l);">OF '+esc(of_sap)+'</span> <span style="font-weight:400;color:var(--dim);font-size:.76rem;">· '+esc(op_nombre)+'</span>';
   document.getElementById('coord-foto-body').innerHTML='<div style="text-align:center;padding:24px;color:var(--dim);font-size:.8rem;">⏳ Cargando fotos...</div>';
   try {
-    var siteId = await getSiteId();
-    var items = [];
-    // Two-step: resolve OF folder path → get ID → list children
-    // Two-step: resolve OF folder by path → get ID → list children
-    var _ofFolderRes = await graphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){return null;});
-    if (_ofFolderRes && _ofFolderRes.id) {
-      var _subFoldersRaw = await graphGet('sites/'+siteId+'/drive/items/'+_ofFolderRes.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
-      var _subFolders = (_subFoldersRaw && _subFoldersRaw.value ? _subFoldersRaw.value : []).filter(function(f){return f.folder;});
-      var candidateNames = [op_id];
-      var aof = DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
-      if(aof){var op=aof.ops.find(function(o){return o.id===op_id;});if(op&&op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));}
-      var targetFolder = _subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
-      var foldersToSearch = targetFolder ? [targetFolder] : _subFolders;
-      for(var fi=0;fi<foldersToSearch.length;fi++){
-        var filesRes = await graphGet('sites/'+siteId+'/drive/items/'+foldersToSearch[fi].id+'/children?$select=name,id,file&$orderby=createdDateTime').catch(function(){return null;});
-        if(filesRes&&filesRes.value) filesRes.value.filter(function(i){return i.file;}).forEach(function(f){f._folder=foldersToSearch[fi].name;items.push(f);});
-      }
-    }
-    if(!items.length){
+    var items = await getFotoItems(of_sap, op_id);
+        if(!items.length){
       document.getElementById('coord-foto-body').innerHTML='<div style="text-align:center;padding:32px;color:var(--dim);font-size:.82rem;">📭 No hay fotos registradas para esta operación.<br><span style="font-size:.68rem;opacity:.55;">Ruta buscada: FT_Fotos/'+of_sap+'/</span></div>';
       return;
     }
@@ -12008,7 +12023,7 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
     var coordToken = await getAccessToken().catch(function(){ return null; });
     items.forEach(function(item, idx) {
       if (!coordToken || !item.id) return;
-      var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+item.id+'/content';
+      var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+(item._driveId||_cachedDocsDriveId||'')+'/items/'+item.id+'/content';
       fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + coordToken } })
         .then(function(r){ return r.blob(); })
         .then(function(blob){
@@ -12021,7 +12036,7 @@ async function coordVerFotos(of_sap, op_id, op_nombre) {
         });
     });
     // Store for zoom
-    window._coordFotoItemsSiteId = siteId;
+    window._coordFotoItemsDriveId = items.length > 0 && items[0]._driveId ? items[0]._driveId : await _cachedDocsDriveId;
     window._coordFotoItemsToken = coordToken;
     window._coordFotoItemsList = items;
   } catch(e) {
@@ -12044,7 +12059,8 @@ function coordFotoZoom(type, idOrUrl, titulo){
     // Auth-gated load via Graph content endpoint
     var siteId = window._coordFotoItemsSiteId;
     var token  = window._coordFotoItemsToken;
-    var contentUrl = 'https://graph.microsoft.com/v1.0/sites/'+siteId+'/drive/items/'+idOrUrl+'/content';
+    var driveId = window._coordFotoItemsDriveId;
+    var contentUrl = 'https://graph.microsoft.com/v1.0/drives/'+driveId+'/items/'+idOrUrl+'/content';
     fetch(contentUrl, { headers: { 'Authorization': 'Bearer ' + token } })
       .then(function(r){ return r.blob(); })
       .then(function(blob){ img.src = URL.createObjectURL(blob); if(loader) loader.style.display='none'; })
@@ -12062,21 +12078,8 @@ async function coordCheckFotos(of_sap, op_id) {
   if(_coordFotoCache[key]!==undefined) return;
   _coordFotoCache[key]='pending';
   try {
-    var siteId=await getSiteId();
-    // Two-step: resolve OF folder → get ID → list children
-    var _ofRes=await graphGet('sites/'+siteId+'/drive/root:/FT_Fotos/'+encodeURIComponent(of_sap)).catch(function(){return null;});
-    if(!_ofRes||!_ofRes.id){_coordFotoCache[key]=false;return;}
-    var _subRaw=await graphGet('sites/'+siteId+'/drive/items/'+_ofRes.id+'/children?$select=name,id,folder&$top=50').catch(function(){return null;});
-    var res={value:_subRaw?_subRaw.value:[]};
-    if(!res||!res.value||!res.value.length){_coordFotoCache[key]=false;return;}
-    var subFolders=res.value.filter(function(f){return f.folder;});
-    var candidateNames=[op_id];
-    var aof=DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
-    if(aof){var op=aof.ops.find(function(o){return o.id===op_id;});if(op&&op.nombre) candidateNames.push('op_'+op.nombre.replace(/[^a-zA-Z0-9_\-]/g,'_').substring(0,40));}
-    var target=subFolders.find(function(f){return candidateNames.some(function(c){return f.name===c||f.name.indexOf(c)>=0||c.indexOf(f.name)>=0;});});
-    if(!target){_coordFotoCache[key]=false;return;}
-    var filesRes=await graphGet('sites/'+siteId+'/drive/items/'+target.id+'/children?$select=id,file&$top=1').catch(function(){return null;});
-    _coordFotoCache[key]=!!(filesRes&&filesRes.value&&filesRes.value.some(function(i){return i.file;}));
+    const items = await getFotoItems(of_sap, op_id);
+    _coordFotoCache[key] = items.length > 0;
     if(_coordFotoCache[key]) renderSeg();
   } catch(e){_coordFotoCache[key]=false;}
 }
