@@ -6684,7 +6684,22 @@ function renderProg(){
       var pct = total>0?Math.round(done/total*100):0;
       var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
       h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
-      if(C.editingMode && !ofCancelada) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
+      if(C.editingMode && !ofCancelada) {
+        h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
+        // Orden de cola — solo visible si está marcada para programar en esta sesión
+        var _esPendienteNueva = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
+        var _yaProgYNueva = of.programadoHoy; // ya estaba programada — no re-asignar orden
+        if (_esPendienteNueva) {
+          var _ordenActual = PENDING_COLA_ORDER[of.of_sap] || '';
+          h+="<div style='display:flex;flex-direction:column;align-items:center;gap:1px;margin-left:2px;' title='Orden en que sus operaciones se registran en cola'>"
+           +"<span style='font-size:.55rem;color:var(--dim);white-space:nowrap;'>Cola</span>"
+           +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual||'')+
+             "' placeholder='#' oninput='PENDING_COLA_ORDER[\""+of.of_sap+"\"]=parseInt(this.value)||0'"
+           +" style='width:38px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;"
+           +"color:var(--accent-l);font-size:.72rem;text-align:center;padding:2px 3px;'>"
+           +"</div>";
+        }
+      }
       else h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
       h+="<div style='flex:1;min-width:0;'>";
       h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
@@ -8303,6 +8318,7 @@ setInterval(function(){
 
 // -- Estado pendiente de confirmación ---------------------
 var PENDING_PROG = {}; // {of_sap: {programadoHoy, prioridad}} — cambios no confirmados
+var PENDING_COLA_ORDER = {}; // {of_sap: número} — orden de cola asignado en esta sesión de edición
 
 // -- 1 & 2: toggleProg solo actualiza PENDING, no DB ------
 function toggleProg(sap, val) {
@@ -8311,6 +8327,15 @@ function toggleProg(sap, val) {
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
   }
   PENDING_PROG[sap].programadoHoy = val;
+  if (val && !PENDING_COLA_ORDER[sap]) {
+    // Auto-assign next sequential order number for new OFs being programmed
+    var _usedOrders = Object.values(PENDING_COLA_ORDER).filter(function(n){return n>0;});
+    PENDING_COLA_ORDER[sap] = (_usedOrders.length ? Math.max.apply(null, _usedOrders) : 0) + 1;
+  } else if (!val) {
+    // Clear order when unchecked — don't leave gaps, but keep it simple
+    delete PENDING_COLA_ORDER[sap];
+  }
+  renderProg(); // re-render to show/hide the order input
 }
 function updatePedidoPrio(pedido, val) {
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
@@ -8346,6 +8371,11 @@ function confirmProgMain() {
     alert('Los siguientes campos son obligatorios para OFs programadas:\n\n'+errores.slice(0,5).join('\n')+(errores.length>5?'\n... y '+(errores.length-5)+' más':''));
     return;
   }
+  // Capture Orden de cola from inputs (may have been edited directly)
+  Object.keys(PENDING_COLA_ORDER).forEach(function(sap) {
+    var el = document.getElementById('cola-ord-'+sap);
+    if (el) PENDING_COLA_ORDER[sap] = parseInt(el.value) || PENDING_COLA_ORDER[sap] || 0;
+  });
   // Track which OFs are newly added to programacion (for SP create)
   var nuevasOfs = [];
   // Aplicar cambios pendientes a DB
@@ -8398,8 +8428,19 @@ function confirmProgMain() {
     if (aof) aof.prioridad = of.prioridad;
   });
 
+  // Snapshot cola order before clearing (used later to sort nuevasOfs)
+  var _colaOrderSnapshot = {};
+  nuevasOfs.forEach(function(sap){ _colaOrderSnapshot[sap] = PENDING_COLA_ORDER[sap] || 0; });
+  // Sort nuevasOfs by the supervisor's assigned order (0/undefined = end)
+  nuevasOfs.sort(function(a, b){
+    var oa = _colaOrderSnapshot[a] || 999;
+    var ob = _colaOrderSnapshot[b] || 999;
+    return oa - ob;
+  });
+  console.log('[Programación] Orden de cola:', nuevasOfs.map(function(s){ return s+'('+(_colaOrderSnapshot[s]||'?')+')'; }).join(' → '));
   // IMPORTANT: clear PENDING_PROG only ONCE after processing
   PENDING_PROG = {};
+  PENDING_COLA_ORDER = {};
   C.editingMode = false;
   document.getElementById('btn-prog').style.display = 'inline-flex';
   document.getElementById('btn-prio').style.display = 'inline-flex';
@@ -8473,6 +8514,7 @@ function confirmProgMain() {
 
 function cancelEditMode() {
   PENDING_PROG = {};
+  PENDING_COLA_ORDER = {};
   C.editingMode = false;
   document.getElementById('btn-prog').style.display = 'inline-flex';
   document.getElementById('btn-prio').style.display = 'inline-flex';
