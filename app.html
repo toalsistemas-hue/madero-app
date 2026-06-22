@@ -2474,7 +2474,7 @@ async function appNtfyNotificar(evento, data) {
 
     // PuestoID → roles (same logic as portal)
     var puestoRolMap = {};
-    puestos.forEach(function(p){\
+    puestos.forEach(function(p){
       if (!p.PuestoID) return;
       // Use the same puestoToAppRoles() that drives login — single source of truth
       var roles = puestoToAppRoles(p.PuestoID) || puestoToAppRoles(p.NombrePuesto || p.Title || '');
