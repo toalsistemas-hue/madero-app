@@ -604,6 +604,58 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
+  <!-- Modal: Reanudar Fin de Turno (Monitor) -->
+  <div id="monitor-turno-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
+       z-index:650;align-items:center;justify-content:center;">
+    <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+         width:min(360px,94vw);padding:20px;max-height:90vh;overflow-y:auto;">
+      <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;margin-bottom:4px;">🔄 Reanudar Operación</div>
+      <div id="mon-turno-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+           border-radius:7px;padding:8px;margin-bottom:12px;font-size:.75rem;color:#e6edf3;"></div>
+      <!-- Opciones -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <button id="mon-turno-btn-mismo" onclick="monTurnoSetTipo('mismo')"
+          style="padding:10px;border-radius:8px;border:1px solid var(--aaccent);
+                 background:rgba(0,180,216,.12);color:var(--aaccent);font-size:.78rem;
+                 font-weight:600;cursor:pointer;">👤 Mismo técnico</button>
+        <button id="mon-turno-btn-otro" onclick="monTurnoSetTipo('otro')"
+          style="padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+                 background:rgba(255,255,255,.04);color:#8b949e;font-size:.78rem;
+                 font-weight:600;cursor:pointer;">🤝 Traspaso turno B</button>
+      </div>
+      <!-- Sección traspaso (solo si tipo=otro) -->
+      <div id="mon-turno-traspaso-sec" style="display:none;padding:10px;background:rgba(139,92,246,.08);
+           border:1px solid rgba(139,92,246,.25);border-radius:7px;margin-bottom:12px;">
+        <div style="font-size:.72rem;color:#a78bfa;margin-bottom:6px;font-weight:600;">Asignar técnico turno B</div>
+        <select id="mon-turno-tech" style="width:100%;background:#0d1117;border:1px solid rgba(255,255,255,.15);
+                border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;margin-bottom:8px;"></select>
+        <div style="font-size:.72rem;color:#a78bfa;margin-bottom:4px;">Ayudantes</div>
+        <div id="mon-turno-ayud-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;"></div>
+        <div id="mon-turno-tech-error" style="font-size:.7rem;color:#f87171;margin-top:4px;min-height:14px;"></div>
+      </div>
+      <!-- PIN input (reutilizable) -->
+      <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
+        <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
+        <div style="display:flex;justify-content:center;gap:8px;margin-bottom:8px;">
+          <div id="mon-tp-d1" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+          <div id="mon-tp-d2" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+          <div id="mon-tp-d3" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+          <div id="mon-tp-d4" style="width:42px;height:50px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:#58a6ff;">_</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;" id="mon-turno-numpad"></div>
+        <div id="mon-turno-pin-error" style="text-align:center;font-size:.72rem;color:#f87171;min-height:14px;margin-bottom:4px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="monTurnoClose()"
+          style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
+                 background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
+        <button id="mon-turno-confirm-btn" onclick="monTurnoConfirm()"
+          style="flex:1;padding:10px;border-radius:8px;border:none;background:var(--aaccent);
+                 color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">▶ Continuar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Config screen (admin only, shown over monitor) -->
   <div id="monitor-config-screen" style="display:none;position:fixed;inset:0;background:#0a0f1a;
        z-index:400;flex-direction:column;">
@@ -624,6 +676,79 @@ tr:last-child td{border-bottom:none;}
       <div id="monitor-config-stations" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
     </div>
   </div>
+
+  <!-- Monitor Finish Modal (position:fixed so it appears above monitor-screen z-index:200) -->
+  <div id="monitor-finish-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);
+       z-index:660;align-items:center;justify-content:center;">
+    <div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+         width:min(360px,94vw);padding:20px;max-height:92vh;overflow-y:auto;">
+      <div style="font-size:1rem;font-weight:700;color:#22c55e;margin-bottom:8px;">✅ Confirmar conclusión</div>
+      <div id="mon-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+           border-radius:7px;padding:8px;margin-bottom:10px;font-size:.75rem;color:#e6edf3;"></div>
+      <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;
+           padding:6px 8px;margin-bottom:8px;font-size:.7rem;color:#8b949e;">
+        Total asignadas: <strong id="mon-finish-total-lbl" style="color:#e6edf3;"></strong>
+      </div>
+      <!-- Piezas -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:.65rem;font-weight:700;color:#22c55e;text-align:center;">PIEZAS OK</div>
+          <input id="mon-finish-ok" type="number" min="0"
+            oninput="monFinishSync('ok')"
+            style="background:#0d1117;border:1px solid rgba(34,197,94,.3);border-radius:6px;
+                   padding:6px;color:#22c55e;font-size:.9rem;text-align:center;width:100%;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:.65rem;font-weight:700;color:#f59e0b;text-align:center;">CON DEFECTO</div>
+          <input id="mon-finish-def" type="number" min="0"
+            oninput="monFinishSync('def')"
+            style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
+                   padding:6px;color:#f59e0b;font-size:.9rem;text-align:center;width:100%;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="font-size:.65rem;font-weight:700;color:#ef4444;text-align:center;">CHATARRA</div>
+          <input id="mon-finish-chat" type="number" min="0"
+            oninput="monFinishSync('chat')"
+            style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
+                   padding:6px;color:#ef4444;font-size:.9rem;text-align:center;width:100%;">
+        </div>
+      </div>
+      <div id="mon-finish-qty-warn" style="display:none;color:#f59e0b;font-size:.68rem;
+           padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;margin-bottom:6px;"></div>
+      <!-- Disposición defectos -->
+      <div id="mon-finish-def-disp" style="display:none;margin-bottom:8px;background:rgba(239,68,68,.06);
+           border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
+        <div style="font-size:.7rem;font-weight:700;color:#ef4444;margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-size:.65rem;color:#f59e0b;margin-bottom:3px;">→ Retrabajo</div>
+            <input id="mon-finish-def-ret" type="number" min="0" value="0"
+              oninput="monFinishSyncDisp()"
+              style="background:#0d1117;border:1px solid rgba(245,158,11,.3);border-radius:6px;
+                     padding:6px;color:#f59e0b;font-size:.85rem;text-align:center;width:100%;">
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:.65rem;color:#ef4444;margin-bottom:3px;">→ Chatarra</div>
+            <input id="mon-finish-def-chat2" type="number" min="0" value="0"
+              oninput="monFinishSyncDisp()"
+              style="background:#0d1117;border:1px solid rgba(239,68,68,.3);border-radius:6px;
+                     padding:6px;color:#ef4444;font-size:.85rem;text-align:center;width:100%;">
+          </div>
+        </div>
+        <div id="mon-finish-def-disp-warn" style="display:none;font-size:.68rem;color:#f59e0b;
+             margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="monFinishClose()"
+          style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);
+                 background:rgba(255,255,255,.05);color:#8b949e;font-size:.78rem;cursor:pointer;">Cancelar</button>
+        <button onclick="monFinishConfirm()"
+          style="flex:1;padding:10px;border-radius:8px;border:none;background:#22c55e;
+                 color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">✅ Registrar terminada</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ═══ APP LAUNCHER ══════════════════════════════════════════════
@@ -8408,14 +8533,196 @@ async function appValidateRole() {
 
 
 // ── Monitor: Confirm or revert op_concluded from FabTracker app ──
-async function monitorConfirmOp(ofSap, opId) {
+var _monFinishCtx = null;
+
+function monitorConfirmOp(ofSap, opId) {
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
-  op.status = 'done';
-  op.fin = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  renderApp();
-  await appSaveOpToSP(ofSap, opId).catch(function(e){ console.warn('[monitorConfirm]', e.message); });
+
+  _monFinishCtx = { of_sap: ofSap, op_id: opId };
+
+  var key = ofSap + '_' + opId;
+  var el = getEl(key); // elapsed minutes
+  var calEvaluated = op.calResult === 'rechazado';
+
+  // Header info
+  document.getElementById('mon-finish-info').innerHTML =
+    '<strong>' + esc(op.nombre) + '</strong><br>' + esc(op.estacion) + ' · ' + esc(op.tecnico || 'Sin técnico') +
+    '<br><span style="color:#22c55e">Tiempo transcurrido: ' + (el > 0 ? fmtM(el) : '0m') + '</span>' +
+    (calEvaluated ? '<br><span style="color:#f59e0b;font-size:.7rem;">⚖ Piezas evaluadas por Calidad — campos bloqueados</span>' : '');
+
+  document.getElementById('mon-finish-total-lbl').textContent = op.qty_total + ' piezas';
+
+  var okEl   = document.getElementById('mon-finish-ok');
+  var defEl  = document.getElementById('mon-finish-def');
+  var chatEl = document.getElementById('mon-finish-chat');
+  var dispPanel = document.getElementById('mon-finish-def-disp');
+  var retEl  = document.getElementById('mon-finish-def-ret');
+  var dChat2 = document.getElementById('mon-finish-def-chat2');
+
+  if (calEvaluated) {
+    var rejTotal = op.qty_rej || 0;
+    var lib = Math.max(0, op.qty_total - rejTotal);
+    var retVal  = op.qty_def_retrabajo || 0;
+    var chatVal = op.qty_def_chatarra  || 0;
+    if (retVal === 0 && chatVal === 0 && rejTotal > 0) retVal = rejTotal;
+    okEl.value  = lib;      okEl.disabled  = true;
+    defEl.value = rejTotal; defEl.disabled = true;
+    chatEl.value = 0;       chatEl.disabled = true;
+    if (dispPanel) dispPanel.style.display = rejTotal > 0 ? 'block' : 'none';
+    if (retEl)   { retEl.value   = retVal;  retEl.disabled   = true; }
+    if (dChat2)  { dChat2.value  = chatVal; dChat2.disabled  = true; }
+  } else {
+    okEl.value  = op.qty_total - (op.qty_rej || 0); okEl.disabled  = false;
+    defEl.value = 0;  defEl.disabled  = false;
+    chatEl.value = 0; chatEl.disabled = false;
+    if (dispPanel) dispPanel.style.display = 'none';
+    if (retEl)  { retEl.value  = 0; retEl.disabled  = false; }
+    if (dChat2) { dChat2.value = 0; dChat2.disabled = false; }
+  }
+
+  document.getElementById('mon-finish-qty-warn').style.display = 'none';
+  document.getElementById('monitor-finish-modal').style.display = 'flex';
+}
+
+function monFinishClose() {
+  document.getElementById('monitor-finish-modal').style.display = 'none';
+  // Re-enable all fields for next use
+  ['mon-finish-ok','mon-finish-def','mon-finish-chat','mon-finish-def-ret','mon-finish-def-chat2'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.disabled = false;
+  });
+  _monFinishCtx = null;
+}
+
+function monFinishSync(changed) {
+  var ok   = parseInt(document.getElementById('mon-finish-ok').value)   || 0;
+  var def  = parseInt(document.getElementById('mon-finish-def').value)  || 0;
+  var chat = parseInt(document.getElementById('mon-finish-chat').value) || 0;
+  var ctx = _monFinishCtx;
+  if (!ctx) return;
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ctx.of_sap; });
+  var op = of ? of.ops.find(function(o){ return o.id===ctx.op_id; }) : null;
+  if (!op) return;
+  var rej   = op.qty_rej || 0;
+  var avail = op.qty_total - rej;
+  var total = ok + def + chat;
+  var warnEl = document.getElementById('mon-finish-qty-warn');
+  var dispPanel = document.getElementById('mon-finish-def-disp');
+  if (total > avail) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = '⚠ Total (' + total + ') supera disponibles (' + avail + ')';
+  } else {
+    warnEl.style.display = 'none';
+  }
+  // Show/hide defect disposition panel
+  if (dispPanel) dispPanel.style.display = def > 0 ? 'block' : 'none';
+  if (def === 0) {
+    var r = document.getElementById('mon-finish-def-ret');
+    var c = document.getElementById('mon-finish-def-chat2');
+    if (r) r.value = 0; if (c) c.value = 0;
+    document.getElementById('mon-finish-def-disp-warn').style.display = 'none';
+  }
+}
+
+function monFinishSyncDisp() {
+  var def  = parseInt(document.getElementById('mon-finish-def').value)      || 0;
+  var ret  = parseInt(document.getElementById('mon-finish-def-ret').value)   || 0;
+  var chat = parseInt(document.getElementById('mon-finish-def-chat2').value) || 0;
+  var warnEl = document.getElementById('mon-finish-def-disp-warn');
+  if (ret + chat > def) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = '⚠ Retrabajo + Chatarra (' + (ret+chat) + ') supera defectos (' + def + ')';
+  } else {
+    warnEl.style.display = 'none';
+  }
+}
+
+function monFinishConfirm() {
+  var ctx = _monFinishCtx;
+  if (!ctx) return;
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ctx.of_sap; });
+  var op = of ? of.ops.find(function(o){ return o.id===ctx.op_id; }) : null;
+  if (!op) return;
+
+  var key  = ctx.of_sap + '_' + ctx.op_id;
+  var el   = getEl(key);
+  var ok   = parseInt(document.getElementById('mon-finish-ok').value)   || 0;
+  var def  = parseInt(document.getElementById('mon-finish-def').value)  || 0;
+  var chat = parseInt(document.getElementById('mon-finish-chat').value) || 0;
+  var rej  = op.qty_rej || 0;
+  var avail = op.qty_total - rej;
+
+  var dRet  = parseInt(document.getElementById('mon-finish-def-ret').value)   || 0;
+  var dChat = parseInt(document.getElementById('mon-finish-def-chat2').value) || 0;
+  // If calidad evaluated — use op fields directly (disabled inputs may not read)
+  if (op.calResult === 'rechazado') {
+    var _cr = op.qty_def_retrabajo || 0, _cc = op.qty_def_chatarra || 0;
+    if (_cr === 0 && _cc === 0 && rej > 0) _cr = rej;
+    dRet = _cr; dChat = _cc;
+  }
+
+  function doFinish() {
+    var elFinal = getEl(key);
+    op.status = 'done'; op.fin = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    op.fecha_fin_real = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}) + ' ' + op.fin;
+    op.mins = elFinal; op.qty_ok = ok; op.qty_def = def;
+    op.qty_def_retrabajo = dRet; op.qty_def_chatarra = dChat;
+    op.qty_chat = (op.qty_chat || 0) + chat + dChat;
+
+    // Stop timer
+    if (DB.timers[key]) {
+      if (DB.timers[key].running && DB.timers[key].start) {
+        DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now() - DB.timers[key].start);
+      }
+      DB.timers[key].running = false;
+      DB.timers[key].start = null;
+    }
+
+    // Auto-generate retrabajo op
+    var totalRet = dRet;
+    if (totalRet > 0 && !op._retrOpGenerated) {
+      op._retrOpGenerated = true;
+      var retrOp = {
+        id: 'op_retr_' + Date.now(),
+        nombre: op.nombre + ' — Retrabajo',
+        estacion: op.estacion, tecnico: op.tecnico || '',
+        ayudantes: (op.ayudantes || []).slice(),
+        qty_total: totalRet, qty_ok: 0, qty_def: 0, qty_rej: 0, qty_chat: 0,
+        tipo: 'secuencial', status: 'pending',
+        inicio: null, fin: null, mins: 0,
+        isTemplate: false, isRetrabajo: true,
+        needsCal: false, calResult: null, calComment: null, pauseReason: null
+      };
+      of.ops.push(retrOp);
+      sqAddOF(ctx.of_sap);
+      appSaveOpToSP(ctx.of_sap, retrOp.id).catch(function(e){ console.warn('[mon-finish] retrOp SP:', e.message); });
+      appSaveQueueToSP(ctx.of_sap).catch(function(){});
+      console.log('[Monitor] Retrabajo generado:', totalRet, 'pzas de', op.nombre);
+    }
+
+    sqPurge(); sqSyncColaNumbers();
+    monFinishClose();
+    appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('[mon-finish] op SP:', e.message); });
+    if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(key).catch(function(){});
+    fireSync('app', 'op_finished', { of_sap: ctx.of_sap });
+    renderApp();
+    monitorRender();
+  }
+
+  if (ok + def + chat < avail) {
+    // Use monitor's own confirm instead of showAppConfirm (which may be on a different layer)
+    monitorShowConfirm(
+      'Piezas sin registrar',
+      'Hay ' + (avail - ok - def - chat) + ' pieza(s) sin clasificar.\n¿Registrar de todas formas?',
+      doFinish
+    );
+    // Update the OK button text in the monitor confirm modal
+    var okBtn = document.getElementById('monitor-confirm-ok');
+    if (okBtn) okBtn.textContent = 'Registrar de todos modos';
+  } else {
+    doFinish();
+  }
 }
 
 async function monitorRevertOp(ofSap, opId) {
@@ -8800,11 +9107,23 @@ function monitorRenderOp(of, op) {
   }
   if (isPaused) {
     // Paused — only Reanudar is available (no Concluir/Val.Cal while paused)
-    card += '<button data-mon-accion="reanudar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
-      'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
-      'style="background:#f59e0b;border:none;border-radius:8px;padding:9px 16px;'+
-      'color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">'+
-      '▶ Reanudar</button>';
+    if (isTurnoPause) {
+      // Fin de turno: open modal directly (PIN is requested inside the modal per branch)
+      card += '<button onclick="(function(){' +
+        'var _of=DB.activeOFs.find(function(o){return o.of_sap===\''+ofSap+'\';});' +
+        'var _op=_of?_of.ops.find(function(o){return o.id===\''+opId+'\';}):{};' +
+        'if(_of&&_op)monTurnoOpen(_of,_op);' +
+        '})()" ' +
+        'style="background:#f59e0b;border:none;border-radius:8px;padding:9px 16px;' +
+        'color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">' +
+        '🔄 Reanudar turno</button>';
+    } else {
+      card += '<button data-mon-accion="reanudar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+        'onclick="var b=this;monitorAskPin(b.dataset.monAccion,b.dataset.monOf,b.dataset.monOp)" '+
+        'style="background:#f59e0b;border:none;border-radius:8px;padding:9px 16px;'+
+        'color:#000;font-size:.78rem;font-weight:700;cursor:pointer;">'+
+        '▶ Reanudar</button>';
+    }
     card += '<div style="font-size:.72rem;color:#8b949e;padding:6px 0;">Concluir y Val.Cal. disponibles al reanudar</div>';
   }
   if (isConcluded) {
@@ -9167,7 +9486,14 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     console.log('[Monitor] ValCal solicitada por:', tecNombre);
 
   } else if (accion === 'reanudar') {
-    // Resume paused op — same logic as _doResumeOp
+    var _isTurnoPauseMon = op._pauseTipo === 'turno' ||
+      (op.status === 'paused' && ((op.pauseReason||'').indexOf('🌙 Fin de turno') === 0));
+    if (_isTurnoPauseMon) {
+      // Show fin-de-turno resume modal instead of direct resume
+      monTurnoOpen(of, op);
+      return; // don't call monitorRender yet — modal handles it
+    }
+    // Normal pause — resume directly with same logic as _doResumeOp
     var key = of.of_sap + '_' + op.id;
     var prev = DB.timers[key] ? DB.timers[key].elapsed || 0 : 0;
     DB.timers[key] = { start: Date.now(), elapsed: prev, running: true };
@@ -9179,6 +9505,235 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     console.log('[Monitor] Reanudada por:', tecNombre);
   }
 
+  monitorRender();
+}
+
+// ── Monitor: Fin de Turno Resume Modal ────────────────────────────
+var _monTurnoCtx = { tipo: 'mismo', pinDigits: '', phase: 'choose' };
+// phase: 'choose' | 'pin_mismo' | 'choose_tech' | 'pin_otro'
+
+function monTurnoOpen(of, op) {
+  _monTurnoCtx = {
+    tipo: 'mismo', pinDigits: '', phase: 'choose',
+    of: of, op: op, nuevoTech: '', nuevosAyud: []
+  };
+  var turnoA = op.turnos && op.turnos.length ? op.turnos[op.turnos.length-1] : null;
+  var pzRest = op._pzasRestantes || op.qty_total;
+  document.getElementById('mon-turno-info').innerHTML =
+    '<strong>' + esc(op.nombre) + '</strong><br>' +
+    '<span style="color:#8b949e">Turno A: ' + esc(op.tecnico||'Sin asignar') +
+    (turnoA ? ' · ' + (turnoA.mins||0) + ' min · ' + (turnoA.qty_ok||0) + ' pzas OK' : '') + '</span><br>' +
+    '<span style="color:#f59e0b">' + pzRest + ' pieza(s) pendientes</span>';
+  // Build tech select
+  var sel = document.getElementById('mon-turno-tech');
+  sel.innerHTML = '<option value="">— Seleccionar técnico —</option>';
+  (_MON.technicians || []).forEach(function(t) {
+    if (t.nombre !== op.tecnico) // exclude current tech (traspaso must be different)
+      sel.innerHTML += '<option value="' + esc(t.nombre) + '">' + esc(t.nombre) + '</option>';
+  });
+  // Build ayudantes checklist
+  var ayudH = '';
+  (_MON.technicians || []).forEach(function(t) {
+    if (t.nombre === op.tecnico) return; // skip current tech
+    ayudH += '<label style="display:flex;align-items:center;gap:6px;padding:3px 6px;background:rgba(255,255,255,.03);' +
+      'border:1px solid rgba(255,255,255,.07);border-radius:5px;cursor:pointer;font-size:.72rem;">' +
+      '<input type="checkbox" value="' + esc(t.nombre) + '" data-mon-ayud="1" ' +
+      'style="accent-color:#c084fc;">' + esc(t.nombre) + '</label>';
+  });
+  document.getElementById('mon-turno-ayud-list').innerHTML = ayudH;
+  document.getElementById('mon-turno-traspaso-sec').style.display = 'none';
+  document.getElementById('mon-turno-pin-sec').style.display = 'none';
+  document.getElementById('mon-turno-tech-error').textContent = '';
+  document.getElementById('mon-turno-confirm-btn').textContent = '▶ Continuar';
+  monTurnoSetTipo('mismo');
+  // Build numpad
+  var npH = [1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(function(k) {
+    if (k === '') return '<div></div>';
+    var action = k === '⌫' ? 'monTurnoPinDel()' : 'monTurnoPinAdd(' + k + ')';
+    return '<button onclick="' + action + '" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);' +
+      'border-radius:8px;padding:12px;font-size:1rem;color:#e6edf3;cursor:pointer;font-weight:600;">' + k + '</button>';
+  }).join('');
+  document.getElementById('mon-turno-numpad').innerHTML = npH;
+  document.getElementById('monitor-turno-modal').style.display = 'flex';
+}
+
+function monTurnoClose() {
+  document.getElementById('monitor-turno-modal').style.display = 'none';
+  _monTurnoCtx = { tipo: 'mismo', pinDigits: '', phase: 'choose' };
+}
+
+function monTurnoSetTipo(tipo) {
+  _monTurnoCtx.tipo = tipo;
+  var bM = document.getElementById('mon-turno-btn-mismo');
+  var bO = document.getElementById('mon-turno-btn-otro');
+  var sec = document.getElementById('mon-turno-traspaso-sec');
+  if (tipo === 'otro') {
+    bM.style.borderColor = 'rgba(255,255,255,.15)'; bM.style.background = 'rgba(255,255,255,.04)'; bM.style.color = '#8b949e';
+    bO.style.borderColor = '#c084fc'; bO.style.background = 'rgba(139,92,246,.15)'; bO.style.color = '#c084fc';
+    sec.style.display = 'block';
+  } else {
+    bO.style.borderColor = 'rgba(255,255,255,.15)'; bO.style.background = 'rgba(255,255,255,.04)'; bO.style.color = '#8b949e';
+    bM.style.borderColor = 'var(--aaccent)'; bM.style.background = 'rgba(0,180,216,.12)'; bM.style.color = 'var(--aaccent)';
+    sec.style.display = 'none';
+  }
+}
+
+function monTurnoConfirm() {
+  var ctx = _monTurnoCtx;
+  var op = ctx.op, of = ctx.of;
+  if (!op || !of) return;
+
+  if (ctx.phase === 'choose') {
+    if (ctx.tipo === 'otro') {
+      // Validate: new tech must be selected and different from current
+      var nuevoTech = document.getElementById('mon-turno-tech').value;
+      if (!nuevoTech) { document.getElementById('mon-turno-tech-error').textContent = 'Selecciona un técnico distinto al actual.'; return; }
+      if (nuevoTech === op.tecnico) { document.getElementById('mon-turno-tech-error').textContent = 'El técnico turno B debe ser diferente al turno A.'; return; }
+      var ayudCbs = document.querySelectorAll('[data-mon-ayud="1"]:checked');
+      var nuevosAyud = [];
+      ayudCbs.forEach(function(cb) { if (cb.value !== nuevoTech) nuevosAyud.push(cb.value); });
+      ctx.nuevoTech = nuevoTech;
+      ctx.nuevosAyud = nuevosAyud;
+      // Move to PIN phase for new tech
+      ctx.phase = 'pin_otro';
+      document.getElementById('mon-turno-pin-label').textContent = 'PIN de ' + nuevoTech + ' para confirmar';
+    } else {
+      // Mismo técnico — ask their PIN
+      ctx.phase = 'pin_mismo';
+      document.getElementById('mon-turno-pin-label').textContent = 'Ingresa tu PIN (' + esc(op.tecnico || 'técnico') + ')';
+    }
+    ctx.pinDigits = '';
+    document.getElementById('mon-turno-pin-sec').style.display = 'block';
+    document.getElementById('mon-turno-confirm-btn').textContent = '✓ Validar PIN';
+    monTurnoPinRefresh();
+    return;
+  }
+
+  // PIN phase — validate
+  var pin = ctx.pinDigits;
+  if (pin.length < 4) { document.getElementById('mon-turno-pin-error').textContent = 'Ingresa los 4 dígitos.'; return; }
+
+  if (ctx.phase === 'pin_mismo') {
+    // Validate PIN of current tech
+    var tec = (_MON.technicians || []).find(function(t) {
+      return t.nombre.trim().toUpperCase() === (op.tecnico || '').trim().toUpperCase();
+    });
+    if (!tec) { document.getElementById('mon-turno-pin-error').textContent = 'Técnico no encontrado.'; return; }
+    if (!tec.pin) {
+      // First-time registration
+      monitorSavePin(tec, pin).then(function() { tec.pin = pin; });
+      document.getElementById('mon-turno-pin-error').textContent = 'PIN registrado. Ingresa de nuevo para confirmar.';
+      ctx._confirmPin = pin; ctx.pinDigits = ''; monTurnoPinRefresh(); return;
+    }
+    if (ctx._confirmPin && pin !== ctx._confirmPin) { document.getElementById('mon-turno-pin-error').textContent = 'Los PINs no coinciden.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    if (!ctx._confirmPin && pin !== tec.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    // PIN OK — resume with same tech
+    monTurnoClose();
+    _doResumeOp(of.of_sap, op.id, op.tecnico, op.ayudantes || []);
+    monitorRender();
+
+  } else if (ctx.phase === 'pin_otro') {
+    // Validate PIN of new tech
+    var tec2 = (_MON.technicians || []).find(function(t) {
+      return t.nombre.trim().toUpperCase() === ctx.nuevoTech.trim().toUpperCase();
+    });
+    if (!tec2) { document.getElementById('mon-turno-pin-error').textContent = 'Técnico no encontrado.'; return; }
+    if (!tec2.pin) {
+      monitorSavePin(tec2, pin).then(function() { tec2.pin = pin; });
+      document.getElementById('mon-turno-pin-error').textContent = 'PIN registrado. Ingresa de nuevo para confirmar.';
+      ctx._confirmPin = pin; ctx.pinDigits = ''; monTurnoPinRefresh(); return;
+    }
+    if (ctx._confirmPin && pin !== ctx._confirmPin) { document.getElementById('mon-turno-pin-error').textContent = 'Los PINs no coinciden.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    if (!ctx._confirmPin && pin !== tec2.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    // PIN OK — execute traspaso
+    monTurnoClose();
+    monTurnoDoTraspaso(of, op, ctx.nuevoTech, ctx.nuevosAyud);
+  }
+}
+
+function monTurnoPinAdd(d) {
+  if (_monTurnoCtx.pinDigits.length >= 4) return;
+  _monTurnoCtx.pinDigits += String(d);
+  monTurnoPinRefresh();
+}
+function monTurnoPinDel() {
+  _monTurnoCtx.pinDigits = _monTurnoCtx.pinDigits.slice(0, -1);
+  monTurnoPinRefresh();
+}
+function monTurnoPinRefresh() {
+  var d = _monTurnoCtx.pinDigits;
+  [1,2,3,4].forEach(function(i) {
+    var el = document.getElementById('mon-tp-d' + i);
+    if (el) el.textContent = d.length >= i ? '●' : '_';
+  });
+  document.getElementById('mon-turno-pin-error').textContent = '';
+}
+
+function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
+  var ctx = { of_sap: of.of_sap, op_id: op.id };
+  var pzRest = op._pzasRestantes || op.qty_total;
+  var turnoA = op.turnos && op.turnos.length ? op.turnos[op.turnos.length-1] : null;
+  var pzAok  = turnoA ? (turnoA.qty_ok||0) : 0;
+  var pzAdef = turnoA ? (turnoA.qty_def||0) : 0;
+  // Stop and freeze timer for op A
+  var key = of.of_sap + '_' + op.id;
+  if (DB.timers[key]) {
+    if (DB.timers[key].running && DB.timers[key].start) {
+      DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now() - DB.timers[key].start);
+    }
+    DB.timers[key].running = false;
+    DB.timers[key].start = null;
+  }
+  // Close op A
+  op.status   = 'done'; op.fin = nowT();
+  op.qty_total = pzAok + pzAdef; op.qty_ok = pzAok; op.qty_def = pzAdef;
+  op.mins = turnoA ? (turnoA.mins||0) : 0;
+  op._traspasoA = { tecnico: op.tecnico, ayudantes: op.ayudantes || [] };
+  // Create new op B
+  var _turnoIdx  = of.ops.length;
+  var _turnoOpId = 'op_' + of.of_sap + '_turnoB' + _turnoIdx;
+  var newOp = {
+    id: _turnoOpId, nombre: op.nombre + ' (Turno B)',
+    estacion: op.estacion, tecnico: nuevoTech, ayudantes: nuevosAyud,
+    qty_total: pzRest, qty_ok: 0, qty_def: 0, qty_rej: 0, qty_chat: 0,
+    tipo: op.tipo, status: 'pending',
+    inicio: null, fin: null, mins: 0,
+    isTemplate: false, isRetrabajo: false, isTurnoB: true, turnoARef: op.id,
+    needsCal: op.needsCal, calResult: null, calComment: null,
+    pauseReason: null, _pauseTipo: null
+  };
+  of.ops.push(newOp);
+  // Persist
+  (async function() {
+    try {
+      if (!appSiteId) await appGetSiteId();
+      await appSaveOpToSP(of.of_sap, op.id);
+      if (typeof appSaveTimerToSP === 'function') await appSaveTimerToSP(key).catch(function(){});
+      var seqNum = of.ops.length;
+      var postFields = {
+        Title: newOp.nombre, OF_SAP: of.of_sap, Op_ID: newOp.id,
+        Estacion: newOp.estacion||'', Tip: newOp.tipo||'Secuencial',
+        Tecnico: nuevoTech, Status: 'pending',
+        Qty_Total: pzRest, Qty_OK: 0, Qty_Def: 0, Qty_Rej: 0,
+        Secuencia: seqNum, Mins: 0, Inicio: '', Fin: ''
+      };
+      var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
+      newOp._spId = res && res.id ? res.id : null;
+      if (newOp.estacion) {
+        appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
+          Title: of.of_sap+'_'+newOp.id, OF_SAP: of.of_sap, Op_ID: newOp.id,
+          Estacion: newOp.estacion, Posicion: 999, Tipo_Cola: 'normal', Status: 'pending', Activo: true
+        }).then(function(r) { if (r&&r.id) newOp._queueSpId = r.id; }).catch(function(){});
+      }
+      console.log('[Monitor] Traspaso turno B: ' + nuevoTech + ' · ' + pzRest + ' pzas');
+      fireSync('app', 'turno_traspaso', {
+        of_sap: of.of_sap, nuevo_tech: nuevoTech, pzas: pzRest,
+        op_name: op.nombre, op_name_b: newOp.nombre
+      });
+    } catch(e) { console.warn('[Monitor] Traspaso SP error:', e.message||e); }
+  })();
+  if (newOp.estacion) sqAddOF(of.of_sap);
+  sqSyncColaNumbers();
   monitorRender();
 }
 
@@ -11115,7 +11670,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   // elapsed acumulado antes de reanudar (de pausa)
   var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
   // start = now - prevElapsed → getEl = 0 + (now-start) = prevElapsed cuando inmediatamente reanuda
-  DB.timers[key] = {start: Date.now()-prevElapsed, elapsed: 0, running: true};
+  DB.timers[key] = {start: Date.now(), elapsed: prevElapsed, running: true};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original
   // Reanudar timers de ayudantes
@@ -11123,7 +11678,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now()-prev2,elapsed:0,running:true};
+    DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
   });
   // SP save al reanudar
   (async function(){
