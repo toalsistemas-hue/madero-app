@@ -5610,12 +5610,11 @@ function appSaveQuickAssign(){
   if(ctx.pendingStart) _doStartOp(ctx.of_sap, ctx.op_id);
   else {
     renderApp();
-    // Punto 4: save tecnico/ayudantes to SP immediately so Monitor shows them
-    if (op._spId) {
-      appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
-        console.warn('[QuickAssign] SP save:', e.message);
-      });
-    }
+    // Always save and notify — even without _spId (POST will create it)
+    appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
+      console.warn('[QuickAssign] SP save:', e.message);
+    });
+    fireSync('app', 'tecnico_asignado', {of_sap: ctx.of_sap, op_id: ctx.op_id, tecnico: op.tecnico});
   }
 }
 
@@ -13458,12 +13457,11 @@ function appSaveQuickAssign(){
   if(ctx.pendingStart) _doStartOp(ctx.of_sap, ctx.op_id);
   else {
     renderApp();
-    // Punto 4: save tecnico/ayudantes to SP immediately so Monitor shows them
-    if (op._spId) {
-      appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
-        console.warn('[QuickAssign] SP save:', e.message);
-      });
-    }
+    // Always save and notify — even without _spId (POST will create it)
+    appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){
+      console.warn('[QuickAssign] SP save:', e.message);
+    });
+    fireSync('app', 'tecnico_asignado', {of_sap: ctx.of_sap, op_id: ctx.op_id, tecnico: op.tecnico});
   }
 }
 
@@ -15120,10 +15118,10 @@ async function appReloadOpsFromSP() {
               var _est = _m.op.estacion;
               _repairMax[_est] = (_repairMax[_est]||0) + 1;
               _m.op._colaPos = _repairMax[_est];
-              var _r = await spEscribir('FT_Cola_Estacion', {
+              var _r = await appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
                 Title: _est, OF_SAP: _m.of_sap, Op_ID: _m.op.id,
                 Posicion: _repairMax[_est], Tipo_Cola: 'normal', Activo: false
-              }, null);
+              });
               if (_r && _r.id) _m.op._queueSpId = _r.id;
               if (!_r || (!_r.id && _r.resultado !== 'ok')) throw new Error('Auto-repair cola: respuesta vacía');
               console.log('✅ Auto-repair cola:', _m.op.id, 'pos=' + _repairMax[_est]);
