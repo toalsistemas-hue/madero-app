@@ -2632,11 +2632,9 @@ function sqAddOF(of_sap){
 
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
-  // op.cola comes from SP Posicion (absolute, set by appReloadOpsFromSP).
-  // This function ONLY:
-  //   1. Clears cola for active/done ops (running/paused/validating)
-  //   2. Assigns a fallback relative rank ONLY for pending ops that have NO cola yet (new ops not in SP)
-  // It never overwrites a valid SP-sourced cola value.
+  // Assigns op.cola as a RELATIVE rank (1,2,3...) per station queue.
+  // The queue is already sorted by _colaPos (absolute SP position) from appReloadOpsFromSP.
+  // This gives each pending op a clean sequential display number with no gaps or duplicates.
   STATIONS.forEach(function(st){
     var q = sqGetQueue(st);
     var rank = 1;
@@ -2648,12 +2646,7 @@ function sqSyncColaNumbers(){
       if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'||op.status==='done'){
         op.cola = null; // active/done ops: no queue number shown
       } else if (op.status==='pending'||op.status==='retrabajo'){
-        // Only assign if cola is missing (not yet loaded from SP)
-        if (!op.cola || op.cola <= 0) {
-          op.cola = rank++;
-        } else {
-          rank = op.cola + 1; // keep rank counter in sync with SP value
-        }
+        op.cola = rank++; // always sequential: 1,2,3... no gaps, no duplicates
       }
     });
   });
@@ -10375,11 +10368,9 @@ function sqAddOF(of_sap){
 
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
-  // op.cola comes from SP Posicion (absolute, set by appReloadOpsFromSP).
-  // This function ONLY:
-  //   1. Clears cola for active/done ops (running/paused/validating)
-  //   2. Assigns a fallback relative rank ONLY for pending ops that have NO cola yet (new ops not in SP)
-  // It never overwrites a valid SP-sourced cola value.
+  // Assigns op.cola as a RELATIVE rank (1,2,3...) per station queue.
+  // The queue is already sorted by _colaPos (absolute SP position) from appReloadOpsFromSP.
+  // This gives each pending op a clean sequential display number with no gaps or duplicates.
   STATIONS.forEach(function(st){
     var q = sqGetQueue(st);
     var rank = 1;
@@ -10391,12 +10382,7 @@ function sqSyncColaNumbers(){
       if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'||op.status==='done'){
         op.cola = null; // active/done ops: no queue number shown
       } else if (op.status==='pending'||op.status==='retrabajo'){
-        // Only assign if cola is missing (not yet loaded from SP)
-        if (!op.cola || op.cola <= 0) {
-          op.cola = rank++;
-        } else {
-          rank = op.cola + 1; // keep rank counter in sync with SP value
-        }
+        op.cola = rank++; // always sequential: 1,2,3... no gaps, no duplicates
       }
     });
   });
@@ -15041,7 +15027,7 @@ async function appReloadOpsFromSP() {
           _posMap[f.Op_ID] = {pos: parseInt(f.Posicion||999), spId: id_val};
         }
       });
-      // Update op.cola y _queueSpId desde FT_Cola_Estacion
+      // Update _colaPos (absolute SP position) y _queueSpId desde FT_Cola_Estacion
       DB.activeOFs.forEach(function(aof){
         aof.ops.forEach(function(op){
           var entry = _posMap[op.id];
@@ -15050,12 +15036,14 @@ async function appReloadOpsFromSP() {
           // Running/paused ops ALWAYS get cola=null regardless of SP value
           if(op.status==='running'||op.status==='paused'||op.status==='validating'){
             op.cola = null;
+            op._colaPos = op._colaPos || 0; // preserve existing _colaPos
             return;
           }
           var pos = entry ? entry.pos : undefined;
           if(pos === undefined) return; // not in FT_Cola_Estacion — keep existing
           if(pos <= 0 || pos >= 999) return; // bad/unset value — keep existing
-          op.cola = pos; // 1,2,3... queue position
+          op._colaPos = pos; // store absolute SP position — used for sorting
+          // op.cola will be set to relative rank by sqSyncColaNumbers below
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
@@ -15077,14 +15065,15 @@ async function appReloadOpsFromSP() {
         }
       });
     });
-    // Sort: running/paused first (cola=null), then by cola ascending
+    // Sort: running/paused first (cola=null), then by _colaPos ascending (absolute SP position)
     allPendingOps.sort(function(a,b){
       var isRunA = a.op.status==='running'||a.op.status==='paused'||a.op.status==='validating';
       var isRunB = b.op.status==='running'||b.op.status==='paused'||b.op.status==='validating';
       if(isRunA && !isRunB) return -1;
       if(!isRunA && isRunB) return 1;
-      var ca = (a.op.cola!=null && a.op.cola>0) ? a.op.cola : 0;
-      var cb = (b.op.cola!=null && b.op.cola>0) ? b.op.cola : 0;
+      // Sort by absolute SP position (_colaPos); ops without _colaPos go last
+      var ca = (a.op._colaPos && a.op._colaPos > 0) ? a.op._colaPos : 9999;
+      var cb = (b.op._colaPos && b.op._colaPos > 0) ? b.op._colaPos : 9999;
       return ca - cb;
     });
     // Step 3: Push into station queues in sorted order
