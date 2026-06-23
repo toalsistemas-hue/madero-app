@@ -8546,34 +8546,17 @@ function confirmProgMain() {
           if (opId) _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
         });
         // Step 2: compute _globalMax from actual SP records (including Activo:false)
+        // Read directly from raw SP data — _existingColaRaw has Estacion/Title directly
         var _globalMax = {};
-        Object.keys(_existingColaMap).forEach(function(opId) {
-          // Find the op to get its station
-          var _foundEst = null;
-          DB.activeOFs.forEach(function(aof){
-            aof.ops.forEach(function(op){
-              if (op.id === opId) _foundEst = op.estacion;
-            });
-          });
-          if (!_foundEst) {
-            // Try to find station from the raw SP data
-            (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
-              var f = item.fields || {};
-              if ((f.Op_ID||'') === opId) _foundEst = f.Estacion || f.Title || '';
-            });
-          }
-          if (_foundEst) {
-            var pos = _existingColaMap[opId].pos || 0;
-            // Only count positions from OFs NOT in the new batch (preserve existing order)
-            var _belongsToNew = false;
-            nuevasOfs.forEach(function(sap){
-              var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
-              if (aof) aof.ops.forEach(function(op){ if (op.id===opId) _belongsToNew=true; });
-            });
-            if (!_belongsToNew && pos > 0) {
-              _globalMax[_foundEst] = Math.max(_globalMax[_foundEst]||0, pos);
-            }
-          }
+        var _nuevasOfsSet = {};
+        nuevasOfs.forEach(function(s){ _nuevasOfsSet[s] = true; });
+        (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
+          var f = item.fields || {};
+          var ofSap = String(f.OF_SAP || '');
+          if (_nuevasOfsSet[ofSap]) return; // skip — belongs to new batch
+          var est = f.Estacion || f.Title || '';
+          var pos = parseInt(f.Posicion || 0) || 0;
+          if (est && pos > 0) _globalMax[est] = Math.max(_globalMax[est]||0, pos);
         });
         console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
         // Assign positions to new OFs in supervisor's cola order
