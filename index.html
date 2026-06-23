@@ -5998,11 +5998,8 @@ async function ftSaveOpToSP(of_sap, opId) {
     if (op._spId) {
       await spEscribir('FT_Operaciones', fields, op._spId);
     } else {
-      // Buscar existente via Flow
-      var existing = await flowGet('FT_Operaciones', '', 5000);
-      var found = (existing.value||[]).find(function(i){ return i.fields.Op_ID===opId && i.fields.OF_SAP===of_sap; });
-      if (found) { op._spId=found.id; await spEscribir('FT_Operaciones', fields, op._spId); }
-      else await ftCreateOpInSP(of_sap, op, aof);
+      // No _spId — create new record (caller should have set _spId via batch cache)
+      await ftCreateOpInSP(of_sap, op, aof);
     }
   } catch(e) { ftErrNotify('ftSaveOpToSP', e, 'FT_Operaciones'); }
 }
@@ -8507,21 +8504,44 @@ function confirmProgMain() {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
         // Update modal message — already shown by confirmProgMain before this runs
         showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera, no cierres esta ventana.');
-        // Step 1: save ops to FT_Operaciones for all new OFs
+        // Step 1: save ops to FT_Operaciones — load existing ops ONCE as cache
+        showLoadingModal('Guardando programación', 'Paso 1/2: Registrando operaciones...\nPor favor espera, no cierres esta ventana.');
+        var _existingOpsMap = {};
+        try {
+          var _opsRes = await flowGet('FT_Operaciones', '', 5000);
+          (_opsRes.value||[]).forEach(function(item){
+            var f = item.fields || {};
+            var key = (f.OF_SAP||'') + '__' + (f.Op_ID||'');
+            if (key !== '__') _existingOpsMap[key] = { id: item.id };
+          });
+          console.log('  Ops en SP:', Object.keys(_existingOpsMap).length);
+        } catch(e){ console.warn('  Error cargando ops:', e.message); }
+
         for (var ni = 0; ni < nuevasOfs.length; ni++) {
           var sap = nuevasOfs[ni];
           var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
           if (!aofNew || !aofNew.ops.length) { console.warn('  OF', sap, 'sin ops — saltando'); continue; }
           console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
           for (var oi = 0; oi < aofNew.ops.length; oi++) {
-            await ftSaveOpToSP(sap, aofNew.ops[oi].id);
-            // Pause between ops to avoid Flow throttling
-            await new Promise(function(r){ setTimeout(r, 400); });
+            var _opToSave = aofNew.ops[oi];
+            // Set _spId from cache to avoid per-op flowGet inside ftSaveOpToSP
+            var _opKey = sap + '__' + _opToSave.id;
+            if (_existingOpsMap[_opKey] && !_opToSave._spId) _opToSave._spId = _existingOpsMap[_opKey].id;
+            // Retry up to 3 times
+            var _opSaved = false;
+            for (var _opRetry = 0; _opRetry < 3 && !_opSaved; _opRetry++) {
+              try {
+                if (_opRetry > 0) await new Promise(function(r){ setTimeout(r, 1000); });
+                await ftSaveOpToSP(sap, _opToSave.id);
+                _opSaved = true;
+              } catch(opErr){ console.warn('  Op error (intento '+(_opRetry+1)+'):', _opToSave.id, opErr.message); }
+            }
+            if (!_opSaved) console.warn('  ❌ Op NO guardada:', _opToSave.id);
+            if (oi < aofNew.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
           }
-          // Pause between OFs
-          if (ni < nuevasOfs.length - 1) await new Promise(function(r){ setTimeout(r, 800); });
+          if (ni < nuevasOfs.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
         }
-        // Step 2: 3-pass global queue assignment
+                // Step 2: 3-pass global queue assignment
         // Include ALL active OFs (new + existing) to compute positions correctly
         // Order: existing OFs first (keep their relative order from SP), then new OFs by cola order
         var _existingActiveSaps = DB.activeOFs
@@ -8582,6 +8602,7 @@ function confirmProgMain() {
           if (est && pos > 0) _globalMax[est] = Math.max(_globalMax[est]||0, pos);
         });
         console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
+        showLoadingModal('Guardando programación', 'Paso 2/2: Asignando posiciones de cola...\nPor favor espera, no cierres esta ventana.');
         // Assign positions to new OFs in supervisor's cola order
         _newSapsSorted.forEach(function(sap) {
           var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
