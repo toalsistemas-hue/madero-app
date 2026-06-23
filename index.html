@@ -8541,7 +8541,11 @@ function confirmProgMain() {
           }
           if (ni < nuevasOfs.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
         }
-                // Step 2: 3-pass global queue assignment
+                // Cooldown between Step 1 and Step 2 — let Flow recover before more writes
+        console.log('  Esperando que el Flow se recupere antes de asignar cola...');
+        await new Promise(function(r){ setTimeout(r, 3000); });
+        showLoadingModal('Guardando programación', 'Paso 2/2: Asignando posiciones de cola...\nPor favor espera, no cierres esta ventana.');
+        // Step 2: 3-pass global queue assignment
         // Include ALL active OFs (new + existing) to compute positions correctly
         // Order: existing OFs first (keep their relative order from SP), then new OFs by cola order
         var _existingActiveSaps = DB.activeOFs
@@ -8635,13 +8639,14 @@ function confirmProgMain() {
               try {
                 var gRes;
                 if (_existingColaEntry && _existingColaEntry.spId) {
-                  // UPSERT: update existing record with new position
+                  // PATCH: update existing record position only
                   gRes = await spEscribir('FT_Cola_Estacion', {
                     Posicion: gOp._colaPos, Activo: false,
                   }, parseInt(_existingColaEntry.spId));
-                  if (!gRes) gRes = { resultado: 'ok' }; // PATCH returns empty body — treat as ok
+                  // PATCH via Flow returns empty body — always treat as success (never retry with CREATE)
+                  gRes = gRes || { resultado: 'ok' };
                 } else {
-                  // CREATE: new record
+                  // CREATE: new record — no existing record found
                   gRes = await spEscribir('FT_Cola_Estacion', {
                     Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
                     Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,

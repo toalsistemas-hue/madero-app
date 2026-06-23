@@ -15109,17 +15109,10 @@ async function appReloadOpsFromSP() {
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
-      // Auto-repair: detect programmed pending ops with no cola record and create them
-      var _missingOps = [];
-      DB.activeOFs.forEach(function(aof){
-        var ofDb = DB.ofs ? DB.ofs.find(function(o){ return o.of_sap===aof.of_sap; }) : null;
-        if (!ofDb || !ofDb.programadoHoy) return; // skip non-programmed OFs
-        aof.ops.forEach(function(op){
-          if (!op.estacion || op.status==='done') return;
-          if (!_posMap[op.id]) _missingOps.push({of_sap: aof.of_sap, op: op});
-        });
-      });
-      if (_missingOps.length > 0) {
+      // Auto-repair removed: coordinador manages positions via confirmProgMain
+      // which now uses batch approach. Auto-repair caused wrong positions and duplicates.
+      var _missingOps = []; // kept as empty to avoid breaking downstream code
+      if (false && _missingOps.length > 0) { // auto-repair disabled
         console.warn('⚠️ Auto-repair: ' + _missingOps.length + ' ops sin registro en FT_Cola_Estacion. Creando...');
         // Compute max positions from existing records
         var _repairMax = {};
