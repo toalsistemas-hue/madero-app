@@ -8538,13 +8538,36 @@ function confirmProgMain() {
         try {
           _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
         } catch(cleanErr){ console.warn('Error leyendo cola existente:', cleanErr.message); }
-        // Build a map of existing cola records: Op_ID → {id, Posicion}
+        // Build map Op_ID -> record, detect and delete duplicates
         var _existingColaMap = {};
+        var _duplicatesToDelete = [];
         (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
           var f = item.fields || {};
           var opId = f.Op_ID || '';
-          if (opId) _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
+          if (!opId) return;
+          if (!_existingColaMap[opId]) {
+            _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
+          } else {
+            // Duplicate: keep lowest spId (oldest), delete the other
+            var existId = parseInt(_existingColaMap[opId].spId)||0;
+            var thisId  = parseInt(item.id)||0;
+            if (thisId < existId) {
+              _duplicatesToDelete.push(existId);
+              _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
+            } else {
+              _duplicatesToDelete.push(thisId);
+            }
+          }
         });
+        if (_duplicatesToDelete.length > 0) {
+          console.log('[Cola] Eliminando', _duplicatesToDelete.length, 'duplicados...');
+          for (var _di=0; _di<_duplicatesToDelete.length; _di++) {
+            try { await spEscribir('FT_Cola_Estacion', {_delete:true}, _duplicatesToDelete[_di]);
+              console.log('  Duplicado eliminado:', _duplicatesToDelete[_di]);
+            } catch(de){ console.warn('  Error dup:', de.message); }
+            if (_di < _duplicatesToDelete.length-1) await new Promise(function(r){setTimeout(r,500);});
+          }
+        }
         // Step 2: compute _globalMax from actual SP records (including Activo:false)
         // Read directly from raw SP data — _existingColaRaw has Estacion/Title directly
         var _globalMax = {};
