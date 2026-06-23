@@ -4728,6 +4728,21 @@ function saveOFOps() {
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
+  // Persist tech/qty/ayudante changes to SP
+  (async function(){
+    if (!state.isDemoMode && state.token) {
+      var aofSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+      if (aofSave) {
+        for (var i=0; i<aofSave.ops.length; i++) {
+          try {
+            await ftSaveOpToSP(sap, aofSave.ops[i].id);
+            if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
+          } catch(e){ console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message); }
+        }
+        console.log('✅ Técnicos/ayudantes guardados en SP para OF', sap);
+      }
+    }
+  })();
 }
 
 // ── 4 & 7: Highlight de OF en la app ─────────────────────
@@ -12546,6 +12561,21 @@ function saveOFOps() {
   fireSync('coord','ops_assigned',{of_sap:sap});
   renderApp();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
+  // Persist tech/qty/ayudante changes to SP
+  (async function(){
+    if (!state.isDemoMode && state.token) {
+      var aofSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+      if (aofSave) {
+        for (var i=0; i<aofSave.ops.length; i++) {
+          try {
+            await ftSaveOpToSP(sap, aofSave.ops[i].id);
+            if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
+          } catch(e){ console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message); }
+        }
+        console.log('✅ Técnicos/ayudantes guardados en SP para OF', sap);
+      }
+    }
+  })();
 }
 
 // ── 4 & 7: Highlight de OF en la app ─────────────────────

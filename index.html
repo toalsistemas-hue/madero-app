@@ -8532,34 +8532,47 @@ function confirmProgMain() {
         });
         // All OFs ordered: existing first (preserve their queue), then new ones by supervisor order
         var _allSapsOrdered = _existingActiveSaps.concat(_newSapsSorted);
-        // Pre-cleanup: only delete cola records for the NEW OFs being added
+        // Fetch existing cola records to know which ops already have records (for UPSERT)
+        // NO DELETE calls — they cause 502s and exhaust the Flow. Instead we UPSERT.
         var _existingColaRaw = null;
         try {
           _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
-          var _toDelete = (_existingColaRaw.value||[]).filter(function(item){
-            return nuevasOfs.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
-          });
-          if (_toDelete.length) {
-            console.log('  🧹 Limpiando', _toDelete.length, 'registros de cola previos para OFs nuevas...');
-            for (var ci = 0; ci < _toDelete.length; ci++) {
-              var _cId = _toDelete[ci].id || (_toDelete[ci].fields||{}).ID;
-              if (_cId) try { await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(_cId)); } catch(e){}
-            }
-          }
-        } catch(cleanErr){ console.warn('Error limpiando cola:', cleanErr.message); }
-        // Step 2: compute _globalMax from actual SP records (including Activo:false)
-        // We already fetched _existingColaRaw above — reuse it
-        var _globalMax = {};
-        var _allColaItems = (_existingColaRaw && _existingColaRaw.value) ? _existingColaRaw.value : [];
-        // Only consider items NOT belonging to the new OFs (those were just deleted)
-        _allColaItems.forEach(function(item) {
+        } catch(cleanErr){ console.warn('Error leyendo cola existente:', cleanErr.message); }
+        // Build a map of existing cola records: Op_ID → {id, Posicion}
+        var _existingColaMap = {};
+        (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
           var f = item.fields || {};
-          var sap = String(f.OF_SAP || '');
-          if (nuevasOfs.indexOf(sap) >= 0) return; // skip — these were deleted
-          var est = f.Estacion || f.Title || '';
-          var pos = parseInt(f.Posicion || 0) || 0;
-          if (est && pos > 0) {
-            _globalMax[est] = Math.max(_globalMax[est] || 0, pos);
+          var opId = f.Op_ID || '';
+          if (opId) _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
+        });
+        // Step 2: compute _globalMax from actual SP records (including Activo:false)
+        var _globalMax = {};
+        Object.keys(_existingColaMap).forEach(function(opId) {
+          // Find the op to get its station
+          var _foundEst = null;
+          DB.activeOFs.forEach(function(aof){
+            aof.ops.forEach(function(op){
+              if (op.id === opId) _foundEst = op.estacion;
+            });
+          });
+          if (!_foundEst) {
+            // Try to find station from the raw SP data
+            (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
+              var f = item.fields || {};
+              if ((f.Op_ID||'') === opId) _foundEst = f.Estacion || f.Title || '';
+            });
+          }
+          if (_foundEst) {
+            var pos = _existingColaMap[opId].pos || 0;
+            // Only count positions from OFs NOT in the new batch (preserve existing order)
+            var _belongsToNew = false;
+            nuevasOfs.forEach(function(sap){
+              var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+              if (aof) aof.ops.forEach(function(op){ if (op.id===opId) _belongsToNew=true; });
+            });
+            if (!_belongsToNew && pos > 0) {
+              _globalMax[_foundEst] = Math.max(_globalMax[_foundEst]||0, pos);
+            }
           }
         });
         console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
@@ -8588,14 +8601,25 @@ function confirmProgMain() {
             var gOp = gAof.ops[oi3];
             if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
             var _saved = false;
+            var _existingColaEntry = _existingColaMap[gOp.id];
             for (var _retry = 0; _retry < 4 && !_saved; _retry++) {
               // Longer pause on retry — Flow needs recovery time
               if (_retry > 0) await new Promise(function(r){ setTimeout(r, 1200 * _retry); });
               try {
-                var gRes = await spEscribir('FT_Cola_Estacion', {
-                  Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
-                  Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
-                }, null);
+                var gRes;
+                if (_existingColaEntry && _existingColaEntry.spId) {
+                  // UPSERT: update existing record with new position
+                  gRes = await spEscribir('FT_Cola_Estacion', {
+                    Posicion: gOp._colaPos, Activo: false,
+                  }, parseInt(_existingColaEntry.spId));
+                  if (!gRes) gRes = { resultado: 'ok' }; // PATCH returns empty body — treat as ok
+                } else {
+                  // CREATE: new record
+                  gRes = await spEscribir('FT_Cola_Estacion', {
+                    Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
+                    Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
+                  }, null);
+                }
                 // Accept success if: has an id (Graph response) OR resultado=ok (Flow response)
                 var _success = gRes && (gRes.id || gRes.resultado === 'ok');
                 if (_success) {
