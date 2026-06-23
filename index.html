@@ -5701,9 +5701,9 @@ async function ftLoadDataFromSP() {
     // Restore queue from SP — reset primero para evitar duplicados
     window.DB_STATION_QUEUE = {};
     window.STATIONS.forEach(s => { window.DB_STATION_QUEUE[s]=[]; });
-    // Load FT_Cola_Estacion — keep item id for _queueSpId and Posicion for _colaPos
+    // Load FT_Cola_Estacion — include ALL records (Activo:false = pending, Activo:true = active)
+    // Sort by Posicion to maintain correct queue order
     const colaItemsRaw = (colaRes.value||[])
-      .filter(function(i){ var f=i.fields||{}; return f.Activo!==false && f.Activo!==0; })
       .sort(function(a,b){ return (a.fields.Posicion||0)-(b.fields.Posicion||0); });
     colaItemsRaw.forEach(function(item) {
       var c  = item.fields || {};
