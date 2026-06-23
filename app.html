@@ -7514,8 +7514,10 @@ async function _appLoadDataFromSP_impl() {
     // This prevents clearing the screen when PA is temporarily overloaded
     var ofsEmpty = ofsRes._error || (ofsRes.value||[]).length === 0;
     var opsEmpty = opsRes._error || (opsRes.value||[]).length === 0;
-    if (ofsEmpty && opsEmpty && DB.activeOFs && DB.activeOFs.length > 0) {
-      console.warn('[appLoadData] OFs+Ops empty (504?) — keeping existing data');
+    // Preserve existing data if OFs OR Ops returned empty — either alone is enough
+    // to avoid wiping the screen during a transient PA failure
+    if ((ofsEmpty || opsEmpty) && DB.activeOFs && DB.activeOFs.length > 0) {
+      console.warn('[appLoadData] OFs o Ops vacíos (504?) — preservando datos existentes. ofsEmpty:', ofsEmpty, 'opsEmpty:', opsEmpty);
       return; // preserve DB.activeOFs, don't wipe it
     }
 
@@ -15079,6 +15081,62 @@ async function appReloadOpsFromSP() {
         });
       });
       console.log('📋 Cola desde FT_Cola_Estacion:', Object.keys(_posMap).length, 'ops — mapa:', JSON.stringify(_posMap).slice(0,150));
+      // Auto-repair: detect programmed pending ops with no cola record and create them
+      var _missingOps = [];
+      DB.activeOFs.forEach(function(aof){
+        var ofDb = DB.ofs ? DB.ofs.find(function(o){ return o.of_sap===aof.of_sap; }) : null;
+        if (!ofDb || !ofDb.programadoHoy) return; // skip non-programmed OFs
+        aof.ops.forEach(function(op){
+          if (!op.estacion || op.status==='done') return;
+          if (!_posMap[op.id]) _missingOps.push({of_sap: aof.of_sap, op: op});
+        });
+      });
+      if (_missingOps.length > 0) {
+        console.warn('⚠️ Auto-repair: ' + _missingOps.length + ' ops sin registro en FT_Cola_Estacion. Creando...');
+        // Compute max positions from existing records
+        var _repairMax = {};
+        Object.values(_posMap).forEach(function(entry){
+          // We need station for each op — look it up
+        });
+        DB.activeOFs.forEach(function(aof){
+          aof.ops.forEach(function(op){
+            if (!op.estacion || !op._colaPos || op._colaPos <= 0) return;
+            _repairMax[op.estacion] = Math.max(_repairMax[op.estacion]||0, op._colaPos);
+          });
+        });
+        // Also read from _posMap by looking up each op's station
+        DB.activeOFs.forEach(function(aof){
+          aof.ops.forEach(function(op){
+            if (!op.estacion || !_posMap[op.id]) return;
+            _repairMax[op.estacion] = Math.max(_repairMax[op.estacion]||0, _posMap[op.id].pos||0);
+          });
+        });
+        // Assign positions and create records asynchronously
+        (async function(){
+          try {
+            var _siteId = await appGetSiteId();
+            for (var mi = 0; mi < _missingOps.length; mi++) {
+              var _m = _missingOps[mi];
+              var _est = _m.op.estacion;
+              _repairMax[_est] = (_repairMax[_est]||0) + 1;
+              _m.op._colaPos = _repairMax[_est];
+              var _r = await spEscribir('FT_Cola_Estacion', {
+                Title: _est, OF_SAP: _m.of_sap, Op_ID: _m.op.id,
+                Posicion: _repairMax[_est], Tipo_Cola: 'normal', Activo: false
+              }, null);
+              if (_r && _r.id) _m.op._queueSpId = _r.id;
+              if (!_r || (!_r.id && _r.resultado !== 'ok')) throw new Error('Auto-repair cola: respuesta vacía');
+              console.log('✅ Auto-repair cola:', _m.op.id, 'pos=' + _repairMax[_est]);
+              if (mi < _missingOps.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
+            }
+            // Re-run sqSyncColaNumbers to update display
+            if (typeof sqSyncColaNumbers === 'function') sqSyncColaNumbers();
+            if (typeof renderApp === 'function') renderApp();
+          } catch(repairErr) {
+            console.warn('Auto-repair error:', repairErr.message);
+          }
+        })();
+      }
     } catch(e){ if(!e.message||!e.message.includes('fetch')) console.warn('appReloadOpsFromSP: FT_Cola error:', e.message); }
 
     // Sort station queues by Cola from FT_Cola_Estacion

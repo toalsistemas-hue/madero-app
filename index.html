@@ -5678,6 +5678,8 @@ async function ftLoadDataFromSP() {
                   Activo:    false, // will be activated when OF is programmed
                 }, null); // always POST (fresh records)
                 if (gRes3 && gRes3.id) gOp3._queueSpId = gRes3.id;
+                // Accept resultado:ok (Flow) or id (Graph) as success
+                if (!gRes3 || (!gRes3.id && gRes3.resultado !== 'ok')) throw new Error('Cola: respuesta vacía');
                 console.log('  ✅ Cola guardada:', gOp3.id, 'pos='+gOp3._colaPos);
               } catch(e3) { console.warn('  ❌ Cola error:', gOp3.id, e3.message); }
             }
@@ -8594,9 +8596,10 @@ function confirmProgMain() {
                   Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
                   Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
                 }, null);
-                // Verify we got a valid ID back (null response = Flow throttled)
-                if (gRes && gRes.id) {
-                  gOp._queueSpId = gRes.id;
+                // Accept success if: has an id (Graph response) OR resultado=ok (Flow response)
+                var _success = gRes && (gRes.id || gRes.resultado === 'ok');
+                if (_success) {
+                  if (gRes.id) gOp._queueSpId = gRes.id;
                   _saved = true;
                   console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, '(OF cola orden:', _colaSnapForSP[gSap]+', intento:'+(_retry+1)+')');
                 } else {
