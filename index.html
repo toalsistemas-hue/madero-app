@@ -5172,7 +5172,17 @@ async function flowEscribir(lista, operacion, itemId, datos) {
     console.error('[flowEscribir] '+lista+' '+res.status+' error:', errText.slice(0,800));
     throw new Error('Flow ESCRIBIR '+lista+' '+res.status);
   }
-  return res.json();
+  // Handle potentially empty response body (Flow sometimes returns 200 with no body)
+  var responseText = await res.text();
+  if (!responseText || responseText.trim() === '') {
+    return { resultado: 'ok' }; // empty body = success for writes
+  }
+  try {
+    return JSON.parse(responseText);
+  } catch(parseErr) {
+    console.warn('[flowEscribir] '+lista+' respuesta no-JSON (tratada como ok):', responseText.slice(0,100));
+    return { resultado: 'ok' };
+  }
 }
 
 // Wrapper inteligente: usa Flow si la lista está protegida, Graph si no
@@ -8633,9 +8643,8 @@ function confirmProgMain() {
             if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
             var _saved = false;
             var _existingColaEntry = _existingColaMap[gOp.id];
-            for (var _retry = 0; _retry < 4 && !_saved; _retry++) {
-              // Longer pause on retry — Flow needs recovery time
-              if (_retry > 0) await new Promise(function(r){ setTimeout(r, 1200 * _retry); });
+            for (var _retry = 0; _retry < 3 && !_saved; _retry++) {
+              if (_retry > 0) await new Promise(function(r){ setTimeout(r, 800); });
               try {
                 var gRes;
                 if (_existingColaEntry && _existingColaEntry.spId) {
