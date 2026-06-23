@@ -8628,19 +8628,25 @@ function confirmProgMain() {
             op._colaAssigned = true;
           });
         });
-        // Save queue records for new OFs only — with retry and longer pauses to avoid Flow throttling
+        // Save queue records for new OFs only — with live progress and final verification
         var _failedCola = [];
+        var _totalOpsToSave = 0;
+        _newSapsSorted.forEach(function(s){ var a=DB.activeOFs.find(function(x){return x.of_sap===s;}); if(a) _totalOpsToSave+=a.ops.length; });
+        var _savedCount = 0;
         for (var gi = 0; gi < _newSapsSorted.length; gi++) {
           var gSap = _newSapsSorted[gi];
           var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
           if (!gAof || !gAof.ops.length) {
-            // OF without ops (no template) — skip but still pause
             if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 400); });
             continue;
           }
           for (var oi3 = 0; oi3 < gAof.ops.length; oi3++) {
             var gOp = gAof.ops[oi3];
             if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
+            _savedCount++;
+            showLoadingModal('Guardando programación',
+              'Paso 2/2: Cola ' + _savedCount + '/' + _totalOpsToSave + '\n' +
+              'OF ' + gSap + ' \u00b7 ' + gOp.estacion + ' pos=' + gOp._colaPos + '\nNo cierres esta ventana.');
             var _saved = false;
             var _existingColaEntry = _existingColaMap[gOp.id];
             for (var _retry = 0; _retry < 3 && !_saved; _retry++) {
@@ -8648,39 +8654,63 @@ function confirmProgMain() {
               try {
                 var gRes;
                 if (_existingColaEntry && _existingColaEntry.spId) {
-                  // PATCH: update existing record position only
-                  gRes = await spEscribir('FT_Cola_Estacion', {
-                    Posicion: gOp._colaPos, Activo: false,
-                  }, parseInt(_existingColaEntry.spId));
-                  // PATCH via Flow returns empty body — always treat as success (never retry with CREATE)
+                  gRes = await spEscribir('FT_Cola_Estacion', { Posicion: gOp._colaPos, Activo: false }, parseInt(_existingColaEntry.spId));
                   gRes = gRes || { resultado: 'ok' };
                 } else {
-                  // CREATE: new record — no existing record found
                   gRes = await spEscribir('FT_Cola_Estacion', {
                     Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
                     Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
                   }, null);
                 }
-                // Accept success if: has an id (Graph response) OR resultado=ok (Flow response)
                 var _success = gRes && (gRes.id || gRes.resultado === 'ok');
                 if (_success) {
                   if (gRes.id) gOp._queueSpId = gRes.id;
                   _saved = true;
-                  console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, '(OF cola orden:', _colaSnapForSP[gSap]+', intento:'+(_retry+1)+')');
+                  console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, 'OF:'+gSap+' orden:'+(_colaSnapForSP[gSap]||'?')+' intento:'+(_retry+1));
                 } else {
-                  console.warn('  ⚠️ Cola: respuesta vacía para', gOp.id, '— reintentando (intento '+(_retry+1)+')');
+                  console.warn('  ⚠️ Cola vacioa:', gOp.id, 'intento '+(_retry+1), JSON.stringify(gRes));
                 }
               } catch(e3){
                 console.warn('  ❌ Cola error (intento '+(_retry+1)+'):', gOp.id, e3.message);
               }
             }
             if (!_saved) _failedCola.push({sap: gSap, op: gOp});
-            // Pause between ops (longer to reduce throttling)
-            await new Promise(function(r){ setTimeout(r, 500); });
+            await new Promise(function(r){ setTimeout(r, 400); });
           }
-          // Longer pause between OFs
-          if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 1000); });
+          if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
         }
+        // Final verification: re-read SP to confirm all records saved
+        showLoadingModal('Guardando programación', 'Verificando registros en SharePoint...\nCasi listo.');
+        await new Promise(function(r){ setTimeout(r, 1500); });
+        try {
+          var _verifyRes = await flowGet('FT_Cola_Estacion', '', 3000);
+          var _verifyMap = {};
+          (_verifyRes.value||[]).forEach(function(item){ var f=item.fields||{}; if(f.Op_ID) _verifyMap[f.Op_ID]=true; });
+          var _stillMissing = [];
+          nuevasOfs.forEach(function(sap){
+            var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+            if (!aof) return;
+            aof.ops.forEach(function(op){
+              if (op.estacion && op._colaPos > 0 && !_verifyMap[op.id]) _stillMissing.push({sap:sap, op:op});
+            });
+          });
+          var _verifyCount = Object.keys(_verifyMap).length;
+          console.log('[Cola] Verificacion SP: ' + _verifyCount + ' registros totales, ' + _stillMissing.length + ' faltantes');
+          if (_stillMissing.length > 0) {
+            showLoadingModal('Guardando programacion', 'Completando ' + _stillMissing.length + ' registros faltantes...');
+            for (var _vi=0; _vi<_stillMissing.length; _vi++) {
+              var _vm = _stillMissing[_vi];
+              await new Promise(function(r){setTimeout(r, 600);});
+              try {
+                await spEscribir('FT_Cola_Estacion', {
+                  Title: _vm.op.estacion, OF_SAP: _vm.sap, Op_ID: _vm.op.id,
+                  Posicion: _vm.op._colaPos, Tipo_Cola: 'normal', Activo: false,
+                }, null);
+                console.log('[Cola] Recuperado:', _vm.op.id, 'pos='+_vm.op._colaPos);
+              } catch(ve){ console.warn('[Cola] Error recuperando:', _vm.op.id, ve.message); }
+            }
+          }
+        } catch(verErr){ console.warn('[Cola] Error verificacion:', verErr.message); }
         if (_failedCola.length > 0) {
           console.warn('⚠️ Cola no guardada para', _failedCola.length, 'ops:', _failedCola.map(function(x){ return x.op.id; }).join(', '));
           // Show warning to coordinator
