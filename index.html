@@ -4452,7 +4452,7 @@ async function ftSaveProgramacionToSP() {
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
-  showLoadingModal('Programando Fabricaciones', 'Guardando programación...\nPor favor espera.');
+  // Note: modal managed by confirmProgMain
   try {
     const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
     const itemMap = {};
@@ -4473,8 +4473,7 @@ async function ftSaveProgramacionToSP() {
         .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
-    hideLoadingModal();
-  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); hideLoadingModal(); }
+  } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
 }
 
 // -- SP Persistence: Save Prioridad changes --------------------------------
@@ -8493,7 +8492,9 @@ function confirmProgMain() {
   fireSync('coord', 'prog_updated', {count: hoy});
   ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
-  ftSaveProgramacionToSP();
+  // Show modal before ALL SP work — keep it open until cola saves complete
+  showLoadingModal('Guardando programación', 'Guardando estado en SharePoint...\nPor favor espera.');
+  ftSaveProgramacionToSP(); // fire-and-forget: updates Programado_Hoy/Status fields
   // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
   if (!state.isDemoMode && state.token && nuevasOfs.length > 0) {
     // Capture the sorted order snapshot for use inside the async block
@@ -8502,7 +8503,8 @@ function confirmProgMain() {
     setTimeout(async function(){
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-        showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera.');
+        // Update modal message — already shown by confirmProgMain before this runs
+        showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera, no cierres esta ventana.');
         // Step 1: save ops to FT_Operaciones for all new OFs
         for (var ni = 0; ni < nuevasOfs.length; ni++) {
           var sap = nuevasOfs[ni];
@@ -8511,8 +8513,11 @@ function confirmProgMain() {
           console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
           for (var oi = 0; oi < aofNew.ops.length; oi++) {
             await ftSaveOpToSP(sap, aofNew.ops[oi].id);
-            if (oi < aofNew.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
+            // Pause between ops to avoid Flow throttling
+            await new Promise(function(r){ setTimeout(r, 400); });
           }
+          // Pause between OFs
+          if (ni < nuevasOfs.length - 1) await new Promise(function(r){ setTimeout(r, 800); });
         }
         // Step 2: 3-pass global queue assignment
         // Include ALL active OFs (new + existing) to compute positions correctly
@@ -8567,22 +8572,55 @@ function confirmProgMain() {
             op._colaAssigned = true;
           });
         });
-        // Save queue records for new OFs only
+        // Save queue records for new OFs only — with retry and longer pauses to avoid Flow throttling
+        var _failedCola = [];
         for (var gi = 0; gi < _newSapsSorted.length; gi++) {
           var gSap = _newSapsSorted[gi];
           var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
-          if (!gAof) continue;
+          if (!gAof || !gAof.ops.length) {
+            // OF without ops (no template) — skip but still pause
+            if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 400); });
+            continue;
+          }
           for (var oi3 = 0; oi3 < gAof.ops.length; oi3++) {
             var gOp = gAof.ops[oi3];
             if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
-            try {
-              var gRes = await spEscribir('FT_Cola_Estacion', {
-                Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
-                Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
-              }, null);
-              if (gRes && gRes.id) gOp._queueSpId = gRes.id;
-              console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, '(OF cola orden:', _colaSnapForSP[gSap]+')');
-            } catch(e3){ console.warn('  ❌ Cola error:', gOp.id, e3.message); }
+            var _saved = false;
+            for (var _retry = 0; _retry < 4 && !_saved; _retry++) {
+              // Longer pause on retry — Flow needs recovery time
+              if (_retry > 0) await new Promise(function(r){ setTimeout(r, 1200 * _retry); });
+              try {
+                var gRes = await spEscribir('FT_Cola_Estacion', {
+                  Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
+                  Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
+                }, null);
+                // Verify we got a valid ID back (null response = Flow throttled)
+                if (gRes && gRes.id) {
+                  gOp._queueSpId = gRes.id;
+                  _saved = true;
+                  console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, '(OF cola orden:', _colaSnapForSP[gSap]+', intento:'+(_retry+1)+')');
+                } else {
+                  console.warn('  ⚠️ Cola: respuesta vacía para', gOp.id, '— reintentando (intento '+(_retry+1)+')');
+                }
+              } catch(e3){
+                console.warn('  ❌ Cola error (intento '+(_retry+1)+'):', gOp.id, e3.message);
+              }
+            }
+            if (!_saved) _failedCola.push({sap: gSap, op: gOp});
+            // Pause between ops (longer to reduce throttling)
+            await new Promise(function(r){ setTimeout(r, 500); });
+          }
+          // Longer pause between OFs
+          if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 1000); });
+        }
+        if (_failedCola.length > 0) {
+          console.warn('⚠️ Cola no guardada para', _failedCola.length, 'ops:', _failedCola.map(function(x){ return x.op.id; }).join(', '));
+          // Show warning to coordinator
+          var toastW = document.getElementById('toast-coord');
+          if (toastW) {
+            toastW.textContent = '⚠️ ' + _failedCola.length + ' op(s) sin guardar en cola — se repararán automáticamente';
+            toastW.style.opacity='1'; toastW.style.transform='translateY(0)';
+            setTimeout(function(){ toastW.style.opacity='0'; toastW.style.transform='translateY(10px)'; }, 5000);
           }
         }
         hideLoadingModal();
