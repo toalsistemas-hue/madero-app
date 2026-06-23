@@ -2633,10 +2633,26 @@ function sqAddOF(of_sap){
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
   // Assigns op.cola as a RELATIVE rank (1,2,3...) per station queue.
-  // The queue is already sorted by _colaPos (absolute SP position) from appReloadOpsFromSP.
-  // This gives each pending op a clean sequential display number with no gaps or duplicates.
+  // First sorts the queue by _colaPos (absolute SP position) so the rank is stable
+  // regardless of how the queue was populated (sqAddOF, sqPurge, etc.)
   STATIONS.forEach(function(st){
     var q = sqGetQueue(st);
+    // Sort queue by _colaPos so rank assignment is always based on SP order
+    q.sort(function(a, b){
+      var aof_a = DB.activeOFs.find(function(x){ return x.of_sap===a.of_sap; });
+      var aof_b = DB.activeOFs.find(function(x){ return x.of_sap===b.of_sap; });
+      var op_a = aof_a ? aof_a.ops.find(function(o){ return o.id===a.op_id; }) : null;
+      var op_b = aof_b ? aof_b.ops.find(function(o){ return o.id===b.op_id; }) : null;
+      // Active ops always first, then sort by _colaPos
+      var isRunA = op_a && (op_a.status==='running'||op_a.status==='paused'||op_a.status==='validating');
+      var isRunB = op_b && (op_b.status==='running'||op_b.status==='paused'||op_b.status==='validating');
+      if (isRunA && !isRunB) return -1;
+      if (!isRunA && isRunB) return 1;
+      var pa = (op_a && op_a._colaPos > 0) ? op_a._colaPos : 9999;
+      var pb = (op_b && op_b._colaPos > 0) ? op_b._colaPos : 9999;
+      return pa - pb;
+    });
+    // Now assign sequential ranks
     var rank = 1;
     q.forEach(function(item){
       var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
@@ -2644,9 +2660,9 @@ function sqSyncColaNumbers(){
       var op = aof.ops.find(function(o){ return o.id===item.op_id; });
       if (!op) return;
       if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'||op.status==='done'){
-        op.cola = null; // active/done ops: no queue number shown
+        op.cola = null;
       } else if (op.status==='pending'||op.status==='retrabajo'){
-        op.cola = rank++; // always sequential: 1,2,3... no gaps, no duplicates
+        op.cola = rank++;
       }
     });
   });
@@ -10369,10 +10385,26 @@ function sqAddOF(of_sap){
 // Sync op.cola numbers from queue position
 function sqSyncColaNumbers(){
   // Assigns op.cola as a RELATIVE rank (1,2,3...) per station queue.
-  // The queue is already sorted by _colaPos (absolute SP position) from appReloadOpsFromSP.
-  // This gives each pending op a clean sequential display number with no gaps or duplicates.
+  // First sorts the queue by _colaPos (absolute SP position) so the rank is stable
+  // regardless of how the queue was populated (sqAddOF, sqPurge, etc.)
   STATIONS.forEach(function(st){
     var q = sqGetQueue(st);
+    // Sort queue by _colaPos so rank assignment is always based on SP order
+    q.sort(function(a, b){
+      var aof_a = DB.activeOFs.find(function(x){ return x.of_sap===a.of_sap; });
+      var aof_b = DB.activeOFs.find(function(x){ return x.of_sap===b.of_sap; });
+      var op_a = aof_a ? aof_a.ops.find(function(o){ return o.id===a.op_id; }) : null;
+      var op_b = aof_b ? aof_b.ops.find(function(o){ return o.id===b.op_id; }) : null;
+      // Active ops always first, then sort by _colaPos
+      var isRunA = op_a && (op_a.status==='running'||op_a.status==='paused'||op_a.status==='validating');
+      var isRunB = op_b && (op_b.status==='running'||op_b.status==='paused'||op_b.status==='validating');
+      if (isRunA && !isRunB) return -1;
+      if (!isRunA && isRunB) return 1;
+      var pa = (op_a && op_a._colaPos > 0) ? op_a._colaPos : 9999;
+      var pb = (op_b && op_b._colaPos > 0) ? op_b._colaPos : 9999;
+      return pa - pb;
+    });
+    // Now assign sequential ranks
     var rank = 1;
     q.forEach(function(item){
       var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
@@ -10380,9 +10412,9 @@ function sqSyncColaNumbers(){
       var op = aof.ops.find(function(o){ return o.id===item.op_id; });
       if (!op) return;
       if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'||op.status==='done'){
-        op.cola = null; // active/done ops: no queue number shown
+        op.cola = null;
       } else if (op.status==='pending'||op.status==='retrabajo'){
-        op.cola = rank++; // always sequential: 1,2,3... no gaps, no duplicates
+        op.cola = rank++;
       }
     });
   });
