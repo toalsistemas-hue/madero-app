@@ -15213,6 +15213,28 @@ async function appReloadOpsFromSP() {
       if(existing_aof_subartkeys !== undefined) aof.sub_articulos = existing_aof_subartkeys;
     });
     console.log('Poll: ops recargadas OK');
+    // Sync DB.timers to match actual op.status from SP
+    // This fixes: paused op on remote device still showing timer running
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        var key = aof.of_sap + '_' + op.id;
+        var t = DB.timers[key];
+        if (!t) return;
+        if (op.status === 'paused' || op.status === 'validating') {
+          // Op is paused in SP but timer still running locally → stop it
+          if (t.running) {
+            t.elapsed = (t.elapsed||0) + (Date.now() - t.start);
+            t.running = false;
+          }
+        } else if (op.status === 'running') {
+          // Op is running in SP but timer stopped locally → restart it
+          if (!t.running) {
+            t.start = Date.now(); // elapsed stays as-is, timer resumes
+            t.running = true;
+          }
+        }
+      });
+    });
     // Load FT_Cola_Estacion to get authoritative queue positions
     try {
       // Read FT_Cola_Estacion via Flow (app token doesn't have direct SP Graph permissions)
