@@ -2296,18 +2296,44 @@ function showLoginBlockedScreen(mensaje) {
 }
 
 async function loadModulosFromSharePoint(siteId) {
+  // Helper: flowGet with retry (1 retry after 3s on timeout/error)
+  async function flowGetWithRetry(lista, top) {
+    var empty = function(){ return {value:[]}; };
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        var res = await flowGet(lista, '', top);
+        return res;
+      } catch(e) {
+        if (attempt === 0) {
+          console.warn('[Módulos] '+lista+' intento 1 falló ('+e.message+'), reintentando en 3s...');
+          await new Promise(function(r){ setTimeout(r, 3000); });
+        } else {
+          console.warn('[Módulos] '+lista+' intento 2 falló:', e.message);
+          return {value:[]};
+        }
+      }
+    }
+    return {value:[]};
+  }
+
   try {
-    // Sin $orderby para evitar error 400 — se ordena en cliente
-    const [modRes, subRes, panRes] = await Promise.all([
-      flowGet('Modulos', '', 100),
-      flowGet('SubModulos', '', 100),
-      flowGet('Pantallas', '', 100),
-    ]);
+    // Fire sequentially with retry — avoids simultaneous Flow throttling
+    // (3 parallel flowGets to the same Flow URL causes queue buildup)
+    const modRes = await flowGetWithRetry('Modulos',   100);
+    const subRes = await flowGetWithRetry('SubModulos', 100);
+    const panRes = await flowGetWithRetry('Pantallas',  100);
 
     // Ordenar en cliente por campo Orden
     const modulos   = (modRes.value  || []).map(i=>i.fields).sort((a,b)=>(a.Orden||0)-(b.Orden||0));
     const submodulos= (subRes.value  || []).map(i=>i.fields).sort((a,b)=>(a.Orden||0)-(b.Orden||0));
     const pantallas = (panRes.value  || []).map(i=>i.fields).sort((a,b)=>(a.Orden||0)-(b.Orden||0));
+
+    // Si no se cargó ningún módulo, caer a demo
+    if (!modulos.length && !submodulos.length && !pantallas.length) {
+      console.warn('[Módulos] SP devolvió vacío — usando demo');
+      state.modulos = buildDemoModulosTree();
+      return;
+    }
 
     // Normalizar texto para comparaciones (quita acentos, minúsculas)
     const norm = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -2338,7 +2364,6 @@ async function loadModulosFromSharePoint(siteId) {
         }).map(p=>({ nombre:p.Nombre||p.Title||'', pantallaID:p.PantallaID||'', icono:p.Icono||p.Icono0||'📄' }))
       };
     });
-
 
   } catch(e) {
     console.warn('loadModulos falló, usando demo:', e);
