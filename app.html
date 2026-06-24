@@ -15136,7 +15136,12 @@ async function appReloadOpsFromSP() {
     var opsRes = await appFlowGet('FT_Operaciones', 5000);
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
     var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
-    var rawOpsR = (opsRes.value||[]).map(function(i){ var f=i.fields||i; return f; });
+    var rawOpsR = (opsRes.value||[]).map(function(i){
+      var f = i.fields || i;
+      // Preserve the item's SP ID from the outer wrapper
+      if (i.id && !f.ID && !f._itemId) f._itemId = i.id;
+      return f;
+    });
 
     var seenR = {};
     rawOpsR.forEach(function(o){

@@ -8574,11 +8574,12 @@ setInterval(function(){
   if(hasRun){renderApp();if(C.currentPage==="seguimiento")renderSeg();}
 },30000);
 
-// Issue 5 fix: Carga por Estacion timers update every 10s
+// Issue 5 fix: Carga por Estacion timers update every 10s on both seguimiento and historial pages
 setInterval(function(){
-  if(C.currentPage !== "seguimiento") return;
   var hasRun = Object.values(DB.timers).some(function(t){return t&&t.running;});
-  if(hasRun) renderSeg();
+  if(!hasRun) return;
+  if(C.currentPage === 'seguimiento') renderSeg();
+  else if(C.currentPage === 'historial') renderSeg(); // renderSeg also updates hist-est
 }, 10000);
 
 // ════════════════════════════════════════════════════════════
