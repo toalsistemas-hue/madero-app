@@ -2492,9 +2492,18 @@ async function graphPatch(endpoint, body, retry) {
   return true;
 }
 
-// ═══════════════════════════════════════════════════════
-// ENTRAR A LA APP
-// ═══════════════════════════════════════════════════════
+async function graphDelete(endpoint) {
+  const token = await getToken();
+  const url = `https://graph.microsoft.com/v1.0/${endpoint}`;
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok && res.status !== 204) throw new Error(`Graph DELETE ${res.status}`);
+  return true;
+}
+
+
 // ══════════════════════════════════════════════════════════════
 // SESSION WATCH — verifica usuario activo + versión cada 5 min
 // ══════════════════════════════════════════════════════════════
@@ -5362,7 +5371,32 @@ async function ftLoadDataFromSP() {
       if(nP>eP||(nP===eP&&o._numId>ex._numId)) _seen[k]=o;
     });
     const allOps=Object.values(_seen);
-    if(_rawOps.length!==allOps.length) console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
+    if(_rawOps.length!==allOps.length) {
+      console.log('Portal: ops deduplicadas',_rawOps.length,'→',allOps.length);
+      // Cleanup duplicates from SP — coordinator has full Graph permissions
+      var _dupIds = [];
+      _rawOps.forEach(function(o){
+        var _opIdKey = o.Op_ID || o.op_id || ('sp_'+(o._itemId||''));
+        var k=(o.OF_SAP||'')+'__'+_opIdKey;
+        var kept = _seen[k];
+        if(kept && String(o._itemId) !== String(kept._itemId)) {
+          _dupIds.push(o._itemId); // this one was not kept
+        }
+      });
+      if(_dupIds.length) {
+        console.log('Portal: limpiando', _dupIds.length, 'duplicados en FT_Operaciones...');
+        _dupIds.forEach(function(itemId){
+          // FT_Operaciones is in LISTAS_PROTEGIDAS — use graphPatch workaround:
+          // Actually use Graph DELETE directly (coordinator token has permission)
+          var _sid = FT_SITE_ID;
+          if(_sid) {
+            graphDelete('sites/'+_sid+'/lists/FT_Operaciones/items/'+itemId)
+              .then(function(){ console.log('Portal: duplicado eliminado:', itemId); })
+              .catch(function(e){ console.warn('Portal: no se pudo eliminar duplicado:', itemId, e.message); });
+          }
+        });
+      }
+    }
     if(allOps.length > 0) {
       var _ofCnt = {};
       allOps.forEach(function(o){ var s=o.OF_SAP||'?'; _ofCnt[s]=(_ofCnt[s]||0)+1; });

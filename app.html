@@ -7970,23 +7970,31 @@ async function _appLoadDataFromSP_impl() {
     });
     DB.catalog.sort();
     console.log('App catálogo cargado:', DB.catalog.length, 'operaciones');
-    // Limpiar duplicados en SP (eliminar items con ID menor que tienen mismo OF_SAP+Op_ID)
+    // Deduplicar: cuando hay 2 registros para mismo OF_SAP+Op_ID,
+    // mantener el que tiene datos reales (Tecnico asignado) — si ambos o ninguno tiene Tecnico, mantener el de mayor ID
     var dupesToDelete = [];
     var checkMap = {};
     rawOps.forEach(function(o){
       var k=(o.OF_SAP||'')+'__'+(o.Op_ID||'');
       if(!k.includes('__')) return;
       if(!checkMap[k]){ checkMap[k]=o; return; }
-      // Hay duplicado — marcar el de ID menor para borrar
-      var older = parseInt(checkMap[k].ID||0) < parseInt(o.ID||0) ? checkMap[k] : o;
-      if(older.ID) dupesToDelete.push(older.ID);
-      checkMap[k] = parseInt(checkMap[k].ID||0) > parseInt(o.ID||0) ? checkMap[k] : o;
+      var existing = checkMap[k];
+      // Score: prefer record with Tecnico assigned (real data > empty)
+      var scoreA = (existing.Tecnico||'').trim() ? 2 : 0;
+      var scoreB = (o.Tecnico||'').trim() ? 2 : 0;
+      // Tiebreak by ID (higher = newer)
+      scoreA += parseInt(existing.ID||0) > parseInt(o.ID||0) ? 1 : 0;
+      scoreB += parseInt(o.ID||0) > parseInt(existing.ID||0) ? 1 : 0;
+      var toDelete = scoreA >= scoreB ? o : existing;
+      var toKeep   = scoreA >= scoreB ? existing : o;
+      if(toDelete.ID) dupesToDelete.push(String(toDelete.ID));
+      checkMap[k] = toKeep;
     });
-    if(dupesToDelete.length && appSiteId){
-      console.log('Limpiando', dupesToDelete.length, 'duplicados en FT_Operaciones...');
+    if(dupesToDelete.length){
+      console.log('Limpiando', dupesToDelete.length, 'duplicados en FT_Operaciones via Flow...');
       dupesToDelete.forEach(function(spId){
-        appGraphDelete('sites/'+appSiteId+'/lists/FT_Operaciones/items/'+spId)
-          .then(function(){ console.log('Duplicado eliminado:', spId); })
+        appFlowEscribir('FT_Operaciones', 'eliminar', parseInt(spId), {})
+          .then(function(){ console.log('Duplicado eliminado via Flow:', spId); })
           .catch(function(e){ console.warn('No se pudo eliminar duplicado:', spId, e.message); });
       });
     }
