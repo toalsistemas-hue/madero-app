@@ -2481,6 +2481,13 @@ async function graphPatch(endpoint, body, retry) {
     return graphPatch(endpoint, body, true);
   }
 
+  // Si 409 Conflict (etag/lock conflict — item recently written) — esperar 1s y reintentar
+  if (res.status === 409 && !retry) {
+    console.warn('PATCH conflict (409), reintentando en 1s...');
+    await new Promise(function(r){ setTimeout(r, 1000); });
+    return graphPatch(endpoint, body, true);
+  }
+
   if (!res.ok && res.status !== 204) throw new Error(`Graph PATCH ${res.status}`);
   return true;
 }
@@ -9100,8 +9107,10 @@ function saveOFOps() {
         console.log('saveOFOps: guardando', aofToSave.ops.length, 'ops en SP para OF', sap);
         for (var i = 0; i < aofToSave.ops.length; i++) {
           await ftSaveOpToSP(sap, aofToSave.ops[i].id);
+          if (i < aofToSave.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
         }
-        await ftSaveQueueToSP(sap);
+        // Note: ftSaveQueueToSP NOT called here — FT_Cola_Estacion stores queue order only,
+        // not tecnico/ayudante/qty. Those fields are in FT_Operaciones (updated above).
         console.log('✅ saveOFOps: ops guardadas en SP');
       } catch(e) {
         console.error('saveOFOps SP error:', e);
