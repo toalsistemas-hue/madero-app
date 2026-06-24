@@ -15085,20 +15085,8 @@ async function appReloadOpsFromSP() {
     console.log('Poll: ops recargadas OK');
     // Load FT_Cola_Estacion to get authoritative queue positions
     try {
-      // Read FT_Cola_Estacion via Graph directly (Flow throttles and returns partial data)
-      var _siteIdCola = await appGetSiteId();
-      var colaEstRes;
-      try {
-        var _colaG = await appGraphGet('sites/'+_siteIdCola+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500&$select=id,fields');
-        colaEstRes = { value: (_colaG.value||[]).map(function(item){
-          var f = item.fields||{};
-          return { Op_ID: f.Op_ID||'', Posicion: parseInt(f.Posicion||0)||0, ID: item.id,
-                   OF_SAP: f.OF_SAP||'', Estacion: f.Title||f.Estacion||'' };
-        })};
-      } catch(colaErr) {
-        console.warn('appReloadOpsFromSP: FT_Cola Graph error, falling back to Flow:', colaErr.message);
-        colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
-      }
+      // Read FT_Cola_Estacion via Flow (app token doesn't have direct SP Graph permissions)
+      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
       // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
       (colaEstRes.value||[]).forEach(function(item){
