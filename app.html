@@ -7431,6 +7431,18 @@ var APP_FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.en
 
 async function appFlowGet(lista, top) {
   top = top || 500;
+  // FT_Cola_Estacion: use Graph API directly to avoid Flow throttling
+  if (lista === 'FT_Cola_Estacion') {
+    var _siteId = await appGetSiteId();
+    var _colaRes = await appGraphGet('sites/'+_siteId+'/lists/FT_Cola_Estacion/items?$expand=fields&$top='+top);
+    var _colaItems = (_colaRes && _colaRes.value ? _colaRes.value : []).map(function(item){
+      var f = item.fields || {};
+      return { ID: item.id, id: item.id, ItemInternalId: item.id,
+        OF_SAP: f.OF_SAP||'', Op_ID: f.Op_ID||'', Estacion: f.Title||f.Estacion||'',
+        Posicion: f.Posicion||0, Tipo_Cola: f.Tipo_Cola||'normal', Activo: f.Activo||false };
+    });
+    return { value: _colaItems };
+  }
   const ctrl = new AbortController();
   const tid = setTimeout(function(){ ctrl.abort(); }, 20000);
   let res;
@@ -7471,6 +7483,17 @@ async function appFlowGet(lista, top) {
 }
 
 async function appFlowEscribir(lista, operacion, itemId, datos) {
+  // FT_Cola_Estacion: use Graph API directly to avoid Flow throttling
+  if (lista === 'FT_Cola_Estacion') {
+    var _siteId = await appGetSiteId();
+    if (operacion === 'crear') {
+      var res = await appGraphPost('sites/'+_siteId+'/lists/FT_Cola_Estacion/items', { fields: datos });
+      return res || { resultado: 'ok' };
+    } else if (operacion === 'actualizar' && itemId) {
+      var res2 = await appGraphPatch('sites/'+_siteId+'/lists/FT_Cola_Estacion/items/'+itemId+'/fields', datos);
+      return res2 || { resultado: 'ok' };
+    }
+  }
   var payload = { lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos };
   console.log('[FlowEscribir] '+lista+' op='+operacion+' itemId='+itemId+' datos_keys='+Object.keys(datos||{}).join(','));
   var res = await fetch(APP_FLOW_URL_ESCRIBIR, {
@@ -7480,9 +7503,9 @@ async function appFlowEscribir(lista, operacion, itemId, datos) {
   });
   console.log('[FlowEscribir] respuesta HTTP: '+res.status);
   if (!res.ok) throw new Error('AppFlow ESCRIBIR ' + lista + ' ' + res.status);
-  var result = await res.json();
-  console.log('[FlowEscribir] resultado:', JSON.stringify(result).slice(0,200));
-  return result;
+  var responseText = await res.text();
+  if (!responseText || responseText.trim() === '') return { resultado: 'ok' };
+  try { return JSON.parse(responseText); } catch(e) { return { resultado: 'ok' }; }
 }
 
 var _appLoadDataInProgress = false;  // re-entrant guard

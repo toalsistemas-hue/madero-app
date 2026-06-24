@@ -5103,10 +5103,11 @@ const FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.envi
 const LISTAS_PROTEGIDAS = [
   'Modulos','SubModulos','Pantallas','Configuracion',
   'PedidosEspeciales','CotizadorProyectos','CotizadorDatos',
-  'FT_Operaciones','FT_Cola_Estacion','FT_Timers','FT_Status_Estacion',
+  'FT_Operaciones','FT_Timers','FT_Status_Estacion',
   'FT_CalTiempos','FT_Plantillas_Operaciones','FT_Articulos',
   'FT_Catalogo_Operaciones','FT_OrdenesFabricacion',
   'FT_Estaciones','FT_Pedidos'
+  // FT_Cola_Estacion removed — now uses Graph API directly (no Flow throttling)
   // FT_Tecnicos removed — its flow returns 502; using graphPatch directly
 ];
 
@@ -8570,7 +8571,9 @@ function confirmProgMain() {
         // NO DELETE calls — they cause 502s and exhaust the Flow. Instead we UPSERT.
         var _existingColaRaw = null;
         try {
-          _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
+          // Use Graph directly for FT_Cola_Estacion (no Flow throttling)
+          var _colaGraphRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
+          _existingColaRaw = _colaGraphRes ? {value: (_colaGraphRes.value||[]).map(function(i){ return {id:String(i.id), fields: i.fields||{}}; })} : null;
         } catch(cleanErr){ console.warn('Error leyendo cola existente:', cleanErr.message); }
         // Build map Op_ID -> record, detect and delete duplicates
         var _existingColaMap = {};
@@ -8683,7 +8686,8 @@ function confirmProgMain() {
         showLoadingModal('Guardando programación', 'Verificando registros en SharePoint...\nCasi listo.');
         await new Promise(function(r){ setTimeout(r, 1500); });
         try {
-          var _verifyRes = await flowGet('FT_Cola_Estacion', '', 3000);
+          var _colaVfy = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
+          var _verifyRes = _colaVfy ? {value: (_colaVfy.value||[]).map(function(i){ return {id:String(i.id), fields: i.fields||{}}; })} : {value:[]};
           var _verifyMap = {};
           (_verifyRes.value||[]).forEach(function(item){ var f=item.fields||{}; if(f.Op_ID) _verifyMap[f.Op_ID]=true; });
           var _stillMissing = [];
