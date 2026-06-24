@@ -5507,27 +5507,82 @@ async function ftLoadDataFromSP() {
     });
     window.STATIONS.forEach(s => { if (!window.DB_STATION_STATUS[s]) window.DB_STATION_STATUS[s]={status:'activa',nota:'',plan:[]}; });
 
+    // Helper: parse "HH:MM a.m."/"HH:MM p.m." → milliseconds since midnight
+    function _parseTimeToMs(timeStr) {
+      if (!timeStr) return 0;
+      var m = timeStr.match(/(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)?/i);
+      if (!m) return 0;
+      var h = parseInt(m[1]), min = parseInt(m[2]);
+      var isPM = m[3] && m[3].toLowerCase().replace('.','').indexOf('pm') >= 0;
+      if (isPM && h < 12) h += 12;
+      if (!isPM && h === 12) h = 0;
+      return (h * 3600 + min * 60) * 1000;
+    }
     // Restore running timers from SP
     DB.timers = {};
     const now = Date.now();
-    (timersRes.value||[]).filter(i=>i.fields&&(i.fields.Running===true||i.fields.Running===1)).forEach(i => {
-      const f = i.fields;
-      const key = f.Timer_Key || f.Title || '';
-      if (key) DB.timers[key] = {
-        start: parseInt(f.Start_MS||now),
+    // Build a map of all SP timer records first
+    var _spTimerMap = {};
+    (timersRes.value||[]).forEach(function(i){
+      var f = i.fields || {};
+      var key = f.Timer_Key || f.Title || '';
+      if (key) _spTimerMap[key] = { f: f, id: i.id };
+    });
+    // Load from SP
+    Object.keys(_spTimerMap).forEach(function(key){
+      var t = _spTimerMap[key];
+      var f = t.f;
+      DB.timers[key] = {
+        start:   parseInt(f.Start_MS||now),
         elapsed: parseInt(f.Elapsed_MS||0),
-        running: f.Running === true,
-        _spId: i.id,
+        running: f.Running === true || f.Running === 1,
+        _spId:   t.id,
       };
     });
-    // También cargar elapsed de timers pausados (para reanudación)
-    (timersRes.value||[]).filter(i=>i.fields&&i.fields.Running!==true&&i.fields.Running!==1&&parseInt(i.fields.Elapsed_MS||0)>0).forEach(i => {
-      const f = i.fields;
-      const key = f.Timer_Key || f.Title || '';
-      if (key && !DB.timers[key]) {
-        DB.timers[key] = { start: now, elapsed: parseInt(f.Elapsed_MS||0), running: false, _spId: i.id };
-      }
-    });
+    // Reconstruct missing/wrong timers from op.status + op.inicio
+    // This handles cases where appSaveTimerToSP failed silently or SP has Running=False
+    // for an op that is actually running/paused
+    if (typeof DB.activeOFs !== 'undefined') {
+      DB.activeOFs.forEach(function(aof){
+        aof.ops.forEach(function(op){
+          var key = aof.of_sap + '_' + op.id;
+          var spTimer = DB.timers[key];
+          if (op.status === 'running') {
+            if (!spTimer || !spTimer.running) {
+              // SP has no timer or wrong Running=False — reconstruct from op.inicio
+              var elapsed = spTimer ? (spTimer.elapsed || 0) : (op.mins ? op.mins * 60000 : 0);
+              // If we have op.inicio, estimate elapsed since then
+              if (op.inicio && !elapsed) {
+                // Parse "HH:MM a.m./p.m." format
+                var initMs = _parseTimeToMs(op.inicio);
+                if (initMs > 0) {
+                  var nowMs = _parseTimeToMs(nowT());
+                  elapsed = Math.max(0, nowMs - initMs);
+                }
+              }
+              DB.timers[key] = {
+                start: now - elapsed,
+                elapsed: 0,
+                running: true,
+                _spId: spTimer ? spTimer._spId : null,
+                _reconstructed: true
+              };
+              console.log('[Timer] Reconstruido desde op.inicio:', key, 'elapsed:', Math.round(elapsed/60000), 'min');
+            }
+          } else if (op.status === 'paused' || op.status === 'validating') {
+            if (!spTimer) {
+              // No SP timer for a paused op — use op.mins as fallback
+              DB.timers[key] = {
+                start: now,
+                elapsed: op.mins ? op.mins * 60000 : 0,
+                running: false,
+                _reconstructed: true
+              };
+            }
+          }
+        });
+      });
+    }
 
     // Rebuild DB.articles: primero desde OFs, luego enriquecer con FT_Articulos (lista maestra)
     DB.articles = {};
@@ -5920,6 +5975,8 @@ async function ftLoadDataFromSP() {
                   var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0)
                     : (op.mins ? op.mins*60000 : 0);
                   DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
+                  // Save running=true to SP so coordinator reload shows correct timer
+                  if (typeof ftSaveTimerToSP === 'function') ftSaveTimerToSP(key).catch(function(){});
                 }
               } else if(op.status==='validating'||op.status==='paused'){
                 var key = aof.of_sap+'_'+op.id;

@@ -8124,25 +8124,49 @@ async function appSaveTimerToSP(key) {
     if (t.running && t.start) {
       elapsedReal = (t.elapsed || 0) + (Date.now() - t.start);
     }
-    const fields={Title:key, Op_ID:key.split('_').slice(1).join('_'),
-      Start_MS:t.start, Elapsed_MS:elapsedReal, Running:t.running};
+    // Extract OF_SAP from key (format: "14353_op_14353_2")
+    var ofSap = key.split('_')[0] || '';
+    var opId  = key.split('_').slice(1).join('_');
+    const fields={
+      Title:     key,
+      Timer_Key: key,
+      OF_SAP:    ofSap,
+      Op_ID:     opId,
+      Start_MS:  t.start || 0,
+      Elapsed_MS:elapsedReal,
+      Running:   t.running
+    };
     if(t._spId){
       await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
     } else {
-      // Buscar existente via Flow
+      // Search for existing record first to avoid duplicates
       try {
         var ex = await appFlowGet('FT_Timers', 2000);
-        var found = (ex.value||[]).find(function(i){ return i.fields.Title === key; });
+        var found = (ex.value||[]).find(function(i){
+          return (i.Timer_Key||i.Title||i.fields&&(i.fields.Timer_Key||i.fields.Title)) === key;
+        });
         if (found) {
-          t._spId = found.id;
+          t._spId = found.id || found.ID;
           await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
           return;
         }
       } catch(e2) {}
-      var res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
-      if (res && res.id) t._spId = res.id;
+      // Create new record — retry once on failure
+      var res = null;
+      for (var _retry = 0; _retry < 2 && !res; _retry++) {
+        try {
+          if (_retry > 0) await new Promise(function(r){setTimeout(r, 1000);});
+          res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
+        } catch(e3) { console.warn('[Timer] Create attempt', _retry+1, 'failed:', e3.message); }
+      }
+      if (res && (res.id || res.resultado === 'ok')) {
+        if (res.id) t._spId = res.id;
+        console.log('[Timer] Guardado en SP:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
+      } else {
+        console.warn('[Timer] No se pudo guardar en SP después de 2 intentos:', key);
+      }
     }
-  } catch(e) { appErrNotify('Guardar temporizador', e, 'FT_Timers'); }
+  } catch(e) { console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e); }
 }
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
