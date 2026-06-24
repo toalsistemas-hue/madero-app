@@ -8507,8 +8507,7 @@ function confirmProgMain() {
     detail:detailMsg,
     time:nowT(), read:false
   });
-  fireSync('coord', 'prog_updated', {count: hoy});
-  ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
+  // NOTE: fireSync and ntfy sent AFTER SP saves complete (see end of setTimeout block)
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   // Show modal before ALL SP work — keep it open until cola saves complete
   showLoadingModal('Guardando programación', 'Guardando estado en SharePoint...\nPor favor espera.');
@@ -8746,6 +8745,9 @@ function confirmProgMain() {
         }
         hideLoadingModal();
         window._confirmProgRunning = false; // Re-enable coord poll
+        // NOW notify supervisor — all SP records are confirmed saved
+        fireSync('coord', 'prog_updated', {count: hoy});
+        ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
         console.log('[Programación] Orden final:', _newSapsSorted.map(function(s){ return s+'('+(_colaSnapForSP[s]||'?')+')'; }).join(' → '));
         var toast = document.getElementById('toast-coord');
         if (toast) {
@@ -9105,6 +9107,20 @@ function saveOFOps() {
         var aofToSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
         if (!aofToSave || !aofToSave.ops.length) return;
         console.log('saveOFOps: guardando', aofToSave.ops.length, 'ops en SP para OF', sap);
+        // Ensure _spId is set for all ops before saving — prevents duplicate creates
+        var _missingSpId = aofToSave.ops.filter(function(op){ return !op._spId; });
+        if (_missingSpId.length > 0) {
+          try {
+            var _spOpsRes = await flowGet('FT_Operaciones', '', 3000);
+            (_spOpsRes.value||[]).forEach(function(item){
+              var f = item.fields || {};
+              if (String(f.OF_SAP||'') === sap) {
+                var op = aofToSave.ops.find(function(o){ return o.id === (f.Op_ID||''); });
+                if (op && !op._spId) op._spId = item.id;
+              }
+            });
+          } catch(e){ console.warn('saveOFOps: no se pudo cargar _spId desde SP:', e.message); }
+        }
         for (var i = 0; i < aofToSave.ops.length; i++) {
           await ftSaveOpToSP(sap, aofToSave.ops[i].id);
           if (i < aofToSave.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
