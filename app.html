@@ -4732,14 +4732,55 @@ function saveOFOps() {
   (async function(){
     if (!state.isDemoMode && state.token) {
       var aofSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-      if (aofSave) {
-        for (var i=0; i<aofSave.ops.length; i++) {
-          try {
-            await ftSaveOpToSP(sap, aofSave.ops[i].id);
-            if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
-          } catch(e){ console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message); }
+      if (!aofSave) return;
+      // Pre-load _spId from SP to prevent duplicate records on save
+      var _missingSpId = aofSave.ops.filter(function(op){ return !op._spId; });
+      if (_missingSpId.length > 0) {
+        try {
+          var _spOps = await appFlowGet('FT_Operaciones', 500);
+          (_spOps.value||[]).forEach(function(item){
+            if (String(item.OF_SAP||item.OF_SAP||'') === sap || String(item.fields&&item.fields.OF_SAP||'') === sap) {
+              var opId = item.Op_ID || (item.fields&&item.fields.Op_ID) || '';
+              var spId = item.ID || item.id || (item.fields&&item.fields.ID) || '';
+              var op = aofSave.ops.find(function(o){ return o.id === opId; });
+              if (op && !op._spId && spId) op._spId = String(spId);
+            }
+          });
+        } catch(e){ console.warn('saveOFOps: no se pudo pre-cargar _spId:', e.message); }
+      }
+      var _errors = [];
+      for (var i=0; i<aofSave.ops.length; i++) {
+        try {
+          await ftSaveOpToSP(sap, aofSave.ops[i].id);
+          if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
+        } catch(e){
+          console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message);
+          _errors.push(aofSave.ops[i].nombre || aofSave.ops[i].id);
         }
+      }
+      if (_errors.length > 0) {
+        // Show visible error notification in app
+        appErrLog('saveOFOps', new Error('No se guardó en SP: ' + _errors.join(', ')), 'FT_Operaciones');
+        var errBanner = document.getElementById('app-err-sp-banner');
+        if (errBanner) { errBanner.style.display = 'flex'; }
+        // Show inline alert
+        if (typeof appShowNotif === 'function') {
+          appShowNotif('❌ Error al guardar técnico en SharePoint. Los cambios pueden perderse al recargar.', 'error');
+        } else {
+          var _n = document.createElement('div');
+          _n.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:10px 18px;border-radius:8px;font-size:.82rem;z-index:9999;max-width:90vw;text-align:center;';
+          _n.textContent = '❌ Error al guardar en SharePoint — recarga para verificar';
+          document.body.appendChild(_n);
+          setTimeout(function(){ _n.remove(); }, 6000);
+        }
+      } else {
         console.log('✅ Técnicos/ayudantes guardados en SP para OF', sap);
+        // Show brief success confirmation
+        var _ok = document.createElement('div');
+        _ok.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:8px 16px;border-radius:8px;font-size:.8rem;z-index:9999;';
+        _ok.textContent = '✅ Técnico guardado en SharePoint';
+        document.body.appendChild(_ok);
+        setTimeout(function(){ _ok.remove(); }, 3000);
       }
     }
   })();
@@ -12567,14 +12608,55 @@ function saveOFOps() {
   (async function(){
     if (!state.isDemoMode && state.token) {
       var aofSave = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-      if (aofSave) {
-        for (var i=0; i<aofSave.ops.length; i++) {
-          try {
-            await ftSaveOpToSP(sap, aofSave.ops[i].id);
-            if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
-          } catch(e){ console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message); }
+      if (!aofSave) return;
+      // Pre-load _spId from SP to prevent duplicate records on save
+      var _missingSpId = aofSave.ops.filter(function(op){ return !op._spId; });
+      if (_missingSpId.length > 0) {
+        try {
+          var _spOps = await appFlowGet('FT_Operaciones', 500);
+          (_spOps.value||[]).forEach(function(item){
+            if (String(item.OF_SAP||item.OF_SAP||'') === sap || String(item.fields&&item.fields.OF_SAP||'') === sap) {
+              var opId = item.Op_ID || (item.fields&&item.fields.Op_ID) || '';
+              var spId = item.ID || item.id || (item.fields&&item.fields.ID) || '';
+              var op = aofSave.ops.find(function(o){ return o.id === opId; });
+              if (op && !op._spId && spId) op._spId = String(spId);
+            }
+          });
+        } catch(e){ console.warn('saveOFOps: no se pudo pre-cargar _spId:', e.message); }
+      }
+      var _errors = [];
+      for (var i=0; i<aofSave.ops.length; i++) {
+        try {
+          await ftSaveOpToSP(sap, aofSave.ops[i].id);
+          if (i < aofSave.ops.length-1) await new Promise(function(r){setTimeout(r,300);});
+        } catch(e){
+          console.warn('saveOFOps SP error:', aofSave.ops[i].id, e.message);
+          _errors.push(aofSave.ops[i].nombre || aofSave.ops[i].id);
         }
+      }
+      if (_errors.length > 0) {
+        // Show visible error notification in app
+        appErrLog('saveOFOps', new Error('No se guardó en SP: ' + _errors.join(', ')), 'FT_Operaciones');
+        var errBanner = document.getElementById('app-err-sp-banner');
+        if (errBanner) { errBanner.style.display = 'flex'; }
+        // Show inline alert
+        if (typeof appShowNotif === 'function') {
+          appShowNotif('❌ Error al guardar técnico en SharePoint. Los cambios pueden perderse al recargar.', 'error');
+        } else {
+          var _n = document.createElement('div');
+          _n.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:10px 18px;border-radius:8px;font-size:.82rem;z-index:9999;max-width:90vw;text-align:center;';
+          _n.textContent = '❌ Error al guardar en SharePoint — recarga para verificar';
+          document.body.appendChild(_n);
+          setTimeout(function(){ _n.remove(); }, 6000);
+        }
+      } else {
         console.log('✅ Técnicos/ayudantes guardados en SP para OF', sap);
+        // Show brief success confirmation
+        var _ok = document.createElement('div');
+        _ok.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:8px 16px;border-radius:8px;font-size:.8rem;z-index:9999;';
+        _ok.textContent = '✅ Técnico guardado en SharePoint';
+        document.body.appendChild(_ok);
+        setTimeout(function(){ _ok.remove(); }, 3000);
       }
     }
   })();

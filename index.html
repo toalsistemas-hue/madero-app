@@ -9121,13 +9121,30 @@ function saveOFOps() {
             });
           } catch(e){ console.warn('saveOFOps: no se pudo cargar _spId desde SP:', e.message); }
         }
+        var _saveErrors = [];
         for (var i = 0; i < aofToSave.ops.length; i++) {
-          await ftSaveOpToSP(sap, aofToSave.ops[i].id);
+          try {
+            await ftSaveOpToSP(sap, aofToSave.ops[i].id);
+          } catch(opErr) {
+            console.warn('saveOFOps error:', aofToSave.ops[i].id, opErr.message);
+            _saveErrors.push(aofToSave.ops[i].nombre || aofToSave.ops[i].id);
+          }
           if (i < aofToSave.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
         }
         // Note: ftSaveQueueToSP NOT called here — FT_Cola_Estacion stores queue order only,
         // not tecnico/ayudante/qty. Those fields are in FT_Operaciones (updated above).
-        console.log('✅ saveOFOps: ops guardadas en SP');
+        if (_saveErrors.length > 0) {
+          var toastErr = document.getElementById('toast-coord');
+          if (toastErr) {
+            toastErr.textContent = '❌ Error al guardar técnico en SP: ' + _saveErrors.join(', ') + '. Los cambios pueden perderse al recargar.';
+            toastErr.style.background = '#dc2626';
+            toastErr.style.opacity='1'; toastErr.style.transform='translateY(0)';
+            setTimeout(function(){ toastErr.style.opacity='0'; toastErr.style.transform='translateY(10px)'; toastErr.style.background=''; }, 8000);
+          }
+          console.error('❌ saveOFOps: ops no guardadas:', _saveErrors);
+        } else {
+          console.log('✅ saveOFOps: ops guardadas en SP');
+        }
       } catch(e) {
         console.error('saveOFOps SP error:', e);
       }
