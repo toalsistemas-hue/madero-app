@@ -10618,6 +10618,1023 @@ appConfirmValCal = function(){
 };
 
 // -- 8 & 10: renderSeg con observaciones y comentarios ---------
+
+function renderSegEstaciones(){
+  STATIONS.forEach(function(st){
+      var q=sqGetQueue(st);
+      window.DB_STATION_QUEUE[st]=q.filter(function(item){
+        var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
+        if(!aof) return false;
+        var op=aof.ops.find(function(o){return o.id===item.op_id;});
+        return op && op.status!=='done';
+      });
+    });
+  }
+  
+  // Add OF ops to queue when programmed
+  function sqAddOF(of_sap){
+    sqPurge();
+    var aof=DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
+    if(!aof){
+      // Try to find ops from DB.ofs programmed record
+      var ofRec=DB.ofs.find(function(o){return o.of_sap===of_sap;});
+      if(!ofRec) return;
+      aof=DB.activeOFs.find(function(a){return a.of_sap===of_sap;}); // retry
+      if(!aof) return;
+    }
+    aof.ops.forEach(function(op){
+      if(!op.estacion) return;
+      var q=sqGetQueue(op.estacion);
+      var exists=q.find(function(x){return x.of_sap===of_sap&&x.op_id===op.id;});
+      if(!exists) q.push({of_sap:of_sap,op_id:op.id,tipo:'normal'});
+    });
+    sqSyncColaNumbers();
+  }
+  
+  // Sync op.cola numbers from queue position
+  function sqSyncColaNumbers(){
+    STATIONS.forEach(function(st){
+      var q=sqGetQueue(st);
+      var colaIdx=1;
+      q.forEach(function(item){
+        var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
+        if(!aof) return;
+        var op=aof.ops.find(function(o){return o.id===item.op_id;});
+        if(!op) return;
+        if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+          op.cola=null;
+        } else if(op.status==='pending'||op.status==='retrabajo'){
+          op.cola=colaIdx++;
+        }
+      });
+    });
+  }
+  
+  // Prioritize full OF (move all its ops to Top 5 prioritaria)
+  function sqPrioritizeOF(of_sap){
+    sqPurge();
+    STATIONS.forEach(function(st){
+      var q=sqGetQueue(st);
+      var ofItems=q.filter(function(x){return x.of_sap===of_sap;});
+      if(!ofItems.length) return;
+      var rest=q.filter(function(x){return x.of_sap!==of_sap;});
+      ofItems.forEach(function(x){x.tipo='prioritaria';});
+      // Insert prioritarias at front, after other existing prioritarias
+      var otherPrio=rest.filter(function(x){return x.tipo==='prioritaria';});
+      var normals=rest.filter(function(x){return x.tipo!=='prioritaria';});
+      window.DB_STATION_QUEUE[st]=otherPrio.concat(ofItems).concat(normals);
+    });
+    sqSyncColaNumbers();
+  }
+  
+  // Move item up/down in queue for a station
+  function sqMove(estacion, idx, dir){
+    var q=sqGetQueue(estacion);
+    var newIdx=idx+dir;
+    if(newIdx<0||newIdx>=q.length) return;
+    // Don't move running ops
+    var item=q[idx];
+    var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
+    var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
+    if(op&&op.status==='running') return; // check conflict handled by caller
+    var tmp=q[idx]; q[idx]=q[newIdx]; q[newIdx]=tmp;
+    sqSyncColaNumbers();
+  }
+  
+  // Check if moving would displace a running op
+  function sqCheckConflict(estacion, targetIdx){
+    var q=sqGetQueue(estacion);
+    var displaced=q[targetIdx];
+    if(!displaced) return null;
+    var aof=DB.activeOFs.find(function(a){return a.of_sap===displaced.of_sap;});
+    var op=aof?aof.ops.find(function(o){return o.id===displaced.op_id;}):null;
+    return (op&&op.status==='running')?op:null;
+  }
+  var TECHNICIANS=["ELADIO","ABEL/EFRAIN","EFRAIN","PABLO","EMANUEL GARCIA","JESUS AMADOR","MARIO A","CARLOS H","ROBERTO M","JUAN F"];
+  var OP_NAMES=["Corte láser de cuerpo","Corte láser de tapa","Maquinado de manchón","Torno convencional — desbaste","Careado en centro de maquinado","Chamflan en torno","Soldadura TIG","Soldadura MIG","Ensamble general","Grabado de número de serie","Rolado de lámina","Pintura epóxica","Lavado y limpieza","Ajuste y calibración","Inspección dimensional","Prueba hidrostática","Pulido de superficies","Barreno en centro de maquinado"];
+  function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):""}
+  function fmtM(m){var h=Math.floor(m/60),mn=m%60;return h>0?h+"h "+mn+"m":mn+"min";}
+  function nowT(){var n=new Date();return n.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});}
+  function getEl(key){
+    var t=DB.timers[key];
+    if(!t) return 0;
+    var accumulated = t.elapsed||0; // previously accumulated ms from pauses
+    var current = t.running ? (Date.now()-t.start) : 0;
+    return Math.floor((accumulated+current)/60000);
+  }
+  function groupByPedido(ofs){
+    var g={};
+    (ofs||[]).filter(Boolean).forEach(function(of){
+      var k=of.pedido||"SIN_PEDIDO";
+      if(!g[k])g[k]={pedido:of.pedido,cliente:of.cliente,ofv:of.ofv||"",prioridad:"normal",ofs:[]};
+      g[k].ofs.push(of);
+      if(of.prioridad==="alta")g[k].prioridad="alta";
+      else if(of.prioridad==="media"&&g[k].prioridad!=="alta")g[k].prioridad="media";
+    });
+    var arr=Object.values(g);
+    arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
+    return arr;
+  }
+  function pedidoIsComplete(pedido){
+    var ofs=DB.ofs.filter(function(o){return o.pedido===pedido;});
+    if(!ofs.length)return false;
+    return ofs.every(function(of){
+      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      if(!aof||!aof.ops.length)return false;
+      return aof.ops.every(function(op){return op.status==="done";});
+    });
+  }
+  
+  // ═══════════════════════════════════════════════════════
+  // COORDINADOR — Lógica del panel web
+  // ═══════════════════════════════════════════════════════
+  var C = { editingMode:false, filterStatus:"todos", filterText:"", editingTplArt:null, tplOpIdx:0 };
+  
+  // Recibir sincronización desde App
+  onSync("coord", function(event, data) {
+    // Re-render páginas activas (las notificaciones las maneja _basefireSync directamente)
+    if(C.currentPage==="seguimiento") renderSeg();
+    if(C.currentPage==="historial") renderHist();
+    if(event==="op_added"||event==="op_moved"||event==="ops_assigned") {
+      if(C.currentPage==="programacion") renderProg();
+    }
+    // NO llamar showCoordNotif aquí — _basefireSync ya llama addCoordNotif
+  });
+  C.currentPage = "programacion";
+  
+  function showCoordNotif(event, data){
+    var msg = {
+      op_started:"▶ Operación iniciada en la línea",
+      op_finished:"✅ Operación terminada",
+      op_paused:"⏸ Operación pausada",
+      op_valcal:"🔍 Solicitud de validación de Calidad",
+      op_added:"➕ Nueva operación agregada por Supervisor",
+      op_moved:"↕ Operaciones reordenadas",
+    }[event] || "📡 Actualización desde App";
+    var container = document.getElementById("coord-notifs");
+    if(!container) return;
+    var notif = document.createElement("div");
+    notif.className = "coord-notif";
+    notif.innerHTML = msg + (data?" — OF "+esc(data.of_sap):"");
+    container.prepend(notif);
+    if(container.children.length > 5) container.removeChild(container.lastChild);
+  }
+  
+  // --- NAVEGACIÓN ----------------------------------------
+  function renderCoordFlujos() {
+    var body = document.getElementById('coord-flujos-body');
+    if (!body) return;
+  
+    if (!DB.activeOFs || !DB.activeOFs.length) {
+      body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas hoy.</div>';
+      return;
+    }
+  
+    // Colour helpers matching app.html fnode styles
+    var statusColor = {
+      pending:     'rgba(255,255,255,.06)',
+      running:     'rgba(0,180,216,.18)',
+      paused:      'rgba(245,158,11,.18)',
+      validating:  'rgba(139,92,246,.18)',
+      done:        'rgba(34,197,94,.18)',
+      op_concluded:'rgba(34,197,94,.12)'
+    };
+    var statusBorder = {
+      pending:     'rgba(255,255,255,.1)',
+      running:     'var(--accent-l)',
+      paused:      'var(--yellow)',
+      validating:  '#a78bfa',
+      done:        'var(--green)',
+      op_concluded:'var(--green)'
+    };
+    var statusIcon = { pending:'', running:'▶', paused:'⏸', validating:'🔍', done:'✓', op_concluded:'✓' };
+  
+    var html = '';
+    DB.activeOFs.forEach(function(aof) {
+      if (!aof.ops || !aof.ops.length) return;
+      var ofRec = DB.ofs ? DB.ofs.find(function(o){ return o.of_sap === aof.of_sap; }) : null;
+  
+      html += '<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px;margin-bottom:10px;">';
+      // Header
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+      html += '<span style="font-family:\'DM Mono\',monospace;font-size:.72rem;color:var(--accent-l);font-weight:600;">OF ' + esc(aof.of_sap) + '</span>';
+      if (aof.articulo) html += '<span style="font-size:.65rem;color:var(--text-dim);">· ' + esc(aof.articulo) + '</span>';
+      html += '<span style="font-size:.72rem;color:var(--text);font-weight:600;">' + esc(aof.descripcion ? aof.descripcion.substring(0,50) : '') + '</span>';
+      if (ofRec && ofRec.pedido) html += '<span style="font-size:.62rem;color:var(--text-dim);margin-left:auto;">Pedido ' + esc(ofRec.pedido) + '</span>';
+      html += '</div>';
+  
+      // Flow nodes
+      html += '<div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:4px;">';
+  
+      // Group ops like renderAppFlujo
+      var grps = []; var i = 0;
+      while (i < aof.ops.length) {
+        if (aof.ops[i].tipo === 'simultanea') {
+          var sg = [aof.ops[i]];
+          while (i+1 < aof.ops.length && aof.ops[i+1].tipo === 'simultanea') { i++; sg.push(aof.ops[i]); }
+          grps.push({type:'sim', ops:sg});
+        } else {
+          grps.push({type:'seq', op:aof.ops[i]});
+        }
+        i++;
+      }
+  
+      grps.forEach(function(g, gi) {
+        // Connector arrow between nodes
+        if (gi > 0) {
+          var prevDone = grps[gi-1].type === 'seq' ? grps[gi-1].op.status === 'done' : false;
+          html += '<div style="display:flex;align-items:center;padding-top:20px;min-width:16px;">';
+          html += '<div style="width:14px;height:2px;background:' + (prevDone ? 'var(--green)' : 'rgba(255,255,255,.12)') + ';"></div>';
+          html += '</div>';
+        }
+  
+        if (g.type === 'seq') {
+          var op = g.op;
+          var key = aof.of_sap + '_' + op.id;
+          var elMins = op.status === 'running' ? (function(){
+            var t = DB.timers[key];
+            if (!t) return op.mins || 0;
+            return Math.floor(((t.elapsed||0) + (t.running ? Date.now()-t.start : 0)) / 60000);
+          })() : (op.mins || 0);
+          var bg  = statusColor[op.status]  || statusColor.pending;
+          var brd = statusBorder[op.status] || statusBorder.pending;
+          var ico = statusIcon[op.status]   || '';
+          var tecLabel = op.tecnico ? ('<div style="font-size:.52rem;color:var(--text-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">' + esc(op.tecnico) + '</div>') : '';
+  
+          html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
+          html += '<div style="background:' + bg + ';border:1px solid ' + brd + ';border-radius:7px;padding:6px 7px;cursor:default;">';
+          html += '<div style="font-size:.52rem;font-family:\'DM Mono\',monospace;color:var(--accent-l);">' + (gi+1) + (ico ? ' ' + ico : '') + '</div>';
+          html += '<div style="font-size:.6rem;font-weight:600;line-height:1.25;margin-top:1px;">' + esc(op.nombre.substring(0,22)) + '</div>';
+          html += '<div style="font-size:.52rem;color:var(--text-dim);margin-top:1px;">' + esc(op.estacion) + '</div>';
+          if (elMins > 0) html += '<div style="font-size:.52rem;color:var(--green);font-family:\'DM Mono\',monospace;margin-top:2px;">' + fmtM(elMins) + '</div>';
+          if (op.tipo === 'retorno') html += '<div style="font-size:.5rem;color:var(--yellow);background:rgba(212,160,23,.12);border-radius:3px;padding:1px 3px;margin-top:1px;">↩ ret</div>';
+          html += tecLabel;
+          html += '</div></div>';
+  
+        } else {
+          // Simultaneous group
+          html += '<div style="display:flex;flex-direction:column;min-width:96px;max-width:96px;">';
+          html += '<div style="font-size:.5rem;color:var(--yellow);text-align:center;margin-bottom:1px;">Sim</div>';
+          g.ops.forEach(function(op2, oi) {
+            if (oi > 0) html += '<div style="width:2px;height:6px;background:rgba(255,255,255,.08);margin:0 auto;"></div>';
+            var bg2  = statusColor[op2.status]  || statusColor.pending;
+            var brd2 = statusBorder[op2.status] || statusBorder.pending;
+            html += '<div style="background:' + bg2 + ';border:1px solid ' + brd2 + ';border-radius:6px;padding:5px 6px;">';
+            html += '<div style="font-size:.58rem;font-weight:600;line-height:1.2;">' + esc(op2.nombre.substring(0,20)) + '</div>';
+            html += '<div style="font-size:.5rem;color:var(--text-dim);">' + esc(op2.estacion) + '</div>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      });
+  
+      html += '</div>'; // flex row
+  
+      // Legend
+      html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:.58rem;color:var(--text-dim);">';
+      html += '<span>⬜ Pendiente</span>';
+      html += '<span style="color:var(--accent-l);">▶ Activa</span>';
+      html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
+      html += '<span style="color:#a78bfa;">🔍 Cal</span>';
+      html += '<span style="color:var(--green);">✓ OK</span>';
+      html += '</div>';
+  
+      html += '</div>'; // card
+    });
+  
+    body.innerHTML = html;
+  }
+  
+  // Auto-refresh flujos page when there are running ops
+  setInterval(function(){
+    if (C.currentPage === 'flujos') {
+      var hasRun = Object.values(DB.timers).some(function(t){ return t && t.running; });
+      if (hasRun) renderCoordFlujos();
+    }
+  }, 10000);
+  
+  function showCoordPage(id, el) {
+    C.currentPage = id;
+    document.querySelectorAll(".coord-page").forEach(function(p){p.classList.remove("active");});
+    document.querySelectorAll(".sb-item,.coord-nav-pill").forEach(function(b){b.classList.remove("active");});
+    document.getElementById("coord-page-"+id).classList.add("active");
+    if(el) el.classList.add("active");
+    if(id==="programacion") renderProg();
+    else if(id==="plantillas") renderTpls();
+    else if(id==="seguimiento") renderSeg();
+    else if(id==="historial") renderHist();
+    else if(id==="flujos") renderCoordFlujos();
+  }
+  function openCModal(id){document.getElementById(id).classList.add("show");}
+  function closeCModal(id){document.getElementById(id).classList.remove("show");}
+  
+  // --- PROGRAMACIÓN ---------------------------------------
+  function setProgTab(tab){
+    if(tab==='cancelados' && C.filterStatus==='cancelados') tab='todos';
+    C.filterStatus = tab;
+    // Actualizar estilos igual que Tiempo Real
+    ['todos','sin-prog','programados','terminados','cancelados'].forEach(function(t){
+      var b=document.getElementById('ftab-'+t);
+      if(!b) return;
+      if(t===tab){
+        b.className = 'btn btn-sm btn-primary';
+        if(t==='cancelados') b.style.cssText=''; // reset inline style cuando activo
+      } else {
+        b.className = 'btn btn-sm btn-ghost';
+        if(t==='cancelados') b.style.cssText='color:var(--red);border-color:rgba(239,68,68,.3);';
+      }
+    });
+    renderProg();
+  }
+  function renderProg(){
+    // Stub — lógica completa en segunda definición (JS usa la última)
+    return;
+    var fText = C.filterText.toLowerCase();
+    var fStatus = C.filterStatus;
+    var groups = groupByPedido(DB.ofs.filter(function(of){
+      if(fText && (of.pedido+of.cliente+of.of_sap+of.descripcion).toLowerCase().indexOf(fText)===-1) return false;
+      if(fStatus==="programados" && !of.programadoHoy) return false;
+      if(fStatus==="terminados") {
+        var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+        if(!aof||!aof.ops.every(function(op){return op.status==="done";})) return false;
+      }
+      return true;
+    }));
+  
+    var pC={alta:"chip prio-alta",media:"chip prio-media",normal:"chip prio-normal"};
+    var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
+    var h="";
+  
+    groups.forEach(function(g){
+      // Verificar si el pedido tiene alguna OF cancelada
+      var cancelado = g.ofs.every(function(o){return o.status==='Pedido Cancelado';});
+      var completed = pedidoIsComplete(g.pedido);
+      var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
+                   : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
+      h+="<div class='prog-card' style='"+grpStyle+"'>";
+      h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
+      h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
+      h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
+      h+="<div style='display:flex;align-items:center;gap:8px'>";
+      h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
+      if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
+      if(!cancelado) h+="<button onclick='cancelarPedido(\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 10px;font-size:.7rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar Pedido</button>";
+      h+="</div></div>";
+  
+      g.ofs.forEach(function(of){
+        var tpl = DB.templates[of.articulo];
+        var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+        var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
+        var total = aof?aof.ops.length:0;
+        var pct = total>0?Math.round(done/total*100):0;
+        var ofCancelada = of.status==='Pedido Cancelado'||of.status==='Cancelada';
+        h+="<div class='prog-of-row' style='"+(ofCancelada?"opacity:.55;":"")+"'>";
+        if(C.editingMode && !ofCancelada) {
+          // Checked state: pending value if exists, else DB value
+          var _pendingChecked = PENDING_PROG[of.of_sap] ? PENDING_PROG[of.of_sap].programadoHoy : of.programadoHoy;
+          // Orden de cola — solo visible si está marcada como nueva en esta sesión
+          var _esPendienteNueva = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
+          var _ordenActual = _esPendienteNueva ? (PENDING_COLA_ORDER[of.of_sap] || '') : '';
+          // Wrap checkbox + cola in a single flex container so it occupies the first grid column
+          h+="<div style='display:flex;flex-direction:column;align-items:center;gap:2px;'>"
+           +"<input type='checkbox' class='prog-chk' "+(_pendingChecked?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>"
+           +"<div id='cola-wrap-"+esc(of.of_sap)+"' style='display:"+(+_esPendienteNueva?"flex":"none")+";flex-direction:column;align-items:center;gap:1px;' title='Orden de cola'>"
+           +"<span style='font-size:.52rem;color:var(--dim);'>Cola</span>"
+           +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual||'')+
+             "' placeholder='#' oninput='PENDING_COLA_ORDER[\""+of.of_sap+"\"]=parseInt(this.value)||0'"
+           +" style='width:34px;background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.35);border-radius:5px;"
+           +"color:var(--accent-l);font-size:.7rem;text-align:center;padding:2px 2px;'>"
+           +"</div>"
+           +"</div>";
+        } else {
+          h+="<div style='width:18px;height:18px;border-radius:4px;background:"+(ofCancelada?"var(--red)":of.programadoHoy?"var(--accent-l)":"var(--hover)")+";display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0;'>"+(ofCancelada?"✗":of.programadoHoy?"✓":"")+"</div>";
+        }
+        h+="<div style='flex:1;min-width:0;'>";
+        h+="<div style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l)'>OF "+esc(of.of_sap)+(of.articulo?"<span style='color:var(--muted)'> · "+esc(of.articulo)+"</span>":"")+"</div>";
+        h+="<div style='font-size:.8rem;font-weight:500;'>"+esc(of.descripcion.substring(0,55))+"</div>";
+        // Fecha entrega y cantidad — editables en modo edición, visibles siempre
+        if(C.editingMode && !ofCancelada){
+          h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
+          h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
+          h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+          h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
+          h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
+          h+="</div>";
+        } else {
+          // Siempre mostrar — campos de entrega y cantidad
+          h+="<div style='display:flex;gap:10px;margin-top:4px;font-size:.72rem;'>";
+          h+=(of.fecha_entrega
+            ?(function(){var _p=of.fecha_entrega.split('-');var _f=_p.length===3?_p[2]+'/'+_p[1]+'/'+_p[0]:of.fecha_entrega;return "<span style='color:var(--dim);'>📅 <strong style='color:var(--text);'>"+esc(_f)+"</strong></span>";})()
+            :"<span style='color:var(--dim);opacity:.5;'>📅 Sin fecha de entrega</span>");
+          h+=(of.cantidad
+            ?"<span style='color:var(--dim);'>📦 <strong style='color:var(--text);'>"+of.cantidad+" pzas</strong></span>"
+            :"<span style='color:var(--dim);opacity:.5;'>📦 Sin cantidad</span>");
+          h+="</div>";
+        }
+        if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:140px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
+        h+="</div>";
+        h+="<span class='chip "+(ofCancelada?"c-cancel":of.statusSAP==="EN PROCESO"?"c-ep":"c-plan")+"'>"+esc(ofCancelada?"Cancelada":of.status||of.statusSAP||'')+"</span>";
+        h+="<span style='font-size:.72rem;color:var(--dim)'>"+(tpl?tpl.ops.length+" ops":"<span style='color:var(--red)'>Sin ops</span>")+"</span>";
+        if(!ofCancelada) h+="<button onclick='cancelarOrden(\""+esc(of.of_sap)+"\",\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:3px 8px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
+        h+="<button class='btn-sm-ghost' onclick='handleConfigClick(\""+of.of_sap+"\")'>⚙</button>";
+        h+="</div>";
+      });
+      h+="</div>";
+    });
+    if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+    document.getElementById("prog-list").innerHTML = h;
+    // KPIs — excluir cerrados y cancelados
+    var _ofsActivas = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
+    document.getElementById("fabp-kpi-total").textContent = _ofsActivas.length;
+    document.getElementById("fabp-kpi-alta").textContent = _ofsActivas.filter(function(o){return o.prioridad==="alta";}).length;
+    document.getElementById("fabp-kpi-media").textContent = _ofsActivas.filter(function(o){return o.prioridad==="media";}).length;
+    document.getElementById("fabp-kpi-hoy").textContent = _ofsActivas.filter(function(o){return o.programadoHoy;}).length;
+    var _nCan=DB.ofs.filter(function(o){return o.status==='Pedido Cancelado';}).length;
+    var _kc=document.getElementById("fabp-kpi-cancelados"); if(_kc) _kc.textContent=_nCan;
+    var _badge=document.getElementById('ftab-cancelados-badge');
+    if(_badge){_badge.textContent=_nCan; _badge.style.display=_nCan>0?'inline':'none';}
+  }
+  
+  function getProgFields(sap){
+    // Leer Fecha_Entrega y Cantidad del DOM en modo edición
+    var feEl=document.getElementById('fe-'+sap);
+    var cantEl=document.getElementById('cant-'+sap);
+    return {
+      fecha_entrega: feEl?feEl.value:'',
+      cantidad: cantEl?parseInt(cantEl.value)||0:0
+    };
+  }
+  function toggleProg(sap,val){
+    var of=DB.ofs.find(function(o){return o.of_sap===sap;});
+    if(!of)return;
+    of.programadoHoy=val;
+    if(val) {
+      // Agregar a activeOFs si no existe
+      var existingAof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+      if (!existingAof) {
+        var tpl=DB.templates[of.articulo];
+        var ops=tpl?tpl.ops.map(function(op,i){return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};}):[];
+        var padre = tpl&&tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||''} : null;
+        var subarts = tpl&&tpl.subarts ? tpl.subarts.slice() : [];
+        DB.activeOFs.push({of_sap:of.of_sap,pedido:of.pedido,cliente:of.cliente,ofv:of.ofv||"",articulo:of.articulo,descripcion:of.descripcion,prioridad:of.prioridad,padre:padre,subarts:subarts,ops:ops});
+      } else if (existingAof.ops.length === 0 && of.articulo) {
+        // ActiveOF already exists but has no ops — try to populate from template now
+        var tpl2 = DB.templates[of.articulo];
+        if (tpl2 && tpl2.ops && tpl2.ops.length) {
+          existingAof.ops = tpl2.ops.map(function(op,i){
+            return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
+          });
+          if (tpl2.padre) existingAof.padre = {articulo:tpl2.padre, nombre:DB.articles[tpl2.padre]||''};
+          if (tpl2.subarts) existingAof.subarts = tpl2.subarts.slice();
+        }
+      }
+    }
+  }
+  async function restaurarOrden(sap){
+    var of=DB.ofs.find(function(o){return o.of_sap===sap;});
+    if(!of||!confirm('¿Restaurar la OF '+sap+' a "Sin programar"?')) return;
+    of.status='Sin programar'; of.programadoHoy=false;
+    try{
+      var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
+      var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
+      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
+    }catch(e){console.warn('SP restaurarOrden:',e.message);}
+    renderProg();
+  }
+  async function restaurarPedido(pedido){
+    var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+    if(!ofsDelPedido.length) return;
+    if(!confirm('¿Restaurar el Pedido '+pedido+' a "Sin programar"?\n'+ofsDelPedido.length+' OF(s) serán restauradas.')) return;
+    for(var i=0;i<ofsDelPedido.length;i++){
+      var of=ofsDelPedido[i];
+      of.status='Sin programar'; of.programadoHoy=false;
+      try{
+        var existRes=await flowGet('FT_OrdenesFabricacion','',2000);
+        var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
+        if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
+      }catch(e){console.warn('SP restaurar:',e.message);}
+    }
+    renderProg();
+  }
+  function cancelarOrden(sap, pedido){
+    var of = DB.ofs.find(function(o){return o.of_sap===sap;});
+    if(!of) return;
+    var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
+    var tieneAvance = aof && aof.ops && aof.ops.some(function(op){
+      return op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='done'||op.qty_ok>0||op.mins>0;
+    });
+    var msg = 'Cancelar la Orden de Fabricación ' + sap + '?\n\n' + of.descripcion;
+    if(tieneAvance) msg = '⚠️ La OF ' + sap + ' tiene operaciones en proceso.\n\n' + of.descripcion + '\n\nAl cancelar, todas sus operaciones también se cancelarán.';
+    if(!confirm(msg + '\n\n¿Confirmar cancelación?')) return;
+    _ejecutarCancelacionOF(of, aof);
+  }
+  
+  async function _ejecutarCancelacionOF(of, aof){
+    var sap = of.of_sap;
+    of.status = 'Pedido Cancelado';
+    of.programadoHoy = false;
+    // Cancelar ops en memoria
+    if(aof && aof.ops){
+      aof.ops.forEach(function(op){
+        if(op.status!=='done') op.status='cancelled';
+      });
+    }
+    renderProg();
+    // Persistir en SP — OF
+    try {
+      var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
+      var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
+      if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
+    } catch(e){ console.warn('SP cancel OF:', e.message); }
+    // Persistir en SP — Operaciones
+    if(aof && aof.ops){
+      for(var i=0;i<aof.ops.length;i++){
+        var op = aof.ops[i];
+        if(op.status==='cancelled' && op._spId){
+          try{ await spEscribir('FT_Operaciones',{Status:'cancelled'}, parseInt(op._spId)); }catch(e){}
+        }
+      }
+    }
+  }
+  
+  async function cancelarPedido(pedido){
+    var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
+    if(!ofsDelPedido.length) return;
+    // Verificar si hay OFs con avance
+    var ofsConAvance = ofsDelPedido.filter(function(of){
+      var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      return aof && aof.ops && aof.ops.some(function(op){
+        return op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='done'||op.qty_ok>0||op.mins>0;
+      });
+    });
+    var cliente = ofsDelPedido[0].cliente || '';
+    var msg = 'Cancelar el Pedido ' + pedido + '\nCliente: ' + cliente + '\n' + ofsDelPedido.length + ' Orden(es) de Fabricación.';
+    if(ofsConAvance.length > 0){
+      msg += '\n\n⚠️ ' + ofsConAvance.length + ' OF(s) tienen operaciones en proceso:\n';
+      msg += ofsConAvance.slice(0,3).map(function(o){return '  · OF ' + o.of_sap;}).join('\n');
+      if(ofsConAvance.length > 3) msg += '\n  · ... y ' + (ofsConAvance.length-3) + ' más';
+      msg += '\n\nAl cancelar el pedido, TODAS sus órdenes y operaciones se cancelarán.';
+    }
+    if(!confirm(msg + '\n\n¿Confirmar cancelación del pedido?')) return;
+    for(var i=0;i<ofsDelPedido.length;i++){
+      var of = ofsDelPedido[i];
+      var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      await _ejecutarCancelacionOF(of, aof);
+    }
+    renderProg();
+  }
+  
+  
+  function updatePedidoPrio(pedido,val){
+    DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
+    DB.activeOFs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
+    renderProg();
+  }
+  
+  function startEditMode(){
+    C.editingMode=true;
+    document.getElementById("btn-prog").style.display="none";
+    document.getElementById("btn-prio").style.display="none";
+    document.getElementById("btn-confirm-prog").style.display="inline-flex";
+    document.getElementById("btn-cancel-prog").style.display="inline-flex";
+    renderProg();
+  }
+  function cancelEditMode(){
+    C.editingMode=false;
+    document.getElementById("btn-prog").style.display="inline-flex";
+    document.getElementById("btn-prio").style.display="inline-flex";
+    document.getElementById("btn-confirm-prog").style.display="none";
+    document.getElementById("btn-cancel-prog").style.display="none";
+    renderProg();
+  }
+  // confirmProgMain defined below (SP save included)
+  function openPrioModal(){
+    document.getElementById('prio-filter').value='';
+    renderPrioList();
+    openCModal("modal-prio");
+  }
+  function renderPrioList(){
+    var q=(document.getElementById('prio-filter')||{value:''}).value.trim().toLowerCase();
+    var groups=groupByPedido(DB.ofs);
+    // Filtrar por pedido, OF o cliente
+    if(q){
+      groups=groups.filter(function(g){
+        if((g.pedido||'').toLowerCase().indexOf(q)>=0) return true;
+        if((g.cliente||'').toLowerCase().indexOf(q)>=0) return true;
+        if(g.ofs.some(function(o){return (o.of_sap||'').toLowerCase().indexOf(q)>=0;})) return true;
+        return false;
+      });
+    }
+    var h="";
+    groups.forEach(function(g){
+      var pC={alta:"color:var(--red)",media:"color:var(--yellow)",normal:"color:var(--dim)"};
+      h+="<div style='padding:10px 0;border-bottom:1px solid var(--border)'>";
+      h+="<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;'>";
+      h+="<div>";
+      h+="<div style='font-size:.82rem;font-weight:600'>Pedido "+esc(g.pedido)+"</div>";
+      h+="<div style='font-size:.72rem;color:var(--dim)'>"+esc(g.cliente)+" · "+g.ofs.length+" OFs</div>";
+      h+="<div style='font-size:.7rem;color:var(--dim);margin-top:2px;'>"+g.ofs.map(function(o){return "OF "+esc(o.of_sap);}).join(', ')+"</div>";
+      h+="</div>";
+      h+="<select class='form-select' style='width:150px;font-size:.76rem;padding:5px 8px;' id='prio-sel-"+esc(g.pedido)+"'>";
+      h+="<option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option>";
+      h+="<option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option>";
+      h+="<option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option>";
+      h+="</select>";
+      h+="</div></div>";
+    });
+    if(!h) h="<div style='text-align:center;padding:20px;color:var(--dim);font-size:.8rem;'>"+(q?'Sin resultados para "'+esc(q)+'"':'Sin órdenes')+"</div>";
+    document.getElementById("prio-list-modal").innerHTML=h;
+  }
+  function savePrios(){
+    var groups=groupByPedido(DB.ofs);
+    groups.forEach(function(g){
+      var sel=document.getElementById("prio-sel-"+g.pedido);
+      if(sel) updatePedidoPrio(g.pedido,sel.value);
+    });
+    closeCModal("modal-prio");
+    fireSync("coord","prio_updated",null);
+    ntfyNotificarEvento('prio_updated', null).catch(function(){});
+    // -- Persist prioridad changes to SharePoint ----------------------
+    ftSavePrioridadToSP();
+  }
+  
+  function handleConfigClick(sap){
+    var of=DB.ofs.find(function(o){return o.of_sap===sap;});
+    if(!of)return;
+    var tpl=DB.templates[of.articulo];
+    if(tpl){
+      showCoordPage("plantillas", document.querySelector('.coord-nav-pill[onclick*="plantillas"]'));
+      setTimeout(function(){
+        var el=document.getElementById("tpl-card-"+of.articulo);
+        if(el){el.scrollIntoView({behavior:"smooth"});el.classList.add("tpl-highlight");setTimeout(function(){el.classList.remove("tpl-highlight");},2000);}
+        expandTpl(of.articulo);
+      },100);
+    } else {
+      var msg = "El artículo relacionado a la orden de fabricación '"+sap+"' no cuenta con operaciones asignadas.\n\nPara realizar el alta ingresa a 'Plantillas de OF'";
+      if(confirm(msg+"\n\n¿Deseas ir a Plantillas de OF ahora?")) {
+        var navBtn = document.querySelector('.coord-nav-pill[onclick*="plantillas"]');
+        showCoordPage("plantillas", navBtn);
+        if(navBtn) navBtn.classList.add('active');
+        setTimeout(function(){openNewTplModalWithArt(of.articulo);},300);
+      }
+    }
+  }
+  
+  // --- PLANTILLAS ------------------------------------------
+  var expandedTpls = {};
+  function renderTpls(){
+    var h="";
+    Object.keys(DB.templates).forEach(function(art){
+      var tpl=DB.templates[art];
+      var exp=expandedTpls[art];
+      h+="<div class='tpl-card' id='tpl-card-"+art+"'>";
+      h+="<div class='tpl-hdr' onclick='toggleTpl(\""+art+"\")'>";
+      h+="<div>";
+      h+="<div class='tpl-art'>"+esc(art)+"</div>";
+      h+="<div class='tpl-nombre'>"+esc(DB.articles[art]||"")+"</div>";
+      var meta=[];
+      if(tpl.padre)meta.push("Padre: "+tpl.padre);
+      if(tpl.subarts.length)meta.push(tpl.subarts.length+" sub-arts");
+      meta.push(tpl.ops.length+" operaciones");
+      h+="<div class='tpl-meta'>"+meta.join(" · ")+"</div></div>";
+      h+="<div style='display:flex;gap:6px;align-items:center'>";
+      h+="<button class='btn-sm-ghost' onclick='event.stopPropagation();showTplFlowModal(\""+art+"\")'>📊 Flujo</button>";
+      h+="<button class='btn-sm-ghost' onclick='event.stopPropagation();openEditTpl(\""+art+"\")'>✏ Editar</button>";
+      h+="<span style='color:var(--muted);font-size:.75rem'>"+(exp?"▲":"▼")+"</span></div></div>";
+      if(exp){
+        h+="<div class='tpl-ops-body'>";
+        if(tpl.padre){h+="<div class='tpl-section-lbl'>Artículo Padre</div><div style='background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.2);border-radius:6px;padding:8px 10px;font-size:.8rem;margin-bottom:10px;'>"+esc(tpl.padre)+(DB.articles[tpl.padre]?" — "+esc(DB.articles[tpl.padre]):"")+"</div>";}
+        if(tpl.subarts.length){
+          h+="<div class='tpl-section-lbl'>Sub-Artículos</div>";
+          tpl.subarts.forEach(function(sa){h+="<div style='display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.78rem;'><span style='font-family:\"DM Mono\",monospace;color:var(--accent-l)'>"+esc(sa.articulo)+"</span><span style='color:var(--dim)'>"+esc(sa.nombre)+"</span></div>";});
+        }
+        h+="<div class='tpl-section-lbl' style='margin-top:10px;'>Operaciones</div>";
+        tpl.ops.forEach(function(op,i){
+          var tipoBadge=op.tipo==="simultanea"?"<span style='font-size:.62rem;color:var(--orange)'>≈ Sim.</span>":(op.tipo==="retorno"?"<span style='font-size:.62rem;color:var(--yellow)'>↩ Ret.</span>":"");
+          h+="<div style='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);'>";
+          h+="<div style='width:20px;height:20px;border-radius:50%;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:.62rem;font-family:\"DM Mono\",monospace;color:var(--dim);flex-shrink:0;'>"+(i+1)+"</div>";
+          h+="<div style='flex:1;'><div style='font-size:.8rem;font-weight:600;'>"+esc(op.nombre)+" "+tipoBadge+"</div><div style='font-size:.68rem;color:var(--dim);'>"+esc(op.estacion)+"</div></div></div>";
+        });
+        h+="</div>";
+      }
+      h+="</div>";
+    });
+    if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin plantillas. Crea la primera con '+ Nueva Plantilla'.</div>";
+    document.getElementById("tpl-list").innerHTML=h;
+  }
+  function toggleTpl(art){expandedTpls[art]=!expandedTpls[art];renderTpls();}
+  function expandTpl(art){expandedTpls[art]=true;renderTpls();}
+  
+  function openNewTplModalWithArt(art){
+    C.editingTplArt=null; C.tplOpIdx=0;
+    document.getElementById("tpl-ops-list").innerHTML="";
+    document.getElementById("tpl-modal-title").textContent="+ Nueva Plantilla";
+    // Reset all fields
+    var artInp=document.getElementById("tpl-art-sel");
+    if(artInp){ artInp.value=art||""; }
+    document.getElementById("tpl-desc-disp").textContent=art?(DB.articles[art]||"—"):"—";
+    var padreInp=document.getElementById("tpl-padre-sel");
+    if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
+    setTplSubarts([]);
+    openCModal("modal-tpl");
+  }
+  // openEditTpl: definida en bloque actualizado (con populateTplArtSelect y pre-seleccion de padre/subarts)
+  function onTplArtChange(){
+    var art=document.getElementById("tpl-art-sel").value.trim();
+    var desc=DB.articles[art]||"";
+    document.getElementById("tpl-desc-disp").textContent=desc||"—";
+    document.getElementById("tpl-art-dropdown").style.display="none";
+    // Reset padre and subarts when article changes
+    var padreInp=document.getElementById("tpl-padre-sel");
+    if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
+    setTplSubarts([]);
+  }
+  function addTplOpRow(nombre,estacion,tipo){
+    C.tplOpIdx++;
+    var idx=C.tplOpIdx;
+    var h="<div class='op-drag-row' id='tpl-op-"+idx+"'>";
+    h+="<span style='color:var(--muted);cursor:grab;'>⠿</span>";
+    h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
+    h+="<div style='flex:2;position:relative;'>";
+    h+="<div style='display:flex;gap:3px;'>";
+    h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;'";
+    h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'>";
+    h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
+    h+="</div>";
+    h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
+    h+="</div>";
+    h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;'><option value=''>Estación...</option>";
+    STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
+    h+="</select>";
+    h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;'>";
+    ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
+    h+="</select>";
+    h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
+    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
+    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
+    h+="</div>";
+    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")'>✕</button>";
+    h+="</div>";
+    document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
+    renumberTplOps();
+  }
+  function moveTplOp(idx,dir){
+    var list=document.getElementById("tpl-ops-list");
+    var rows=Array.from(list.children);
+    var i=rows.findIndex(function(r){return r.id==="tpl-op-"+idx;});
+    var ni=i+dir;
+    if(ni<0||ni>=rows.length)return;
+    if(dir===-1) list.insertBefore(rows[i],rows[ni]);
+    else list.insertBefore(rows[ni],rows[i]);
+    renumberTplOps();
+  }
+  function removeTplOp(idx){
+    var el=document.getElementById("tpl-op-"+idx);
+    if(el) el.remove();
+    renumberTplOps();
+  }
+  function renumberTplOps(){
+    var rows=document.querySelectorAll("#tpl-ops-list .op-drag-row");
+    rows.forEach(function(row, i){
+      // The second child span is the number label
+      var spans=row.querySelectorAll("span");
+      if(spans.length>=2) spans[1].textContent=(i+1);
+    });
+  }
+  // saveTplModal: definida en bloque actualizado (con sync activeOFs, cola y notificaciones)
+  
+  // --- SEGUIMIENTO ------------------------------------------
+  function renderSeg(){
+    // Stub — ver segunda definición
+    return;
+    var h="";
+    var today=DB.ofs.filter(function(o){return o.programadoHoy;});
+    var groups=groupByPedido((today||[]).filter(Boolean));
+    var pC={alta:"prio-alta",media:"prio-media",normal:"prio-normal"};
+    var pL={alta:"🔴 ALTA",media:"🟡 MEDIA",normal:"⬜ NORMAL"};
+  
+    groups.forEach(function(g){
+      var grpDone=0,grpTotal=0;
+      g.ofs.forEach(function(of){
+        var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+        if(aof){grpDone+=aof.ops.filter(function(o){return o.status==="done";}).length;grpTotal+=aof.ops.length;}
+      });
+      var grpPct=grpTotal>0?Math.round(grpDone/grpTotal*100):0;
+  
+      h+="<div style='background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;'>";
+      h+="<div style='padding:10px 14px;background:rgba(0,82,139,.08);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;'>";
+      h+="<div><div style='font-family:\"DM Mono\",monospace;font-size:.78rem;color:var(--accent-l);font-weight:600;'>Pedido "+esc(g.pedido)+"</div>";
+      h+="<div style='font-size:.82rem;font-weight:600;'>"+esc(g.cliente)+"</div></div>";
+      h+="<div style='display:flex;align-items:center;gap:10px;'><span class='chip "+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
+      h+="<div style='text-align:right;'><div style='font-family:\"DM Mono\",monospace;font-size:.76rem;color:var(--green);'>"+grpDone+"/"+grpTotal+" ops · "+grpPct+"%</div>";
+      h+="<div style='width:120px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:3px;'><div style='height:100%;width:"+grpPct+"%;background:var(--green);border-radius:3px;'></div></div></div></div></div>";
+  
+      g.ofs.forEach(function(of){
+        var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+        if(!aof)return;
+        var done=aof.ops.filter(function(o){return o.status==="done";}).length;
+        var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
+        h+="<div style='padding:10px 14px;border-bottom:1px solid var(--border);'>";
+        h+="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;'>";
+        h+="<div><span style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l);'>OF "+esc(of.of_sap)+(of.articulo?" · "+esc(of.articulo):"")+"</span>";
+        h+=" <span style='font-size:.78rem;font-weight:500;'>"+esc(of.descripcion.substring(0,45))+"</span></div>";
+        h+="<span style='font-size:.72rem;color:var(--dim);font-family:\"DM Mono\",monospace;'>"+done+"/"+aof.ops.length+" · "+pct+"%</span></div>";
+        // Mini ops list
+        var h2="<div style='display:flex;flex-wrap:wrap;gap:4px;'>";
+        aof.ops.forEach(function(op){
+          var col={done:"var(--green)",running:"var(--accent-l)",paused:"var(--yellow)",validating:"var(--purple)",pending:"var(--muted)",op_concluded:"#f59e0b"}[op.status]||"var(--muted)";
+          var ico={done:"✓",running:"▶",paused:"⏸",validating:"🔍",pending:"○",op_concluded:"⏳"}[op.status]||"○";
+          h2+="<span style='background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:.68rem;color:"+col+";white-space:nowrap;' title='"+esc(op.nombre)+"'>"+ico+" "+esc(op.nombre.substring(0,18))+(op.status==="running"?"<span style='font-family:\"DM Mono\",monospace;margin-left:4px;font-size:.6rem;color:var(--green);'>"+fmtM(getEl("14489_"+op.id))+"</span>":"")+"</span>";
+        });
+        h2+="</div>";
+        h+=h2+"</div>";
+      });
+      h+="</div>";
+    });
+    if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin OFs programadas para hoy.</div>";
+    document.getElementById("seg-list").innerHTML=h;
+    // Update KPIs
+    var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
+    document.getElementById("seg-kpi-ofs").textContent=DB.activeOFs.filter(function(a){return a.ops.some(function(o){return o.status==='running'||o.status==='paused'||o.status==='op_concluded'||o.status==='validating';});}).length;
+    document.getElementById("seg-kpi-done").textContent=allOps.filter(function(o){return o.status==="done";}).length;
+    document.getElementById("seg-kpi-run").textContent=allOps.filter(function(o){return o.status==="running";}).length;
+    document.getElementById("seg-kpi-val").textContent=allOps.filter(function(o){return o.status==="validating";}).length;
+  }
+  
+  // --- HISTORIAL -------------------------------------------
+  var histFilter={from:"",to:""};
+  function renderHist(){
+    // Stub — ver definición final
+    return;
+    var now=new Date();
+    if(!histFilter.to){var d=new Date();histFilter.to=d.toISOString().split("T")[0];}
+    if(!histFilter.from){var d2=new Date(now-7*86400000);histFilter.from=d2.toISOString().split("T")[0];}
+    document.getElementById("hist-from").value=histFilter.from;
+    document.getElementById("hist-to").value=histFilter.to;
+  
+    // -- Compute and update top 4 KPI cards ----------------------
+    (function updateHistTopKPIs(){
+      var thisMonth = now.getFullYear()+'-'+(String(now.getMonth()+1).padStart(2,'0'));
+      // Count completed OFs this month from DB.history
+      var completedThisMonth = (DB.history||[]).filter(function(h){
+        return h.fecha && String(h.fecha).startsWith(thisMonth);
+      });
+      var ofsCount = completedThisMonth.length;
+  
+      // Compute avg time, ok%, def% from completed ops across all activeOFs + history
+      var totalMins=0, totalOps=0, totalOk=0, totalPzas=0, totalDef=0;
+      // From activeOFs — done ops
+      (DB.activeOFs||[]).forEach(function(aof){
+        (aof.ops||[]).forEach(function(op){
+          if(op.status==='done'){
+            totalMins += (op.mins||0);
+            totalOps++;
+            totalOk += (op.qty_ok||0);
+            totalDef += (op.qty_def||0)+(op.qty_rej||0);
+            totalPzas += (op.qty_total||0);
+          }
+        });
+      });
+      // From history
+      completedThisMonth.forEach(function(h){
+        totalMins += (h.mins||0);
+        totalOps++;
+        totalOk += (h.qty_ok||0);
+        totalDef += (h.qty_def||0);
+        totalPzas += (h.qty_total||0);
+      });
+  
+      var avgH = totalOps>0 ? (totalMins/totalOps/60).toFixed(1)+'h' : '—';
+      var pctOk = totalPzas>0 ? Math.round(totalOk/totalPzas*100)+'%' : '—';
+      var pctDef = totalPzas>0 ? Math.round((totalDef)/totalPzas*100)+'%' : '—';
+  
+      var elOfs  = document.getElementById('hist-kpi-ofs');
+      var elTime = document.getElementById('hist-kpi-time');
+      var elOk   = document.getElementById('hist-kpi-ok');
+      var elDef  = document.getElementById('hist-kpi-def');
+      if(elOfs)  elOfs.textContent  = ofsCount;
+      if(elTime) elTime.textContent = avgH;
+      if(elOk)   elOk.textContent   = pctOk;
+      if(elDef)  elDef.textContent  = pctDef;
+    })();
+  
+    // Carga por estación — calculado desde datos reales
+    var estStats={};
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if(!op.estacion) return;
+        if(!estStats[op.estacion]) estStats[op.estacion]={ops:0,mins:0,pzas:0};
+        estStats[op.estacion].ops++;
+        estStats[op.estacion].mins+=(op.mins||0);
+        estStats[op.estacion].pzas+=(op.qty_total||0);
+      });
+    });
+    var maxOps=Object.keys(estStats).length?Math.max.apply(null,Object.values(estStats).map(function(e){return e.ops;})):1;
+    // -- Carga por Estación — TODAS las estaciones del catálogo --
+    sqPurge(); sqSyncColaNumbers(); // ensure done ops removed before rendering
+    var SS = window.DB_STATION_STATUS;
+    // Build ops-per-station index from activeOFs
+    var estOps={};
+    DB.activeOFs.forEach(function(aof){
+      var ofRec=DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{};
+      aof.ops.forEach(function(op){
+        if(!op.estacion) return;
+        if(!estOps[op.estacion]) estOps[op.estacion]=[];
+        estOps[op.estacion].push({op:op,aof:aof,ofRec:ofRec});
+      });
+    });
+    var maxOps=1;
+    STATIONS.forEach(function(s){
+      var a=estOps[s]||[];
+      var ac=a.filter(function(x){return x.op.status!=='done';}).length;
+      if(ac>maxOps) maxOps=ac;
+    });
+    var h='';
+    STATIONS.forEach(function(st){
+      var ss=SS[st]||{status:'activa',nota:'',plan:[]};
+      var ops=estOps[st]||[];
+      var running=ops.filter(function(x){return x.op.status==='running';});
+      var pending=ops.filter(function(x){return x.op.status==='pending';}).sort(function(a,b){return (a.op.cola||999)-(b.op.cola||999);});
+      var paused=ops.filter(function(x){return x.op.status==='paused';});
+      var done=ops.filter(function(x){return x.op.status==='done';});
+      var activeOps=running.length+pending.length+paused.length;
+      var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
+      var pct=Math.round(activeOps/maxOps*100);
+      var isMant=ss.status==='mantenimiento';
+      var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+      var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused.length?'rgba(245,158,11,.04)':'transparent';
+      h+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+      h+='<div style="flex:1;">';
+      h+='<div style="font-size:.82rem;font-weight:700;">'+esc(st)+'</div>';
+      if(ss.nota) h+='<div style="font-size:.65rem;color:var(--dim);margin-top:1px;">'+esc(ss.nota)+'</div>';
+      h+='</div>';
+      if(isMant){
+        h+='<span style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">🔧 Mantenimiento</span>';
+      } else if(running.length){
+        h+='<span style="background:rgba(46,160,67,.15);color:var(--green);border:1px solid rgba(46,160,67,.3);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">⚡ En operación</span>';
+      } else if(paused.length){
+        h+='<span style="background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">⏸ En pausa</span>';
+      } else if(pending.length){
+        h+='<span style="background:rgba(31,111,235,.1);color:var(--accent-l);border:1px solid rgba(31,111,235,.2);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">📋 En cola</span>';
+      } else {
+        h+='<span style="background:rgba(46,160,67,.08);color:var(--green);border:1px solid rgba(46,160,67,.2);border-radius:6px;padding:2px 8px;font-size:.65rem;font-weight:700;">✅ Disponible</span>';
+      }
+      h+='<button onclick="openQueueMgr(\''+esc(st)+'\')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);color:var(--dim);border-radius:6px;padding:3px 9px;font-size:.68rem;cursor:pointer;font-weight:600;white-space:nowrap;">≡ Cola</button>';
+      h+='</div>';
+      // Progress bar — only show when there are active ops
+      if(activeOps){
+        h+='<div style="display:flex;gap:3px;align-items:center;margin-bottom:7px;">';
+        h+='<div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><div style="height:100%;width:'+pct+'%;background:'+(isMant?'var(--red)':running.length?'var(--green)':'var(--accent-l)')+';border-radius:2px;"></div></div>';
+        h+='<span style="font-size:.6rem;color:var(--dim);margin-left:4px;">'+activeOps+' ops · '+totalMins+'min</span>';
+        h+='</div>';
+      }
+      // Running and paused ops
+      running.forEach(function(x){
+        h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(46,160,67,.08);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
+        h+='<span style="color:var(--green);font-weight:700;">▶</span>';
+        h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
+        h+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
+        if(x.op.tecnico) h+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
+        var el=getEl(x.aof.of_sap+'_'+x.op.id);
+        if(el>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--green);">'+fmtM(el)+'</span>';
+        h+='</div>';
+      });
+      paused.forEach(function(x){
+        h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
+        h+='<span style="color:var(--yellow);font-weight:700;">⏸</span>';
+        h+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+'</span>';
+        h+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
+        if(x.op.tecnico) h+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
+        if(x.op.pauseReason) h+='<span style="font-size:.6rem;color:var(--dim);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(x.op.pauseReason)+'">'+esc(x.op.pauseReason.substring(0,20))+'…</span>';
+        h+='</div>';
+      });
+      // Queue (pending with cola number)
+      if(pending.length){
+        h+='<div style="font-size:.6rem;color:var(--dim);margin:4px 0 2px;text-transform:uppercase;letter-spacing:.04em;">Cola de espera</div>';
+        pending.forEach(function(x,qi){
+          var colaN = qi + 1; // always relative rank (1,2,3...) not absolute SP position
+          h+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
+          h+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+colaN+'</span>';
+          h+='<span style="flex:1;">'+esc(x.op.nombre)+'</span>';
+          h+='<span style="font-family:\'DM Mono\',monospace;font-size:.62rem;color:var(--dim);">OF'+esc(x.aof.of_sap)+'</span>';
+          if(x.op.tecnico) h+='<span style="font-size:.62rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
+          h+='</div>';
+        });
+      }
+      // Plan de mantenimiento
+      if(ss.plan&&ss.plan.length){
+        h+='<div style="margin-top:5px;padding:5px 7px;background:rgba(239,68,68,.05);border-radius:5px;font-size:.65rem;">';
+        h+='<div style="color:var(--red);font-weight:700;margin-bottom:3px;">🗓 Plan de mantenimiento</div>';
+        ss.plan.forEach(function(p){
+          h+='<div style="color:var(--dim);padding:1px 0;">'+esc(p.fecha)+' — '+esc(p.desc)+'</div>';
+        });
+        h+='</div>';
+      }
+      h+='</div>';
+    });
+    document.getElementById("hist-est").innerHTML=h;
+}
 function renderSeg(){
   var filterStatus = C.segFilter || 'activos';
   var h='';
@@ -10784,6 +11801,8 @@ function renderSeg(){
       (filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
+  // Update Carga por Estacion in historial page too
+  if(typeof renderSegEstaciones === 'function') renderSegEstaciones();
   // KPIs — excluir OFs de pedidos cerrados
   var _aofActivas = DB.activeOFs.filter(function(a){
     var of = DB.ofs.find(function(o){return o.of_sap===a.of_sap;});

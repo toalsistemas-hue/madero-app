@@ -7875,6 +7875,23 @@ async function _appLoadDataFromSP_impl() {
       });
     });
     sqSyncColaNumbers();
+    // Reconcile DB.timers with actual op.status from SP
+    // This fixes: FT_Timers has Running=True (due to 502 save failure) but op is paused in FT_Operaciones
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        var key = aof.of_sap + '_' + op.id;
+        var t = DB.timers[key];
+        if (op.status === 'paused' || op.status === 'validating') {
+          if (t && t.running) {
+            // Op is paused in SP but FT_Timers still has Running=True — fix it
+            t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
+            t.running = false;
+            // Save corrected state back to SP async
+            if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(key).catch(function(){});
+          }
+        }
+      });
+    });
     // Garantizar que ops con status=running tengan timer activo en memoria
     // IMPORTANT: Only restore timer if there isn't already a valid local timer
     // (avoid overwriting a timer that was set correctly by appConfirmPause or appDoResumeOp)
@@ -11337,7 +11354,8 @@ function renderAppOpsPanel(of){
   of.ops.forEach(function(op,idx){
     var key=of.of_sap+"_"+op.id;
     var elapsed=op.status==="running"?getEl(key):(op.status==="paused"?getEl(key):op.mins);
-    h+="<div class='"+opCls(op)+"'"+(op.isRetrabajo?" style='border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04);'":"")+">"; 
+    var _cId="app-op-card-"+of.of_sap+"-"+op.id.replace(/[^a-z0-9]/gi,"_");
+    h+="<div id='"+_cId+"' class='"+opCls(op)+"'"+(op.isRetrabajo?" style='border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04);'":"")+">"; 
     h+="<div class='app-op-top'>";
     h+="<div class='app-op-seq "+sqClass(op)+"'>"+sqLabel(op,idx)+"</div>";
     h+="<div class='app-op-body'>";
@@ -11733,6 +11751,27 @@ function appOpenPause(sap,opId){
   setPauseTipo('normal');
   openAppModal("app-modal-pause");
 }
+
+// Instant visual feedback: dim op card + disable all buttons before full renderApp
+// This prevents the "nothing happened" feeling on slow Android devices
+function _appInstantFeedback(sap, opId) {
+  var cardId = 'app-op-card-' + sap + '-' + (opId||'').replace(/[^a-z0-9]/gi,'_');
+  var card = document.getElementById(cardId);
+  if (card) {
+    card.style.opacity = '0.55';
+    card.style.pointerEvents = 'none';
+    // Auto-restore after 3s in case renderApp is slow
+    setTimeout(function(){
+      card.style.opacity = '';
+      card.style.pointerEvents = '';
+    }, 3000);
+  }
+}
+
+// Wrap renderApp with requestAnimationFrame so browser paints first
+function renderAppAsync() {
+  requestAnimationFrame(function(){ renderApp(); });
+}
 function appConfirmPause(){
   var reason=document.getElementById("app-pause-reason").value.trim();
   if(!reason){alert("Describe la causa de la pausa.");return;}
@@ -11792,6 +11831,7 @@ function appConfirmPause(){
       DB.timers[ak].running=false;
     }
   });
+  _appInstantFeedback(ctx.of_sap, ctx.op_id);
   closeAppModal("app-modal-pause");renderApp();_refreshStationViews();
   // Guardar pausa en SP — async IIFE siempre ejecuta
   (async function(){
@@ -12981,6 +13021,7 @@ function doFinish(ctx, el, ok, def, rej) {
   });
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
+  _appInstantFeedback(ctx.of_sap, ctx.op_id);
   closeAppModal('app-modal-finish'); renderApp();
   // Persistir en SP
   appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
@@ -13573,6 +13614,7 @@ function _doStartOp(sap, opId){
       DB.timers[ayudKey]={start:Date.now(),elapsed:0,running:true};
     }
   });
+  _appInstantFeedback(sap, opId);
   renderApp();
   // Persistir en SP directamente (fireSync override puede haber sido pisado por patches)
   if (typeof appSaveOpToSP === 'function' && appSiteId) {
@@ -13592,10 +13634,24 @@ function ayudStopTimer(sap, opId, ayud){
   if(!op) return;
   var ayudKey=sap+'_'+opId+'_ayud_'+ayud.replace(/[^a-z0-9]/gi,'_');
   var t=DB.timers[ayudKey];
-  var mins=t&&t.running?Math.floor((Date.now()-t.start)/60000):0;
+  // Fix: include accumulated elapsed + current session time (was only using current session)
+  var totalMs = 0;
+  if (t) {
+    totalMs = (t.elapsed||0);
+    if (t.running && t.start) totalMs += (Date.now() - t.start);
+  }
+  var mins = Math.max(1, Math.floor(totalMs/60000)); // minimum 1 min if timer existed
+  if(!t || totalMs === 0) mins = 0; // 0 only if timer was never started
   if(!op.ayudTimes) op.ayudTimes={};
   op.ayudTimes[ayud]=mins;
-  if(DB.timers[ayudKey]) DB.timers[ayudKey].running=false;
+  if(DB.timers[ayudKey]) {
+    DB.timers[ayudKey].elapsed = totalMs;
+    DB.timers[ayudKey].running=false;
+  }
+  // Save ayudante timer to SP
+  if(typeof appSaveTimerToSP==='function') appSaveTimerToSP(ayudKey).catch(function(){});
+  // Also save op to persist ayudTimes
+  if(typeof appSaveOpToSP==='function') appSaveOpToSP(sap, opId).catch(function(){});
   renderApp();
 }
 
