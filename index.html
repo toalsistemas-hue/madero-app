@@ -5923,9 +5923,11 @@ async function ftLoadDataFromSP() {
                 }
               } else if(op.status==='validating'||op.status==='paused'){
                 var key = aof.of_sap+'_'+op.id;
+                // Only stop timer if it was previously running (prevent double-stop = reset)
                 if(DB.timers[key] && DB.timers[key].running){
                   DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now()-DB.timers[key].start);
                   DB.timers[key].running = false;
+                  DB.timers[key]._stoppedAt = Date.now(); // mark when stopped to prevent re-stop
                 }
               }
             });
@@ -8374,6 +8376,13 @@ setInterval(function(){
   if(hasRun){renderApp();if(C.currentPage==="seguimiento")renderSeg();}
 },30000);
 
+// Issue 5 fix: Carga por Estacion timers update every 10s
+setInterval(function(){
+  if(C.currentPage !== "seguimiento") return;
+  var hasRun = Object.values(DB.timers).some(function(t){return t&&t.running;});
+  if(hasRun) renderSeg();
+}, 10000);
+
 // ════════════════════════════════════════════════════════════
 // PATCH v2 — 16 correcciones y mejoras
 // ════════════════════════════════════════════════════════════
@@ -10811,14 +10820,18 @@ function renderHist(){
           // numTurnos: turnos previos + 1 (el actual) si hay historial de turnos
           numTurnos: (op.turnos&&op.turnos.length>0) ? (op.turnos.length + 1) : 0,
           pauseReason: op.pauseReason||'',
+          isPausedNormal: op.status==='paused' && op._pauseTipo==='normal',
           of_sap:aof.of_sap, pedido:ofRec.pedido||'—',
           mins:ayudMinsForRow,
           qty_ok:rol==='principal'?(op.qty_ok||0):0,
           qty_def:rol==='principal'?(op.qty_def||0):0,
           qty_def_ret:rol==='principal'?(op.qty_def_retrabajo||0):0,
           qty_def_chat:rol==='principal'?Math.max(op.qty_chat||0, op.qty_def_chatarra||0):0,
-          inicio:op.inicio||'—', fin:op.fin||'—',
-          fecha:op.fecha||''
+          // Issue 4 fix: if op has turno history, use the time AFTER the last turno ended
+          // not the original op.inicio (which is the start of turno 1)
+          inicio: (op.turnos&&op.turnos.length>0) ? (op.turnos[op.turnos.length-1].fin||op.inicio||'—') : (op.inicio||'—'),
+          fin:op.fin||'—',
+          fecha: (op.turnos&&op.turnos.length>0) ? '' : (op.fecha||'')
         });
       }
 
@@ -10969,6 +10982,8 @@ function renderHist(){
           var tipoBadge;
           if(r.isRetrabajo){
             tipoBadge='<span style="background:rgba(239,68,68,.12);color:var(--red);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🔄 Retrabajo</span>';
+          } else if(r.isPausedNormal){
+            tipoBadge='<span style="background:rgba(245,158,11,.12);color:var(--yellow);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">⏸ Pausado</span>';
           } else if(r.numTurnos > 0){
             tipoBadge='<span style="background:rgba(88,166,255,.12);color:var(--accent-l);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🌙 '+r.numTurnos+' Turnos</span>';
           } else if(r.pauseReason && r.pauseReason.indexOf('🌙')>=0){

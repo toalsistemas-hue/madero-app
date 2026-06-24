@@ -4133,6 +4133,12 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
     DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
   });
+  // Issue 1 fix: immediately update the local button before full renderApp
+  // This prevents the visual delay on the local device
+  document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
+    var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;
+    if(resumeBtn) resumeBtn.style.display='none';
+  });
   renderApp();
   _refreshStationViews();
 }
@@ -11371,9 +11377,8 @@ function renderAppOpsPanel(of){
     }
     if(op.pauseReason)h+="<div class='app-op-note app-note-pause'>⏸ "+esc(op.pauseReason)+"</div>";
     if(op.status==="validating")h+="<div class='app-op-note app-note-val'>🔍 En espera de Calidad"+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?": "+esc(op.valcalNote):"")+"</div>";
-    // Ver fotos button — supervisor & calidad for done/validating/op_concluded ops
-    if((op.status==='done'||op.status==='validating'||op.status==='op_concluded')&&
-       (_appRoleLocal==='supervisor'||_appRoleLocal==='calidad_lin'||appCan('finish')||appCan('cal'))){
+    // Ver fotos button — all 3 roles for any active or done op
+    if((_appRoleLocal==='supervisor'||_appRoleLocal==='calidad_lin'||_appRoleLocal==='calidad_tiem'||appCan('finish')||appCan('cal'))){
       h+="<button onclick=\"appVerFotos('"+of.of_sap+"','"+op.id+"')\" "+
          "style='background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.22);border-radius:5px;padding:3px 10px;"+
          "cursor:pointer;color:var(--aaccent);font-size:.68rem;margin-top:3px;display:inline-block;'>🖼 Ver fotos</button>";
@@ -11992,6 +11997,12 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var _rOp2 = _rOf2 ? _rOf2.ops.find(function(o){return o.id===opId;}) : null;
   fireSync('app','op_resumed',{of_sap:sap, op_id:opId,
     op_name:_rOp2?_rOp2.nombre:'', tecnico:_rOp2?(_rOp2.tecnico||''):''});
+  // Issue 1 fix: immediately update the local button before full renderApp
+  // This prevents the visual delay on the local device
+  document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
+    var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;
+    if(resumeBtn) resumeBtn.style.display='none';
+  });
   renderApp();
   _refreshStationViews();
 }
@@ -12139,7 +12150,12 @@ function appCalRespond(result){
     estacion:  op.estacion,
     resultado: result
   }).catch(function(){});
-  closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
+  closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');
+  // Issue 1 fix: immediately update notifications to hide Responder button
+  DB.notifications = DB.notifications.filter(function(n){
+    return !(n.of_sap===ctx.of_sap && n.op_id===ctx.op_id && n.type==='cal_request');
+  });
+  renderApp();
   appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
   _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
 }
