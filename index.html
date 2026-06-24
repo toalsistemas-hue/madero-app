@@ -5779,6 +5779,7 @@ async function ftLoadDataFromSP() {
     window._coordLastOpsMod = '';
     window._coordPollTimer = setInterval(async function(){
       if (!state.token || !FT_SITE_ID) return;
+      if (window._confirmProgRunning) return; // Don't poll during programming confirmation
       try {
         var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
         var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
@@ -8511,8 +8512,15 @@ function confirmProgMain() {
     var _colaSnapForSP = {};
     nuevasOfs.forEach(function(sap){ _colaSnapForSP[sap] = _colaOrderSnapshot[sap] || 999; });
     setTimeout(async function(){
+      window._confirmProgRunning = true; // Pause coord poll during SP saves
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        // Snapshot ops BEFORE any async work — protects against poll overwriting DB.activeOFs
+        var _opsSnapshot = {};
+        nuevasOfs.forEach(function(sap){
+          var _aofSnap = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+          if (_aofSnap && _aofSnap.ops) _opsSnapshot[sap] = _aofSnap.ops.slice();
+        });
         // Update modal message — already shown by confirmProgMain before this runs
         showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera, no cierres esta ventana.');
         // Step 1: save ops to FT_Operaciones — load existing ops ONCE as cache
@@ -8530,8 +8538,9 @@ function confirmProgMain() {
 
         for (var ni = 0; ni < nuevasOfs.length; ni++) {
           var sap = nuevasOfs[ni];
-          var aofNew = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
-          if (!aofNew || !aofNew.ops.length) { console.warn('  OF', sap, 'sin ops — saltando'); continue; }
+          // Use snapshot to avoid poll overwriting ops mid-process
+          var aofNew = { ops: _opsSnapshot[sap] || [] };
+          if (!aofNew.ops.length) { console.warn('  OF', sap, 'sin ops en snapshot — saltando'); continue; }
           console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
           for (var oi = 0; oi < aofNew.ops.length; oi++) {
             var _opToSave = aofNew.ops[oi];
@@ -8620,15 +8629,19 @@ function confirmProgMain() {
         });
         console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
         showLoadingModal('Guardando programación', 'Paso 2/2: Asignando posiciones de cola...\nPor favor espera, no cierres esta ventana.');
-        // Assign positions to new OFs in supervisor's cola order
+        // Assign positions using snapshot (not DB.activeOFs which may be stale from poll)
         _newSapsSorted.forEach(function(sap) {
-          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
-          if (!aof) return;
-          aof.ops.forEach(function(op){
+          var _snapOps = _opsSnapshot[sap] || [];
+          _snapOps.forEach(function(op){
             if (!op.estacion) return;
             _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
             op._colaPos = _globalMax[op.estacion];
-            op._colaAssigned = true;
+          });
+          // Mirror _colaPos back to DB.activeOFs for display
+          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+          if (aof) _snapOps.forEach(function(snapOp){
+            var liveOp = aof.ops.find(function(o){return o.id===snapOp.id;});
+            if (liveOp) liveOp._colaPos = snapOp._colaPos;
           });
         });
         // Save queue records for new OFs only — with live progress and final verification
@@ -8638,8 +8651,8 @@ function confirmProgMain() {
         var _savedCount = 0;
         for (var gi = 0; gi < _newSapsSorted.length; gi++) {
           var gSap = _newSapsSorted[gi];
-          var gAof = DB.activeOFs.find(function(a){ return a.of_sap===gSap; });
-          if (!gAof || !gAof.ops.length) {
+          var gAof = { ops: _opsSnapshot[gSap] || [] };
+          if (!gAof.ops.length) {
             if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 400); });
             continue;
           }
@@ -8692,9 +8705,8 @@ function confirmProgMain() {
           (_verifyRes.value||[]).forEach(function(item){ var f=item.fields||{}; if(f.Op_ID) _verifyMap[f.Op_ID]=true; });
           var _stillMissing = [];
           nuevasOfs.forEach(function(sap){
-            var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-            if (!aof) return;
-            aof.ops.forEach(function(op){
+            var _snapOpsV = _opsSnapshot[sap] || [];
+            _snapOpsV.forEach(function(op){
               if (op.estacion && op._colaPos > 0 && !_verifyMap[op.id]) _stillMissing.push({sap:sap, op:op});
             });
           });
@@ -8726,6 +8738,7 @@ function confirmProgMain() {
           }
         }
         hideLoadingModal();
+        window._confirmProgRunning = false; // Re-enable coord poll
         console.log('[Programación] Orden final:', _newSapsSorted.map(function(s){ return s+'('+(_colaSnapForSP[s]||'?')+')'; }).join(' → '));
         var toast = document.getElementById('toast-coord');
         if (toast) {
@@ -8734,6 +8747,7 @@ function confirmProgMain() {
           setTimeout(function(){ toast.style.opacity='0'; toast.style.transform='translateY(10px)'; }, 3000);
         }
       } catch(e) {
+        window._confirmProgRunning = false; // Re-enable coord poll on error too
         hideLoadingModal();
         console.error('Error creando ops en SP:', e.message, e);
         var toastE = document.getElementById('toast-coord');
