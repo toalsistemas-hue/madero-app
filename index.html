@@ -9057,7 +9057,11 @@ function renderProg(){
   }
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
-  console.log('[renderProg] DB.ofs total:', DB.ofs.length, '| cerradas:', DB.ofs.filter(function(o){return o.pedidoCerrado||o.status==='Cerrado';}).length);
+  console.log('[renderProg] DB.ofs total:', DB.ofs.length, '| cerradas:', DB.ofs.filter(function(o){return o.pedidoCerrado||o.status==='Cerrado';}).length, '| fStatus:', fStatus);
+  // DIAGNOSTIC: force a test write to verify prog-list exists
+  var _pl = document.getElementById('prog-list');
+  if (!_pl) { console.error('[renderProg] FATAL: #prog-list not found in DOM!'); return; }
+  console.log('[renderProg] #prog-list found, display:', _pl.parentElement ? _pl.parentElement.className : 'no-parent');
   var groups = groupByPedido(DB.ofs.filter(function(of){
     if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
     if(of.status==='Pedido Cancelado') return false;
@@ -10644,18 +10648,6 @@ appConfirmValCal = function(){
 
 // -- 8 & 10: renderSeg con observaciones y comentarios ---------
 
-function renderSegEstaciones(){
-  var h='';
-  STATIONS.forEach(function(st){
-      var q=sqGetQueue(st);
-      window.DB_STATION_QUEUE[st]=q.filter(function(item){
-        var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-        if(!aof) return false;
-        var op=aof.ops.find(function(o){return o.id===item.op_id;});
-        return op && op.status!=='done';
-      });
-    });
-  }
   
   // Add OF ops to queue when programmed
   function sqAddOF(of_sap){
