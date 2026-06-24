@@ -7528,11 +7528,13 @@ async function _appLoadDataFromSP_impl() {
     // This prevents clearing the screen when PA is temporarily overloaded
     var ofsEmpty = ofsRes._error || (ofsRes.value||[]).length === 0;
     var opsEmpty = opsRes._error || (opsRes.value||[]).length === 0;
-    // Preserve existing data if OFs OR Ops returned empty — either alone is enough
-    // to avoid wiping the screen during a transient PA failure
-    if ((ofsEmpty || opsEmpty) && DB.activeOFs && DB.activeOFs.length > 0) {
-      console.warn('[appLoadData] OFs o Ops vacíos (504?) — preservando datos existentes. ofsEmpty:', ofsEmpty, 'opsEmpty:', opsEmpty);
-      return; // preserve DB.activeOFs, don't wipe it
+    // Only preserve existing data on ACTUAL errors (network/timeout), not on genuine empty responses
+    // If the user deleted SP records, we MUST show the empty state
+    var ofsError = ofsRes._error === true;
+    var opsError = opsRes._error === true;
+    if ((ofsError || opsError) && DB.activeOFs && DB.activeOFs.length > 0) {
+      console.warn('[appLoadData] Error de red en OFs/Ops — preservando datos existentes temporalmente. ofsError:', ofsError, 'opsError:', opsError);
+      return; // only preserve on real errors, not on empty-but-valid responses
     }
 
     // Normalize: Graph returns {id, fields:{...}}, Flow returns fields directly
@@ -15031,7 +15033,11 @@ async function appReloadOpsFromSP() {
       var existing_aof_subartkeys = aof.sub_articulos;
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
                         .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
-      if (!spOps.length) return; // keep existing ops if SP has none
+      if (!spOps.length) {
+        // SP genuinely has no ops for this OF — clear in-memory ops too (don't show stale data)
+        aof.ops = [];
+        return;
+      }
       aof.ops = spOps.map(function(o) {
         var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
         return {
