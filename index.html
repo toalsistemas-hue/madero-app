@@ -2521,6 +2521,13 @@ async function graphPatch(endpoint, body, retry) {
     return graphPatch(endpoint, body, true);
   }
 
+  // Si 500 Internal Server Error (error transitorio de SP) — esperar 2s y reintentar una vez
+  if (res.status === 500 && !retry) {
+    console.warn('PATCH 500 Internal Server Error (SP transitorio), reintentando en 2s...');
+    await new Promise(function(r){ setTimeout(r, 2000); });
+    return graphPatch(endpoint, body, true);
+  }
+
   if (!res.ok && res.status !== 204) throw new Error(`Graph PATCH ${res.status}`);
   return true;
 }
