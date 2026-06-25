@@ -9007,6 +9007,17 @@ function confirmProgMain() {
         }
         hideLoadingModal();
         window._confirmProgRunning = false; // Re-enable coord poll
+        // Resort DB_STATION_QUEUE by _colaPos now that all positions are assigned
+        Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st) {
+          window.DB_STATION_QUEUE[st].sort(function(a, b) {
+            var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
+            var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
+            var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
+            var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
+            return ((op_a&&op_a._colaPos)||999)-((op_b&&op_b._colaPos)||999);
+          });
+        });
+        sqSyncColaNumbers(); // recompute op.cola from correct _colaPos order
         // NOW notify supervisor — all SP records are confirmed saved
         fireSync('coord', 'prog_updated', {count: hoy});
         ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
