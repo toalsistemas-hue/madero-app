@@ -13882,18 +13882,20 @@ function ftRptExportExcel(){
 // Expose all coordinator functions to global window scope
 // (needed when ftLoadDataFromSP creates a local scope that shadows globals)
 (function _exposeGlobals(){
+  // Expose all functions that may be shadowed by ftLoadDataFromSP local scope
   var fns = ['toggleProg','setProgTab','startEditMode','cancelEditMode',
              'confirmProgMain','openOFOpsModal','handleConfigClick',
              'updatePedidoPrio','cancelarOrden','restaurarOrden','cancelarPedido',
-             'cancelarPedido','showCoordPage','openCModal','closeCModal',
-             'saveOFOps','getProgFields','openOFModal','ftRptLoad',
-             'openPrioModal','openNewTplModal','deleteTpl','saveTpl',
+             'showCoordPage','openCModal','closeCModal','openNewTplModalWithArt',
+             'saveOFOps','getProgFields','ftRptLoad','openPrioModal',
              'applyHistFilter','movePedidoCierre','simulateRefresh',
-             'restaurarPedido','sqMoveOp','sqPrioritizeOF'];
+             'restaurarPedido','sqPrioritizeOF','renderProg','renderSeg',
+             'renderTpls','renderHist','renderApp'];
   fns.forEach(function(name){
-    if (typeof window[name] === 'undefined' && typeof eval(name) === 'function') {
-      try { window[name] = eval(name); } catch(e) {}
-    }
+    try {
+      var fn = eval(name);
+      if (typeof fn === 'function') window[name] = fn;
+    } catch(e) {}
   });
 })();
 </script>
