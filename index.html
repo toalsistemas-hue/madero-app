@@ -7159,7 +7159,6 @@ function updatePedidoPrio(pedido,val){
 
 function startEditMode(){
   window.startEditMode=startEditMode;
-  console.log('[startEditMode] C.editingMode antes:', C.editingMode, '| window.toggleProg:', typeof window.toggleProg);
   C.editingMode=true;
   document.getElementById("btn-prog").style.display="none";
   document.getElementById("btn-prio").style.display="none";
@@ -8610,7 +8609,6 @@ var PENDING_COLA_ORDER = {}; // {of_sap: número} — orden de cola asignado en 
 // -- 1 & 2: toggleProg solo actualiza PENDING, no DB ------
 function toggleProg(sap, val) {
   window.toggleProg = toggleProg; // ensure global access from HTML onclick
-  console.log('[toggleProg] sap='+sap+' val='+val+' isNueva='+(DB.ofs.find(function(o){return o.of_sap===sap;})||{}).programadoHoy);
   if (!PENDING_PROG[sap]) {
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
@@ -9048,7 +9046,6 @@ function cancelEditMode() {
 
 // -- renderProg con PENDING reflejado visualmente ----------
 function renderProg(){
-  window.renderProg = renderProg; // expose globally (bypass any local scope shadowing)
   // Debug: verificar datos en primera OF
   if(DB.ofs && DB.ofs.length > 0){
     console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
@@ -9056,10 +9053,6 @@ function renderProg(){
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
   console.log('[renderProg] DB.ofs total:', DB.ofs.length, '| cerradas:', DB.ofs.filter(function(o){return o.pedidoCerrado||o.status==='Cerrado';}).length, '| fStatus:', fStatus);
-  // DIAGNOSTIC: force a test write to verify prog-list exists
-  var _pl = document.getElementById('prog-list');
-  if (!_pl) { console.error('[renderProg] FATAL: #prog-list not found in DOM!'); return; }
-  console.log('[renderProg] #prog-list found, display:', _pl.parentElement ? _pl.parentElement.className : 'no-parent');
   var groups = groupByPedido(DB.ofs.filter(function(of){
     if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
     if(of.status==='Pedido Cancelado') return false;
@@ -10800,31 +10793,28 @@ appConfirmValCal = function(){
     };
   }
   function toggleProg(sap,val){
-    console.log('[toggleProg DELEGATOR-6917] sap='+sap+' val='+val+' window.toggleProg===this:', window.toggleProg===toggleProg);
-    // Delegar a window.toggleProg (la versión correcta con soporte de cola)
-    if(window.toggleProg && window.toggleProg !== toggleProg) { window.toggleProg(sap,val); return; }
-    // Fallback mínimo si window.toggleProg no está listo aún
-    var of=DB.ofs.find(function(o){return o.of_sap===sap;});
-    if(!of)return;
-    of.programadoHoy=val;
-    if(val) {
-      // Agregar a activeOFs si no existe
-      var existingAof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-      if (!existingAof) {
-        var tpl=DB.templates[of.articulo];
-        var ops=tpl?tpl.ops.map(function(op,i){return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};}):[];
-        var padre = tpl&&tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||''} : null;
-        var subarts = tpl&&tpl.subarts ? tpl.subarts.slice() : [];
-        DB.activeOFs.push({of_sap:of.of_sap,pedido:of.pedido,cliente:of.cliente,ofv:of.ofv||"",articulo:of.articulo,descripcion:of.descripcion,prioridad:of.prioridad,padre:padre,subarts:subarts,ops:ops});
-      } else if (existingAof.ops.length === 0 && of.articulo) {
-        // ActiveOF already exists but has no ops — try to populate from template now
-        var tpl2 = DB.templates[of.articulo];
-        if (tpl2 && tpl2.ops && tpl2.ops.length) {
-          existingAof.ops = tpl2.ops.map(function(op,i){
-            return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
-          });
-          if (tpl2.padre) existingAof.padre = {articulo:tpl2.padre, nombre:DB.articles[tpl2.padre]||''};
-          if (tpl2.subarts) existingAof.subarts = tpl2.subarts.slice();
+    // ── VERSIÓN DEFINITIVA con soporte de Cola ──
+    // Esta es la última declaración en el scope → Annex B la asigna a window.toggleProg
+    if (!PENDING_PROG[sap]) {
+      var of0 = DB.ofs.find(function(o){return o.of_sap===sap;});
+      PENDING_PROG[sap] = {programadoHoy: of0 ? of0.programadoHoy : false, prioridad: of0 ? of0.prioridad : 'normal'};
+    }
+    PENDING_PROG[sap].programadoHoy = val;
+    var ofDb = DB.ofs.find(function(o){return o.of_sap===sap;});
+    var isNueva = ofDb && !ofDb.programadoHoy;
+    if (isNueva) {
+      if (val && !PENDING_COLA_ORDER[sap]) {
+        var _usedOrders = Object.values(PENDING_COLA_ORDER).filter(function(n){return n>0;});
+        PENDING_COLA_ORDER[sap] = (_usedOrders.length ? Math.max.apply(null,_usedOrders) : 0) + 1;
+      } else if (!val) {
+        delete PENDING_COLA_ORDER[sap];
+      }
+      var wrap = document.getElementById('cola-wrap-'+sap);
+      if (wrap) {
+        wrap.style.display = val ? 'flex' : 'none';
+        if (val) {
+          var inp = document.getElementById('cola-ord-'+sap);
+          if (inp && !inp.value) inp.value = PENDING_COLA_ORDER[sap] || '';
         }
       }
     }
@@ -10931,7 +10921,6 @@ appConfirmValCal = function(){
   }
   
   function startEditMode(){
-    console.log('[startEditMode INNER] C.editingMode antes:', C.editingMode, '| window.toggleProg:', typeof window.toggleProg);
     C.editingMode=true;
     document.getElementById("btn-prog").style.display="none";
     document.getElementById("btn-prio").style.display="none";
