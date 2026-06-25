@@ -5057,9 +5057,7 @@ function doFinish(ctx, el, ok, def, rej) {
     if(op.ayudTimes[a]===undefined){
       var ayudKey=ctx.of_sap+'_'+ctx.op_id+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
       var t=DB.timers[ayudKey];
-      // t.elapsed is in ms — compute entirely in ms then floor to minutes
-      var ayudMs=t?((t.elapsed||0)+(t.running?(Date.now()-t.start):0)):0;
-      op.ayudTimes[a]=ayudMs>0?Math.floor(ayudMs/60000):el;
+      op.ayudTimes[a]=t&&t.running?Math.floor((Date.now()-t.start)/60000):el;
       if(t) t.running=false;
     }
   });
@@ -5639,12 +5637,14 @@ function ayudStopTimer(sap, opId, ayud){
   var t=DB.timers[ayudKey];
   var mins=0;
   if(t){
-    // t.elapsed is in ms, t.start is a timestamp — compute entirely in ms then convert
-    var elapsedMs=(t.elapsed||0)+(t.running?(Date.now()-t.start):0);
-    mins=Math.floor(elapsedMs/60000);
+    var elapsed=t.elapsed||0;
+    if(t.running) elapsed+=Math.floor((Date.now()-t.start)/60000);
+    mins=elapsed;
   } else {
-    // Si no hay timer, usar los minutos acumulados de la op como referencia
-    mins=getEl(sap+'_'+opId);
+    // Si no hay timer, usar los minutos de la op como referencia
+    var of2=DB.activeOFs.find(function(o){return o.of_sap===sap;});
+    var op2=of2?of2.ops.find(function(o){return o.id===opId;}):null;
+    mins=op2?getEl(sap+'_'+opId):0;
   }
   if(!op.ayudTimes) op.ayudTimes={};
   op.ayudTimes[ayud]=mins;
@@ -13015,9 +13015,7 @@ function doFinish(ctx, el, ok, def, rej) {
     if(op.ayudTimes[a]===undefined){
       var ayudKey=ctx.of_sap+'_'+ctx.op_id+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
       var t=DB.timers[ayudKey];
-      // t.elapsed is in ms — compute entirely in ms then floor to minutes
-      var ayudMs=t?((t.elapsed||0)+(t.running?(Date.now()-t.start):0)):0;
-      op.ayudTimes[a]=ayudMs>0?Math.floor(ayudMs/60000):el;
+      op.ayudTimes[a]=t&&t.running?Math.floor((Date.now()-t.start)/60000):el;
       if(t) t.running=false;
     }
   });

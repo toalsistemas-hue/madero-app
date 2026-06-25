@@ -6837,7 +6837,7 @@ function renderCoordFlujos() {
       if (g.type === 'seq') {
         var op = g.op;
         var key = aof.of_sap + '_' + op.id;
-        var elMins = (op.status === 'running' || op.status === 'paused' || op.status === 'validating') ? (function(){
+        var elMins = op.status === 'running' ? (function(){
           var t = DB.timers[key];
           if (!t) return op.mins || 0;
           return Math.floor(((t.elapsed||0) + (t.running ? Date.now()-t.start : 0)) / 60000);
@@ -7584,8 +7584,6 @@ function renderHist(){
       h+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       if(x.op.pauseReason) h+='<span style="font-size:.6rem;color:var(--dim);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(x.op.pauseReason)+'">'+esc(x.op.pauseReason.substring(0,20))+'…</span>';
-      var elP=getEl(x.aof.of_sap+'_'+x.op.id);
-      if(elP>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--yellow);">'+fmtM(elP)+'</span>';
       h+='</div>';
     });
     // Queue (pending with cola number)
