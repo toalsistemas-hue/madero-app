@@ -7045,6 +7045,7 @@ function getProgFields(sap){
   };
 }
 function toggleProg(sap,val){
+  console.warn('[toggleProg OLD v7046] sap='+sap+' — wrong function called! window.toggleProg='+typeof window.toggleProg);
   var of=DB.ofs.find(function(o){return o.of_sap===sap;});
   if(!of)return;
   of.programadoHoy=val;
@@ -8622,6 +8623,7 @@ var PENDING_COLA_ORDER = {}; // {of_sap: número} — orden de cola asignado en 
 // -- 1 & 2: toggleProg solo actualiza PENDING, no DB ------
 function toggleProg(sap, val) {
   window.toggleProg = toggleProg; // ensure global access from HTML onclick
+  console.log('[toggleProg] sap='+sap+' val='+val+' isNueva='+(DB.ofs.find(function(o){return o.of_sap===sap;})||{}).programadoHoy);
   if (!PENDING_PROG[sap]) {
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
