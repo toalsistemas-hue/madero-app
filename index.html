@@ -7159,6 +7159,7 @@ function updatePedidoPrio(pedido,val){
 
 function startEditMode(){
   window.startEditMode=startEditMode;
+  console.log('[startEditMode] C.editingMode antes:', C.editingMode, '| window.toggleProg:', typeof window.toggleProg);
   C.editingMode=true;
   document.getElementById("btn-prog").style.display="none";
   document.getElementById("btn-prio").style.display="none";
@@ -10799,6 +10800,7 @@ appConfirmValCal = function(){
     };
   }
   function toggleProg(sap,val){
+    console.log('[toggleProg DELEGATOR-6917] sap='+sap+' val='+val+' window.toggleProg===this:', window.toggleProg===toggleProg);
     // Delegar a window.toggleProg (la versión correcta con soporte de cola)
     if(window.toggleProg && window.toggleProg !== toggleProg) { window.toggleProg(sap,val); return; }
     // Fallback mínimo si window.toggleProg no está listo aún
@@ -10929,6 +10931,7 @@ appConfirmValCal = function(){
   }
   
   function startEditMode(){
+    console.log('[startEditMode INNER] C.editingMode antes:', C.editingMode, '| window.toggleProg:', typeof window.toggleProg);
     C.editingMode=true;
     document.getElementById("btn-prog").style.display="none";
     document.getElementById("btn-prio").style.display="none";
