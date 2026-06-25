@@ -6909,6 +6909,7 @@ function closeCModal(id){document.getElementById(id).classList.remove("show");}
 
 // --- PROGRAMACIÓN ---------------------------------------
 function setProgTab(tab){
+  window.setProgTab=setProgTab;
   if(tab==='cancelados' && C.filterStatus==='cancelados') tab='todos';
   C.filterStatus = tab;
   // Actualizar estilos igual que Tiempo Real
@@ -7070,6 +7071,7 @@ function toggleProg(sap,val){
   }
 }
 async function restaurarOrden(sap){
+  window.restaurarOrden=restaurarOrden;
   var of=DB.ofs.find(function(o){return o.of_sap===sap;});
   if(!of||!confirm('¿Restaurar la OF '+sap+' a "Sin programar"?')) return;
   of.status='Sin programar'; of.programadoHoy=false;
@@ -7171,6 +7173,7 @@ function updatePedidoPrio(pedido,val){
 }
 
 function startEditMode(){
+  window.startEditMode=startEditMode;
   C.editingMode=true;
   document.getElementById("btn-prog").style.display="none";
   document.getElementById("btn-prio").style.display="none";
@@ -8618,6 +8621,7 @@ var PENDING_COLA_ORDER = {}; // {of_sap: número} — orden de cola asignado en 
 
 // -- 1 & 2: toggleProg solo actualiza PENDING, no DB ------
 function toggleProg(sap, val) {
+  window.toggleProg = toggleProg; // ensure global access from HTML onclick
   if (!PENDING_PROG[sap]) {
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
     PENDING_PROG[sap] = {programadoHoy: of ? of.programadoHoy : false, prioridad: of ? of.prioridad : 'normal'};
@@ -8645,6 +8649,7 @@ function toggleProg(sap, val) {
   }
 }
 function updatePedidoPrio(pedido, val) {
+  window.updatePedidoPrio=updatePedidoPrio;
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
     if (!PENDING_PROG[o.of_sap]) PENDING_PROG[o.of_sap] = {programadoHoy: o.programadoHoy, prioridad: o.prioridad};
     PENDING_PROG[o.of_sap].prioridad = val;
@@ -9224,6 +9229,7 @@ function getProgFields(sap){
 }
 // -- 1: Modal asignación de técnicos a ops ----------------
 function openOFOpsModal(sap) {
+  window.openOFOpsModal=openOFOpsModal;
   var aof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
   // If not in activeOFs yet, or ops are empty — try to inject from template on-the-fly
   if (!aof || !aof.ops || !aof.ops.length) {
@@ -9468,6 +9474,7 @@ function showInfoModal(title, msg, btnLabel, btnCb) {
   openCModal('modal-info');
 }
 function handleConfigClick(sap) {
+  window.handleConfigClick=handleConfigClick;
   var of = DB.ofs.find(function(o){return o.of_sap===sap;});
   var tpl = of ? DB.templates[of.articulo] : null;
   if (tpl) {
@@ -13871,6 +13878,24 @@ function ftRptExportExcel(){
 
 
 
+
+// Expose all coordinator functions to global window scope
+// (needed when ftLoadDataFromSP creates a local scope that shadows globals)
+(function _exposeGlobals(){
+  var fns = ['toggleProg','setProgTab','startEditMode','cancelEditMode',
+             'confirmProgMain','openOFOpsModal','handleConfigClick',
+             'updatePedidoPrio','cancelarOrden','restaurarOrden','cancelarPedido',
+             'cancelarPedido','showCoordPage','openCModal','closeCModal',
+             'saveOFOps','getProgFields','openOFModal','ftRptLoad',
+             'openPrioModal','openNewTplModal','deleteTpl','saveTpl',
+             'applyHistFilter','movePedidoCierre','simulateRefresh',
+             'restaurarPedido','sqMoveOp','sqPrioritizeOF'];
+  fns.forEach(function(name){
+    if (typeof window[name] === 'undefined' && typeof eval(name) === 'function') {
+      try { window[name] = eval(name); } catch(e) {}
+    }
+  });
+})();
 </script>
 
 
