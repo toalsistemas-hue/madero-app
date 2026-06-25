@@ -7719,6 +7719,15 @@ async function _appLoadDataFromSP_impl() {
       var v = f.Programado_Hoy;
       return v===true || v==='true' || v===1 || v==='1';
     };
+    // Snapshot existing _colaPos and _queueSpId BEFORE rebuilding activeOFs
+    // so we can restore them after — colaItems will overwrite with fresh SP data if available
+    var _prevColaMap = {};
+    (DB.activeOFs||[]).forEach(function(aof){
+      aof.ops.forEach(function(op){
+        if(op._colaPos || op._queueSpId)
+          _prevColaMap[aof.of_sap+'__'+op.id] = {_colaPos:op._colaPos||0, _queueSpId:op._queueSpId||null, cola:op.cola||0};
+      });
+    });
     DB.activeOFs = ofs.filter(isProgramado).map(f => ({
       of_sap:      f.OF_SAP||f.Title||'',
       pedido:      f.Numero_Pedido||f.Pedido||'',
@@ -7843,9 +7852,20 @@ async function _appLoadDataFromSP_impl() {
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
     });
-    window.DB_STATION_QUEUE={};
-    window.STATIONS.forEach(s=>{window.DB_STATION_QUEUE[s]=[];});
-    const colaItems=(colaRes.value||[]).map(i=>({fields:i.fields,id:i.id})).sort((a,b)=>(a.fields.Posicion||0)-(b.fields.Posicion||0));
+    var _colaItemsRaw = (colaRes.value||[]);
+    // Restore _colaPos from snapshot for ops that colaItems won't cover (empty cola response)
+    DB.activeOFs.forEach(function(aof){
+      aof.ops.forEach(function(op){
+        var prev = _prevColaMap[aof.of_sap+'__'+op.id];
+        if(prev && !op._colaPos){ op._colaPos=prev._colaPos; op._queueSpId=prev._queueSpId; op.cola=prev.cola; }
+      });
+    });
+    if (_colaItemsRaw.length > 0) {
+      // Only rebuild queue when we have fresh data — avoids clearing on Flow timeout
+      window.DB_STATION_QUEUE={};
+      window.STATIONS.forEach(s=>{window.DB_STATION_QUEUE[s]=[];});
+    }
+    const colaItems=_colaItemsRaw.map(i=>({fields:i.fields,id:i.id})).sort((a,b)=>(a.fields.Posicion||0)-(b.fields.Posicion||0));
     colaItems.forEach(c=>{
       const st=c.fields.Estacion||c.fields.Title||'';
       if(!window.DB_STATION_QUEUE[st])window.DB_STATION_QUEUE[st]=[];
@@ -15253,7 +15273,9 @@ async function appReloadOpsFromSP() {
           qty_chat:    parseInt(o.Qty_Chat||0),
           qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||0),
           qty_def_chatarra:  parseInt(o.Qty_Def_Chatarra||0),
-          cola:        0,  // siempre se asigna desde FT_Cola_Estacion, no desde campo Cola de SP
+          cola:        existing ? (existing.cola||0) : 0,  // preservar de memoria; se actualiza desde FT_Cola_Estacion cada 3 ciclos
+          _colaPos:    existing ? (existing._colaPos||0) : 0,   // preservar posición absoluta SP
+          _queueSpId:  existing ? (existing._queueSpId||null) : null, // preservar SP ID de FT_Cola_Estacion
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
