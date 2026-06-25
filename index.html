@@ -5902,7 +5902,7 @@ async function ftLoadDataFromSP() {
     if(typeof sqPurge==='function') sqPurge();
     if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
     // Re-render con números de cola ya corregidos
-    renderApp();
+    (window.renderApp||renderApp)();
   // Start real-time polling so portal auto-updates when app mobile makes changes
   if (!window._coordPollTimer && !state.isDemoMode) {
     window._coordLastOpsMod = '';
@@ -6924,7 +6924,7 @@ function setProgTab(tab){
       if(t==='cancelados') b.style.cssText='color:var(--red);border-color:rgba(239,68,68,.3);';
     }
   });
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 function renderProg(){
   // Stub — lógica completa en segunda definición (JS usa la última)
@@ -7045,31 +7045,15 @@ function getProgFields(sap){
   };
 }
 function toggleProg(sap,val){
-  console.warn('[toggleProg OLD v7046] sap='+sap+' — wrong function called! window.toggleProg='+typeof window.toggleProg);
+  // Delegador — la lógica real está en la definición posterior con soporte de Cola
+  // Esta definición queda como respaldo; JS usará la última (8624+)
+  if (window.toggleProg && window.toggleProg !== toggleProg) {
+    window.toggleProg(sap, val);
+    return;
+  }
   var of=DB.ofs.find(function(o){return o.of_sap===sap;});
   if(!of)return;
   of.programadoHoy=val;
-  if(val) {
-    // Agregar a activeOFs si no existe
-    var existingAof = DB.activeOFs.find(function(a){return a.of_sap===sap;});
-    if (!existingAof) {
-      var tpl=DB.templates[of.articulo];
-      var ops=tpl?tpl.ops.map(function(op,i){return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};}):[];
-      var padre = tpl&&tpl.padre ? {articulo:tpl.padre, nombre:DB.articles[tpl.padre]||''} : null;
-      var subarts = tpl&&tpl.subarts ? tpl.subarts.slice() : [];
-      DB.activeOFs.push({of_sap:of.of_sap,pedido:of.pedido,cliente:of.cliente,ofv:of.ofv||"",articulo:of.articulo,descripcion:of.descripcion,prioridad:of.prioridad,padre:padre,subarts:subarts,ops:ops});
-    } else if (existingAof.ops.length === 0 && of.articulo) {
-      // ActiveOF already exists but has no ops — try to populate from template now
-      var tpl2 = DB.templates[of.articulo];
-      if (tpl2 && tpl2.ops && tpl2.ops.length) {
-        existingAof.ops = tpl2.ops.map(function(op,i){
-          return {id:"op_"+sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||"Secuencial",tecnico:"",ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,status:"pending",inicio:null,fin:null,mins:0,isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
-        });
-        if (tpl2.padre) existingAof.padre = {articulo:tpl2.padre, nombre:DB.articles[tpl2.padre]||''};
-        if (tpl2.subarts) existingAof.subarts = tpl2.subarts.slice();
-      }
-    }
-  }
 }
 async function restaurarOrden(sap){
   window.restaurarOrden=restaurarOrden;
@@ -7081,7 +7065,7 @@ async function restaurarOrden(sap){
     var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
     if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
   }catch(e){console.warn('SP restaurarOrden:',e.message);}
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 async function restaurarPedido(pedido){
   var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
@@ -7096,7 +7080,7 @@ async function restaurarPedido(pedido){
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
     }catch(e){console.warn('SP restaurar:',e.message);}
   }
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 function cancelarOrden(sap, pedido){
   var of = DB.ofs.find(function(o){return o.of_sap===sap;});
@@ -7121,7 +7105,7 @@ async function _ejecutarCancelacionOF(of, aof){
       if(op.status!=='done') op.status='cancelled';
     });
   }
-  renderProg();
+  (window.renderProg||renderProg)();
   // Persistir en SP — OF
   try {
     var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
@@ -7163,14 +7147,14 @@ async function cancelarPedido(pedido){
     var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
     await _ejecutarCancelacionOF(of, aof);
   }
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 
 
 function updatePedidoPrio(pedido,val){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
   DB.activeOFs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 
 function startEditMode(){
@@ -7180,16 +7164,18 @@ function startEditMode(){
   document.getElementById("btn-prio").style.display="none";
   document.getElementById("btn-confirm-prog").style.display="inline-flex";
   document.getElementById("btn-cancel-prog").style.display="inline-flex";
-  renderProg();
+  (window.renderProg||renderProg)();
 }
+window.startEditMode = startEditMode;
 function cancelEditMode(){
   C.editingMode=false;
   document.getElementById("btn-prog").style.display="inline-flex";
   document.getElementById("btn-prio").style.display="inline-flex";
   document.getElementById("btn-confirm-prog").style.display="none";
   document.getElementById("btn-cancel-prog").style.display="none";
-  renderProg();
+  (window.renderProg||renderProg)();
 }
+window.cancelEditMode = cancelEditMode;
 // confirmProgMain defined below (SP save included)
 function openPrioModal(){
   document.getElementById('prio-filter').value='';
@@ -7630,7 +7616,7 @@ APP.expanded["14489"]=true;
 // Recibir sync desde Coordinador
 onSync("app", function(event, data){
   if(event==="prog_updated"||event==="template_updated"||event==="prio_updated") {
-    renderApp();
+    (window.renderApp||renderApp)();
     showAppNotif(event, data);
   }
 });
@@ -7643,7 +7629,7 @@ function showAppNotif(event, data){
   if(!exists){
     DB.notifications.push({id:"n_"+Date.now(),type:"coord",msg:msg,time:nowT(),read:false});
   }
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 function sqClass(op){
@@ -7663,7 +7649,7 @@ function setAppView(v, el){
   APP.view=v;
   document.querySelectorAll(".app-bni").forEach(function(b){b.classList.remove("active");});
   if(el) el.classList.add("active"); else {var btn=document.getElementById("app-nav-"+v);if(btn)btn.classList.add("active");}
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 function setAppRole(r, el){
   APP.role=r;
@@ -7671,7 +7657,7 @@ function setAppRole(r, el){
   document.getElementById("app-role-sub").textContent=lbl[r]||r;
   document.querySelectorAll(".app-rp").forEach(function(b){b.classList.remove("active");});
   if(el) el.classList.add("active");
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 function openAppModal(id){document.getElementById(id).classList.add("show");}
 function closeAppModal(id){document.getElementById(id).classList.remove("show");}
@@ -7789,7 +7775,7 @@ function renderAppHoy(){
 function markNotifRead(id){
   var n=DB.notifications.find(function(x){return x.id===id;});
   if(n)n.read=true;
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 function renderAppSACard(sa){
@@ -8259,7 +8245,7 @@ function appConfirmReanudar(){
     });
     closeAppModal('app-modal-traspaso');
     if(newOp&&newOp.estacion){sqAddOF(ctx.of_sap);sqSyncColaNumbers();}
-    renderApp();
+    (window.renderApp||renderApp)();
     fireSync('app','turno_traspaso',{of_sap:ctx.of_sap,nuevo_tech:nuevoTech,pzas:pzRest});
   }
 }
@@ -8279,7 +8265,7 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
     var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
     DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
   });
-  renderApp();
+  (window.renderApp||renderApp)();
   _refreshStationViews();
   // Persist to SP so app.html picks up the resumed status and timer
   (async function(){
@@ -8531,7 +8517,7 @@ function appConfirmAddOp(){
     if(subartKeys.length){
       DB.templates[of.articulo].subarts = subartKeys.map(function(k){return {articulo:k,nombre:DB.articles[k]||k};});
     }
-    renderTpls();
+    (window.renderTpls||renderTpls)();
   }
   closeAppModal("app-modal-op");APP.expanded[ctx.of_sap]=true;renderApp();fireSync("app","op_added",{of_sap:ctx.of_sap});
   // Auto-add new op to station queue
@@ -8557,12 +8543,12 @@ function simulateRefresh(){
       showSyncToast("coord","Datos actualizados desde SharePoint");
     }).catch(function(){
       if(btn){btn.textContent="↻ Actualizar";btn.disabled=false;}
-      renderProg();
+      (window.renderProg||renderProg)();
     });
   } else {
     setTimeout(function(){
       if(btn){btn.textContent="↻ Actualizar";btn.disabled=false;}
-      renderProg();
+      (window.renderProg||renderProg)();
     },400);
   }
 }
@@ -8587,10 +8573,10 @@ function ftInitWhenReady(){
     DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(o){ sqAddOF(o.of_sap); });
     sqSyncColaNumbers();
   })();
-  renderProg();
-  renderTpls();
-  renderSeg();
-  renderApp();
+  (window.renderProg||renderProg)();
+  (window.renderTpls||renderTpls)();
+  (window.renderSeg||renderSeg)();
+  (window.renderApp||renderApp)();
 }
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded', ftInitWhenReady);
@@ -8650,6 +8636,7 @@ function toggleProg(sap, val) {
     }
   }
 }
+window.toggleProg = toggleProg; // register immediately at parse time
 function updatePedidoPrio(pedido, val) {
   window.updatePedidoPrio=updatePedidoPrio;
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
@@ -8660,11 +8647,12 @@ function updatePedidoPrio(pedido, val) {
   });
   // Update activeOFs too
   DB.activeOFs.filter(function(a){return a.pedido===pedido;}).forEach(function(a){a.prioridad=val;});
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 
 // -- 1 & 2: confirmProgMain aplica PENDING a DB ------------
 function confirmProgMain() {
+  window.confirmProgMain = confirmProgMain;
   // Capturar Fecha_Entrega y Cantidad de los inputs del DOM antes de salir del modo edición
   // Validar que OFs programadas tengan los campos obligatorios
   var errores = [];
@@ -8768,7 +8756,7 @@ function confirmProgMain() {
     var primeraOf = DB.ofs.find(function(o){return o.of_sap===nuevasOfs[0];});
     if (primeraOf) detailMsg = 'Se agregó OF '+primeraOf.of_sap+' — '+(primeraOf.descripcion||'').substring(0,45)+(nuevasOfs.length>1?' y '+(nuevasOfs.length-1)+' más':'');
   }
-  renderProg();
+  (window.renderProg||renderProg)();
   // Sync queue for newly programmed OFs
   DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(o){
     sqAddOF(o.of_sap);
@@ -9054,7 +9042,7 @@ function cancelEditMode() {
   document.getElementById('btn-prio').style.display = 'inline-flex';
   document.getElementById('btn-confirm-prog').style.display = 'none';
   document.getElementById('btn-cancel-prog').style.display = 'none';
-  renderProg();
+  (window.renderProg||renderProg)();
 }
 
 // -- renderProg con PENDING reflejado visualmente ----------
@@ -9431,7 +9419,7 @@ function saveOFOps() {
       }
     })();
   }
-  renderSeg();
+  (window.renderSeg||renderSeg)();
   fireSync('coord','ops_assigned',{of_sap:sap});
   var _ntfyAof = DB.activeOFs ? DB.activeOFs.find(function(a){return a.of_sap===sap;}) : null;
   var _ntfyOp  = _ntfyAof ? _ntfyAof.ops.find(function(o){return o.tecnico;}) : null;
@@ -9440,13 +9428,13 @@ function saveOFOps() {
     tecnico: _ntfyOp ? _ntfyOp.tecnico : '',
     ayudantes: _ntfyOp ? (_ntfyOp.ayudantes||[]) : []
   }).catch(function(){});
-  renderApp();
+  (window.renderApp||renderApp)();
   setTimeout(function(){ highlightAppOF(sap); }, 200);
 }
 // -- 4 & 7: Highlight de OF en la app ---------------------
 function highlightAppOF(sap) {
   APP.expanded[sap] = true;
-  renderApp();
+  (window.renderApp||renderApp)();
   setTimeout(function(){
     var cards = document.querySelectorAll('.app-ofc');
     cards.forEach(function(card){
@@ -9645,7 +9633,7 @@ function handleCoordNotifClick(id) {
   }
   if (n.of_sap) {
     showCoordPage('seguimiento', document.querySelector('.sb-item[onclick*="seguimiento"]'));
-    renderSeg();
+    (window.renderSeg||renderSeg)();
     setTimeout(function(){
       var cards = document.querySelectorAll('#seg-list .prog-card, #seg-list > div');
       cards.forEach(function(card){
@@ -9749,7 +9737,7 @@ appMoveOp = function(sap, idx, dir) {
   if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')) return;
   var tmp=of.ops[idx]; of.ops[idx]=of.ops[ni]; of.ops[ni]=tmp;
   sqSyncColaNumbers();
-  renderApp();
+  (window.renderApp||renderApp)();
   if (C.currentPage==='seguimiento') renderSeg();
   // Persist Secuencia to SP
   if(typeof FT_SITE_ID!=='undefined' && FT_SITE_ID){
@@ -9771,7 +9759,7 @@ var _origMarkNotifRead = markNotifRead;
 markNotifRead = function(id) {
   var n = DB.notifications.find(function(x){return x.id===id;});
   if (n) { n.read=true; if(n.of_sap) highlightAppOF(n.of_sap); }
-  renderApp();
+  (window.renderApp||renderApp)();
 };
 
 // -- 13: Cálculo automático OK/Defecto --------------------
@@ -10395,7 +10383,7 @@ function saveTplModal(){
 
   C.editingTplArt = null;
   closeCModal('modal-tpl');
-  renderTpls();
+  (window.renderTpls||renderTpls)();
   // Sync station queues for all affected OFs
   DB.activeOFs.forEach(function(aof){
     var artKey = getOfArticuloKey(DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{});
@@ -10534,7 +10522,7 @@ function _doStartOp(sap, opId){
       DB.timers[ayudKey]={start:Date.now(),elapsed:0,running:true};
     }
   });
-  renderApp();
+  (window.renderApp||renderApp)();
   fireSync('app','op_started',{of_sap:sap, op_id:opId, op_name:op.nombre, tecnico:op.tecnico||''});
 }
 
@@ -10549,7 +10537,7 @@ function ayudStopTimer(sap, opId, ayud){
   if(!op.ayudTimes) op.ayudTimes={};
   op.ayudTimes[ayud]=mins;
   if(DB.timers[ayudKey]) DB.timers[ayudKey].running=false;
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 function appSaveQuickAssign(){
@@ -10845,7 +10833,7 @@ appConfirmValCal = function(){
       var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
     }catch(e){console.warn('SP restaurarOrden:',e.message);}
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   async function restaurarPedido(pedido){
     var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
@@ -10860,7 +10848,7 @@ appConfirmValCal = function(){
         if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
       }catch(e){console.warn('SP restaurar:',e.message);}
     }
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   function cancelarOrden(sap, pedido){
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
@@ -10885,7 +10873,7 @@ appConfirmValCal = function(){
         if(op.status!=='done') op.status='cancelled';
       });
     }
-    renderProg();
+    (window.renderProg||renderProg)();
     // Persistir en SP — OF
     try {
       var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
@@ -10927,14 +10915,14 @@ appConfirmValCal = function(){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       await _ejecutarCancelacionOF(of, aof);
     }
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   
   
   function updatePedidoPrio(pedido,val){
     DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
     DB.activeOFs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   
   function startEditMode(){
@@ -10943,7 +10931,7 @@ appConfirmValCal = function(){
     document.getElementById("btn-prio").style.display="none";
     document.getElementById("btn-confirm-prog").style.display="inline-flex";
     document.getElementById("btn-cancel-prog").style.display="inline-flex";
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   function cancelEditMode(){
     C.editingMode=false;
@@ -10951,7 +10939,7 @@ appConfirmValCal = function(){
     document.getElementById("btn-prio").style.display="inline-flex";
     document.getElementById("btn-confirm-prog").style.display="none";
     document.getElementById("btn-cancel-prog").style.display="none";
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   // confirmProgMain defined below (SP save included)
   function openPrioModal(){
@@ -11297,7 +11285,7 @@ appConfirmValCal = function(){
       var item=(existRes.value||[]).find(function(it){return (it.fields.Title||'')===sap;});
       if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
     }catch(e){console.warn('SP restaurarOrden:',e.message);}
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   async function restaurarPedido(pedido){
     var ofsDelPedido = DB.ofs.filter(function(o){return o.pedido===pedido;});
@@ -11312,7 +11300,7 @@ appConfirmValCal = function(){
         if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar',Programado_Hoy:false},item.id);
       }catch(e){console.warn('SP restaurar:',e.message);}
     }
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   function cancelarOrden(sap, pedido){
     var of = DB.ofs.find(function(o){return o.of_sap===sap;});
@@ -11337,7 +11325,7 @@ appConfirmValCal = function(){
         if(op.status!=='done') op.status='cancelled';
       });
     }
-    renderProg();
+    (window.renderProg||renderProg)();
     // Persistir en SP — OF
     try {
       var existRes = await flowGet('FT_OrdenesFabricacion','',2000);
@@ -11379,14 +11367,14 @@ appConfirmValCal = function(){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       await _ejecutarCancelacionOF(of, aof);
     }
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   
   
   function updatePedidoPrio(pedido,val){
     DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
     DB.activeOFs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){o.prioridad=val;});
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   
   function startEditMode(){
@@ -11395,7 +11383,7 @@ appConfirmValCal = function(){
     document.getElementById("btn-prio").style.display="none";
     document.getElementById("btn-confirm-prog").style.display="inline-flex";
     document.getElementById("btn-cancel-prog").style.display="inline-flex";
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   function cancelEditMode(){
     C.editingMode=false;
@@ -11403,7 +11391,7 @@ appConfirmValCal = function(){
     document.getElementById("btn-prio").style.display="inline-flex";
     document.getElementById("btn-confirm-prog").style.display="none";
     document.getElementById("btn-cancel-prog").style.display="none";
-    renderProg();
+    (window.renderProg||renderProg)();
   }
   // confirmProgMain defined below (SP save included)
   function openPrioModal(){
@@ -11750,7 +11738,7 @@ async function movePedidoCierre(pedido){
     o.pedidoCierre=true;
     o.status='En proceso de cierre';
   });
-  renderSeg();
+  (window.renderSeg||renderSeg)();
   fireSync('coord','pedido_cierre',{pedido:pedido});
   // Persistir en SP
   try {
@@ -11856,20 +11844,20 @@ function appNotifClick(id, of_sap){
   var n = DB.notifications.find(function(x){return x.id===id;});
   if(n) n.read = true;
   if(of_sap) highlightAppOF(of_sap);
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 function appMarkNotifRead(id, of_sap){
   var n = DB.notifications.find(function(x){return x.id===id;});
   if(n) n.read = true;
   if(of_sap) highlightAppOF(of_sap);
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 // -- 2: markNotifRead con highlight ---------------------------
 markNotifRead = function(id){
   var n = DB.notifications.find(function(x){return x.id===id;});
   if(n){ n.read=true; if(n.of_sap) highlightAppOF(n.of_sap); }
-  renderApp();
+  (window.renderApp||renderApp)();
 };
 
 // -- 13: Tiempos de calidad guardados -------------------------
@@ -11883,7 +11871,7 @@ function appSaveCalTime(key, val){
 function appEditCalTime(key, currentVal){
   APP.calTimes[key] = currentVal;
   DB.calTiemposGuardados[key] = currentVal;
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 // -- Inyección de notificaciones en renderAppHoy ---------------
@@ -12461,7 +12449,7 @@ function debouncedRenderHist(){
   var focusSel=document.activeElement&&document.activeElement.selectionStart!==undefined?document.activeElement.selectionStart:null;
   clearTimeout(_histDebounceTimer);
   _histDebounceTimer=setTimeout(function(){
-    renderHist();
+    (window.renderHist||renderHist)();
     // Restore focus after DOM rebuild
     if(focusId){
       var el=document.getElementById(focusId);
@@ -12664,8 +12652,8 @@ function qConflictPauseAll(){
   });
   closeCModal('modal-queue-conflict');
   renderQueueMgr();
-  renderSeg();
-  renderApp();
+  (window.renderSeg||renderSeg)();
+  (window.renderApp||renderApp)();
 }
 
 // -- App mobile queue manager -------------------------------
@@ -12724,7 +12712,7 @@ function appQueueMove(idx, dir){
       q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
       sqSyncColaNumbers();
       renderAppQueueList();
-      renderApp();
+      (window.renderApp||renderApp)();
     },'⏸ Pausar y reordenar');
     return;
   }
@@ -12741,7 +12729,7 @@ function appQueueSave(){
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
   C.techExpanded[t]=!C.techExpanded[t];
-  renderHist();
+  (window.renderHist||renderHist)();
 }
 
 // -- Station status (app móvil) -----------------------------
@@ -12808,7 +12796,7 @@ function appSaveStationStatus(){
   ss.status=status; ss.nota=nota;
   closeAppModal('app-modal-station');
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  (window.renderSeg||renderSeg)();
   fireSync('app','station_status_changed',{estacion:_currentStation,status:status});
   // Persist to FT_Status_Estacion
   if (!state.isDemoMode && state.token && typeof ftSaveStationStatusToSP==='function') {
@@ -12824,14 +12812,14 @@ function appSetOpCola(sap, opId, val){
   op.cola=parseInt(val)||null;
   // Re-render KPIs without full app re-render
   if(C.currentPage==='historial') renderHist();
-  renderSeg();
+  (window.renderSeg||renderSeg)();
 }
 function clearTechFilters(){
   ['hist-tech-filter','hist-tech-from','hist-tech-to','hist-tech-of','hist-tech-ped'].forEach(function(id){
     var el=document.getElementById(id);
     if(el) el.value='';
   });
-  renderHist();
+  (window.renderHist||renderHist)();
 }
 
 
@@ -12938,7 +12926,7 @@ function calTiemAddSample(key){
   if(!APP._ctSamples[key]) APP._ctSamples[key] = [''];
   if(APP._ctSamples[key].length >= 5) return;
   APP._ctSamples[key].push('');
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 function calTiemSave(key){
   var samples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [];
@@ -12954,7 +12942,7 @@ function calTiemSave(key){
   DB.calTiemposGuardados[key] = calData;
   if(APP&&APP.calTimes) APP.calTimes[key] = avgSecs;
   if(APP._ctSamples) delete APP._ctSamples[key];
-  renderApp();
+  (window.renderApp||renderApp)();
   if(C.currentPage==='historial') renderHist();
   // Persist to FT_CalTiempos
   if (!state.isDemoMode && state.token && typeof ftSaveCalTiempoToSP==='function') {
@@ -12966,7 +12954,7 @@ function calTiemEdit(key){
   if(!APP._ctSamples) APP._ctSamples = {};
   APP._ctSamples[key] = d.samples.map(fmtMSS);
   delete DB.calTiemposGuardados[key];
-  renderApp();
+  (window.renderApp||renderApp)();
 }
 
 
@@ -13884,21 +13872,44 @@ function ftRptExportExcel(){
 // Expose all coordinator functions to global window scope
 // (needed when ftLoadDataFromSP creates a local scope that shadows globals)
 (function _exposeGlobals(){
-  // Expose all functions that may be shadowed by ftLoadDataFromSP local scope
-  var fns = ['toggleProg','setProgTab','startEditMode','cancelEditMode',
-             'confirmProgMain','openOFOpsModal','handleConfigClick',
-             'updatePedidoPrio','cancelarOrden','restaurarOrden','cancelarPedido',
-             'showCoordPage','openCModal','closeCModal','openNewTplModalWithArt',
-             'saveOFOps','getProgFields','ftRptLoad','openPrioModal',
-             'applyHistFilter','movePedidoCierre','simulateRefresh',
-             'restaurarPedido','sqPrioritizeOF','renderProg','renderSeg',
-             'renderTpls','renderHist','renderApp'];
-  fns.forEach(function(name){
-    try {
-      var fn = eval(name);
-      if (typeof fn === 'function') window[name] = fn;
-    } catch(e) {}
+  // Registrar inmediatamente las funciones críticas que ya tienen window.X = X
+  // al inicio de sus cuerpos. Aquí aseguramos que funciones SIN esa asignación
+  // también queden expuestas. Usamos try/catch para ignorar nombres no definidos.
+  var assigns = [
+    ['toggleProg', toggleProg],
+    ['startEditMode', startEditMode],
+    ['cancelEditMode', cancelEditMode],
+    ['confirmProgMain', confirmProgMain],
+    ['setProgTab', setProgTab],
+    ['updatePedidoPrio', updatePedidoPrio],
+    ['openOFOpsModal', openOFOpsModal],
+    ['handleConfigClick', handleConfigClick],
+    ['cancelarOrden', cancelarOrden],
+    ['restaurarOrden', restaurarOrden],
+    ['cancelarPedido', cancelarPedido],
+    ['showCoordPage', showCoordPage],
+    ['openCModal', openCModal],
+    ['closeCModal', closeCModal],
+    ['openNewTplModalWithArt', openNewTplModalWithArt],
+    ['saveOFOps', saveOFOps],
+    ['getProgFields', getProgFields],
+    ['ftRptLoad', ftRptLoad],
+    ['openPrioModal', openPrioModal],
+    ['applyHistFilter', applyHistFilter],
+    ['movePedidoCierre', movePedidoCierre],
+    ['simulateRefresh', simulateRefresh],
+    ['restaurarPedido', restaurarPedido],
+    ['sqPrioritizeOF', sqPrioritizeOF],
+    ['renderProg', renderProg],
+    ['renderSeg', renderSeg],
+    ['renderTpls', renderTpls],
+    ['renderHist', renderHist],
+    ['renderApp', renderApp]
+  ];
+  assigns.forEach(function(pair){
+    try { if (typeof pair[1] === 'function') window[pair[0]] = pair[1]; } catch(e){}
   });
+  console.log('[_exposeGlobals] toggleProg:', typeof window.toggleProg, '| startEditMode:', typeof window.startEditMode, '| renderProg:', typeof window.renderProg);
 })();
 </script>
 
