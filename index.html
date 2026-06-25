@@ -3015,9 +3015,9 @@ async function silentRefreshPedidos() {
   window.scrollTo(0, scrollY);
 }
 
-// Auto-refresh cada 15s silencioso
+// Auto-refresh cada 60s silencioso (reducido para ahorrar Flow actions)
 (function initPeAutoRefresh(){
-  setInterval(silentRefreshPedidos, 15000);
+  setInterval(silentRefreshPedidos, 60000);
 })();
 
 function renderPedidos() {
@@ -4510,7 +4510,8 @@ async function ftSaveProgramacionToSP() {
   }
   // Note: modal managed by confirmProgMain
   try {
-    const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
+    // Use Graph API directly (no Flow consumption) to fetch OF SP IDs
+    const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
     const itemMap = {};
     (res.value||[]).forEach(i => { itemMap[i.fields.Title||''] = i.id; });
     for (const of_ of DB.ofs) {
@@ -4538,8 +4539,8 @@ async function ftSavePrioridadToSP() {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { console.warn('ftSavePrioridadToSP: no siteId'); return; }
   }
   try {
-    // Get items + verify one item's actual field names for Prioridad
-    const res = await flowGet('FT_OrdenesFabricacion', '', 2000);
+    // Use Graph API directly (no Flow consumption) to fetch OF SP IDs
+    const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
     const itemMap = {};
     (res.value||[]).forEach(function(i){ itemMap[i.fields.Title||''] = i.id; });
 
@@ -6076,12 +6077,12 @@ async function ftLoadDataFromSP() {
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
           var ind=document.getElementById('auto-refresh-indicator');
           if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
-            setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 15s';},2500);}
+            setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 30s';},2500);}
         }
       } catch(e) { /* silencioso */ }
-      // ── Polling de CalTiempos (siempre, cada 15s) ──────────────────────────
+      // ── Polling de CalTiempos — via Graph API (no consume Flow actions) ──
       try {
-        var calPollRes = await flowGet('FT_CalTiempos', '', 500);
+        var calPollRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_CalTiempos/items?$expand=fields&$top=500');
         var calPollItems = calPollRes.value||[];
         var calSig = calPollItems.length+'|'+calPollItems.reduce(function(s,i){return s+(parseFloat((i.fields||i).Promedio_Seg||0));},0);
         if(calSig !== window._calTiemSig) {
@@ -6097,9 +6098,9 @@ async function ftLoadDataFromSP() {
           console.log('[CalTiempos] Actualizados:', Object.keys(DB.calTiemposGuardados).length);
         }
       } catch(e){ /* silencioso */ }
-      // ── Polling de plantillas (cada 60s aprox — cada 4 ciclos de 15s) ──
+      // ── Polling de plantillas (cada 60s aprox — cada 2 ciclos de 30s) ──
       window._tplPollCount = (window._tplPollCount||0) + 1;
-      if(window._tplPollCount % 4 === 0){
+      if(window._tplPollCount % 2 === 0){
         try {
           var tplR = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Plantillas_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
           var latestTplMod = (tplR.value&&tplR.value.length) ? (tplR.value[0].lastModifiedDateTime||'') : '';
@@ -6121,7 +6122,7 @@ async function ftLoadDataFromSP() {
           }
         } catch(e2) { /* silencioso */ }
       }
-    }, 15000); // cada 15s
+    }, 30000); // cada 30s
   }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);

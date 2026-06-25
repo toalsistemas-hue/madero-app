@@ -15169,7 +15169,7 @@ function startSPPolling() {
         console.warn('SP poll error:', e.message);
       }
     }
-  }, 20000); // cada 20 segundos — staggered from monitor poll (30s)
+  }, 45000); // cada 45s — reducido de 20s para ahorrar Flow actions (SP Leer)
 }
 
 async function spPollCheck() {
@@ -15299,8 +15299,10 @@ async function appReloadOpsFromSP() {
       });
     });
     // Load FT_Cola_Estacion to get authoritative queue positions
-    try {
-      // Read FT_Cola_Estacion via Flow (app token doesn't have direct SP Graph permissions)
+    // Only every 3rd poll cycle (~90s) to reduce Flow action consumption
+    window._colaReloadCount = (window._colaReloadCount||0) + 1;
+    var _shouldReloadCola = (window._colaReloadCount % 3 === 1); // 1, 4, 7... (every 3 cycles)
+    if (_shouldReloadCola) try {
       var colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
       // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
