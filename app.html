@@ -3883,6 +3883,7 @@ function appConfirmPause(){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
   }
+  ftFreezeTimer(key); // congelar display inmediatamente
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -4208,11 +4209,8 @@ function appConfirmValCal(){
   }
   // Detener timer al entrar en validación
   var key = ctx.of_sap+'_'+ctx.op_id;
+  ftFreezeTimer(key); // congelar display inmediatamente
   if(DB.timers[key]){
-    if(DB.timers[key].running && DB.timers[key].start){
-      DB.timers[key].elapsed = (DB.timers[key].elapsed||0) + (Date.now() - DB.timers[key].start);
-    }
-    DB.timers[key].running = false;
     if(typeof appSaveTimerToSP==='function') appSaveTimerToSP(key).catch(function(e){});
   }
   fireSync("app","op_valcal",{of_sap:ctx.of_sap, op_id:ctx.op_id});
@@ -4460,11 +4458,27 @@ function appConfirmAddOp(){
   // Auto-add new op to station queue
   if(newOp.estacion){ sqAddOF(ctx.of_sap); sqSyncColaNumbers(); }
 }
-// TICK
+// TICK — 30s full re-render
 setInterval(function(){
   var hasRun=Object.keys(DB.timers).some(function(k){return DB.timers[k].running;});
   if(hasRun)renderApp();
 },30000);
+// TICK — 1s in-place timer update (no full re-render)
+setInterval(function(){
+  var chips=document.querySelectorAll('.ft-timer-chip[data-timer-key]');
+  if(!chips.length) return;
+  chips.forEach(function(el){
+    var key=el.getAttribute('data-timer-key');
+    var t=DB.timers[key];
+    if(!t||!t.running){
+      el.classList.remove('ft-timer-chip');
+      el.removeAttribute('data-timer-key');
+      return;
+    }
+    var mins=Math.floor(((t.elapsed||0)+(Date.now()-t.start))/60000);
+    el.textContent=fmtM(mins);
+  });
+},1000);
 
 
 // ─── INICIALIZACIÓN ──────────────────────────────────────
@@ -5229,6 +5243,7 @@ function appConfirmFinish(){
   var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
 
   function doFinishLocal(){
+    ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
@@ -5853,7 +5868,7 @@ function renderSeg(){
         h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">'+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        if(op.status==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
         // Comentarios de la operación
         var comments=[];
@@ -10673,6 +10688,23 @@ function getTotalOpMins(key){
   var prevTurnosMs = t._prevTurnosMs||0;
   return Math.floor((prevTurnosMs+turnoActualMs)/60000);
 }
+// Congela el timer inmediatamente: acumula elapsed, marca running=false y
+// retira los chips del DOM para que el tick de 1s los deje de actualizar.
+function ftFreezeTimer(key){
+  var t=DB.timers[key];
+  if(t){
+    if(t.running&&t.start){
+      t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
+    }
+    t.running=false;
+  }
+  // Retirar chips del DOM inmediatamente
+  document.querySelectorAll('.ft-timer-chip[data-timer-key="'+key+'"]').forEach(function(el){
+    if(t) el.textContent=fmtM(Math.floor((t.elapsed||0)/60000));
+    el.classList.remove('ft-timer-chip');
+    el.removeAttribute('data-timer-key');
+  });
+}
 
 function pedidoIsComplete(pedido){
   var ofs=DB.ofs.filter(function(o){return o.pedido===pedido;});
@@ -11859,6 +11891,7 @@ function appConfirmPause(){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
   }
+  ftFreezeTimer(key); // congelar display inmediatamente
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -12175,13 +12208,8 @@ function appConfirmValCal(){
     .then(function(){ console.log('[ValCal] SP save OK'); })
     .catch(function(e){ console.warn('[ValCal] SP save error:', e.message||e); });
   var key=ctx.of_sap+'_'+ctx.op_id;
-  if(DB.timers[key]){
-    if(DB.timers[key].running&&DB.timers[key].start){
-      DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
-    }
-    DB.timers[key].running=false;
-    appSaveTimerToSP(key).catch(function(e){});
-  }
+  ftFreezeTimer(key); // congelar display inmediatamente
+  if(DB.timers[key]) appSaveTimerToSP(key).catch(function(e){});
   fireSync("app","op_valcal",{of_sap:ctx.of_sap});
 }
 function openCalResp(sap,opId){
@@ -12460,11 +12488,27 @@ function appConfirmAddOp(){
     setTimeout(function(){ window._suppressCoordNotifs = false; }, 3000);
   }
 }
-// TICK
+// TICK — 30s full re-render
 setInterval(function(){
   var hasRun=Object.keys(DB.timers).some(function(k){return DB.timers[k].running;});
   if(hasRun)renderApp();
 },30000);
+// TICK — 1s in-place timer update (no full re-render)
+setInterval(function(){
+  var chips=document.querySelectorAll('.ft-timer-chip[data-timer-key]');
+  if(!chips.length) return;
+  chips.forEach(function(el){
+    var key=el.getAttribute('data-timer-key');
+    var t=DB.timers[key];
+    if(!t||!t.running){
+      el.classList.remove('ft-timer-chip');
+      el.removeAttribute('data-timer-key');
+      return;
+    }
+    var mins=Math.floor(((t.elapsed||0)+(Date.now()-t.start))/60000);
+    el.textContent=fmtM(mins);
+  });
+},1000);
 
 
 // ─── INICIALIZACIÓN ──────────────────────────────────────
@@ -13232,6 +13276,7 @@ function appConfirmFinish(){
   }
 
   function doFinishLocal(){
+    ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
@@ -13921,7 +13966,7 @@ function renderSeg(){
         h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">'+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        if(op.status==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
         // Comentarios de la operación
         var comments=[];

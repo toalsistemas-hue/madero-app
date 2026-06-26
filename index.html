@@ -6709,6 +6709,21 @@ function getEl(key){
   var current = t.running ? (Date.now()-t.start) : 0;
   return Math.floor((accumulated+current)/60000);
 }
+// Congela el timer inmediatamente — retira chips del DOM y detiene el elapsed
+function ftFreezeTimer(key){
+  var t=DB.timers[key];
+  if(t){
+    if(t.running&&t.start){
+      t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
+    }
+    t.running=false;
+  }
+  document.querySelectorAll('.ft-timer-chip[data-timer-key="'+key+'"]').forEach(function(el){
+    if(t) el.textContent=fmtM(Math.floor((t.elapsed||0)/60000));
+    el.classList.remove('ft-timer-chip');
+    el.removeAttribute('data-timer-key');
+  });
+}
 function groupByPedido(ofs){
   var g={};
   (ofs||[]).filter(Boolean).forEach(function(of){
@@ -6853,7 +6868,10 @@ function renderCoordFlujos() {
         html += '<div style="font-size:.52rem;font-family:\'DM Mono\',monospace;color:var(--accent-l);">' + (gi+1) + (ico ? ' ' + ico : '') + '</div>';
         html += '<div style="font-size:.6rem;font-weight:600;line-height:1.25;margin-top:1px;">' + esc(op.nombre.substring(0,22)) + '</div>';
         html += '<div style="font-size:.52rem;color:var(--text-dim);margin-top:1px;">' + esc(op.estacion) + '</div>';
-        if (elMins > 0) html += '<div style="font-size:.52rem;color:var(--green);font-family:\'DM Mono\',monospace;margin-top:2px;">' + fmtM(elMins) + '</div>';
+        if (elMins > 0) {
+          var _isLive = (op.status==='running') && DB.timers[key] && DB.timers[key].running;
+          html += '<div class="' + (_isLive?'ft-timer-chip':'') + '" ' + (_isLive?'data-timer-key="'+key+'"':'') + ' style="font-size:.52rem;color:var(--green);font-family:\'DM Mono\',monospace;margin-top:2px;">' + fmtM(elMins) + '</div>';
+        }
         if (op.tipo === 'retorno') html += '<div style="font-size:.5rem;color:var(--yellow);background:rgba(212,160,23,.12);border-radius:3px;padding:1px 3px;margin-top:1px;">↩ ret</div>';
         html += tecLabel;
         html += '</div></div>';
@@ -8538,6 +8556,22 @@ setInterval(function(){
   var hasRun=Object.keys(DB.timers).some(function(k){return DB.timers[k].running;});
   if(hasRun)renderApp();
 },30000);
+// TICK — 1s in-place timer update (no full re-render, instant freeze on pause/stop)
+setInterval(function(){
+  var chips=document.querySelectorAll('.ft-timer-chip[data-timer-key]');
+  if(!chips.length) return;
+  chips.forEach(function(el){
+    var key=el.getAttribute('data-timer-key');
+    var t=DB.timers[key];
+    if(!t||!t.running){
+      el.classList.remove('ft-timer-chip');
+      el.removeAttribute('data-timer-key');
+      return;
+    }
+    var mins=Math.floor(((t.elapsed||0)+(Date.now()-t.start))/60000);
+    el.textContent=fmtM(mins);
+  });
+},1000);
 
 
 // --- INICIALIZACIÓN --------------------------------------
@@ -9704,9 +9738,10 @@ function doFinish(ctx, el, ok, def, rej) {
   if (!op) return;
   var key = ctx.of_sap+'_'+ctx.op_id;
   var obs = document.getElementById('app-finish-obs').value;
-  op.status='done'; op.fin=nowT(); op.mins=el; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
+  ftFreezeTimer(key); // congelar display inmediatamente
+  var elFinal = (typeof getTotalOpMins==='function') ? getTotalOpMins(key) : el;
+  op.status='done'; op.fin=nowT(); op.fecha_fin_real=nowDT(); op.mins=elFinal; op.qty_ok=ok; op.qty_def=def; op.qty_rej=rej;
   if(obs) op.obs=obs;
-  if (DB.timers[key]) DB.timers[key].running=false;
   // Auto-cerrar timers de ayudantes que sigan corriendo → heredan el tiempo total de la op
   if(!op.ayudTimes) op.ayudTimes={};
   (op.ayudantes||[]).forEach(function(a){
@@ -9735,6 +9770,10 @@ appConfirmValCal = function() {
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
+  // FIX: congelar el timer al solicitar Val.Cal desde el Monitor
+  var _valCalKey = ctx.of_sap+'_'+ctx.op_id;
+  ftFreezeTimer(_valCalKey);
+  if(typeof ftSaveTimerToSP==='function') ftSaveTimerToSP(_valCalKey).catch(function(){});
   closeAppModal('app-modal-valcal'); renderApp();
   fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };
@@ -9849,8 +9888,9 @@ function appConfirmFinish(){
   var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
 
   function doFinishLocal(){
-    var elFinal = getEl(key); // recalculate at actual confirm moment
-    op.status="done";op.fin=nowT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    ftFreezeTimer(key); // congelar display y elapsed inmediatamente
+    var elFinal = (typeof getTotalOpMins==='function') ? getTotalOpMins(key) : getEl(key);
+    op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -11260,7 +11300,7 @@ function renderSeg(){
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);white-space:nowrap;">👷 '+esc(op.tecnico)+'</span>';
         if(op.status==='running'){
           // Show live timer only (getEl already includes all accumulated time)
-          h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+          h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);white-space:nowrap;">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         } else if(op.mins>0){
           // Not running — show saved minutes snapshot
           h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);white-space:nowrap;">'+fmtM(op.mins)+'</span>';
