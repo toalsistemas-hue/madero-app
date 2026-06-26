@@ -2725,9 +2725,20 @@ function nowISO(){return new Date().toISOString();}
 function getEl(key){
   var t=DB.timers[key];
   if(!t) return 0;
-  var accumulated = t.elapsed||0; // previously accumulated ms from pauses
+  // elapsed = solo el tiempo del turno actual (sin turnos anteriores)
+  var accumulated = t.elapsed||0;
   var current = t.running ? (Date.now()-t.start) : 0;
   return Math.floor((accumulated+current)/60000);
+}
+// Retorna el tiempo total real de la op: turnos previos + turno actual
+function getTotalOpMins(key){
+  var t=DB.timers[key];
+  if(!t) return 0;
+  var accumulated = t.elapsed||0;
+  var current = t.running ? (Date.now()-t.start) : 0;
+  var turnoActualMs = accumulated+current;
+  var prevTurnosMs = t._prevTurnosMs||0;
+  return Math.floor((prevTurnosMs+turnoActualMs)/60000);
 }
 function groupByPedido(ofs){
   var g={};
@@ -3879,17 +3890,31 @@ function appConfirmPause(){
     var pzDef=parseInt(document.getElementById('app-pause-pzas-def').value)||0;
     var pzProd=pzOk+pzDef;
     var pzRest=Math.max(0,op.qty_total-pzProd);
-    // Guardar segmento del turno A
     if(!op.turnos)op.turnos=[];
-    op.turnos.push({
-      tecnico:op.tecnico,ayudantes:(op.ayudantes||[]).slice(),
-      inicio:op.inicio,fin:nowT(),mins:turnoMins,
-      qty_ok:pzOk,qty_def:pzDef,qty_rest:pzRest
-    });
+    // B3 fix: un solo objeto bien estructurado; turno calculado ANTES de push
+    var turnoNum=op.turnos.length+1;
+    var turnoActual={
+      turno:turnoNum,
+      tecnico:op.tecnico,
+      ayudantes:(op.ayudantes||[]).slice(),
+      inicio:op.inicioTurnoActual||op.inicio,
+      fin:nowT(),
+      mins:turnoMins,
+      qty_ok:pzOk,
+      qty_def:pzDef,
+      qty_rest:pzRest,
+      fecha:new Date().toLocaleDateString('es-MX')
+    };
+    // Evitar duplicado si ya existe turno con el mismo inicio
+    var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
+    if(existIdx>=0) op.turnos[existIdx]=turnoActual;
+    else op.turnos.push(turnoActual);
     op.status='paused';
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
     op._pzasRestantes=pzRest;
+    op.inicioTurnoActual=null; // reset para el siguiente turno
+    op.turnoData=JSON.stringify({_turnosArray:true,turnos:op.turnos});
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
   }
@@ -4004,12 +4029,8 @@ function appConfirmReanudar(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   if(_traspasoTipo==='mismo'){
-    // Mismo técnico continúa — actualizar qty_ok parcial del turno anterior si existe
-    var turnoAData = op.turnos&&op.turnos.length ? op.turnos[op.turnos.length-1] : null;
-    if(turnoAData && turnoAData.qty_ok>0){
-      op.qty_ok = (op.qty_ok||0) + turnoAData.qty_ok;
-      op.qty_def = (op.qty_def||0) + (turnoAData.qty_def||0);
-    }
+    // B4 fix: NO pre-acumular qty_ok aquí; el KPI calculará las piezas del último turno
+    // como diferencia entre op.qty_ok total y la suma de turnos previos
     closeAppModal('app-modal-traspaso');
     _doResumeOp(ctx.of_sap,ctx.op_id,op.tecnico,op.ayudantes||[]);
   } else {
@@ -4120,21 +4141,32 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
-  // elapsed = all time accumulated before this resume
-  // start = when THIS running session began (now)
-  var prev=DB.timers[key]?DB.timers[key].elapsed||0:0;
-  DB.timers[key]={start:Date.now(),elapsed:prev,running:true};
+  // Si es reanudación tras fin de turno: acumular ms de turnos previos en _prevTurnosMs
+  // y resetear elapsed del timer para que getEl() devuelva solo el tiempo del turno actual
+  var esFin=op._pauseTipo==='turno';
+  var timerActual=DB.timers[key]||{elapsed:0};
+  var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
+  DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
-  op.inicio=op.inicio||nowT(); // mantener inicio original
-  // Reanudar timers de ayudantes
+  op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
+  // B2 fix: registrar inicio real del turno actual (turno B, C, ...)
+  if(esFin){
+    op.inicioTurnoActual=nowT();
+    op.fechaInicioTurnoActual=nowDT();
+  }
+  // Reanudar timers de ayudantes (reset si era fin de turno)
   (ayudantes||[]).forEach(function(a){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
-    var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
+    var ayudTimer=DB.timers[ak]||{elapsed:0};
+    var prevAyudMs=(ayudTimer._prevTurnosMs||0)+(esFin?(ayudTimer.elapsed||0):0);
+    DB.timers[ak]={start:Date.now(),elapsed:esFin?0:(ayudTimer.elapsed||0),running:true,_prevTurnosMs:prevAyudMs};
   });
+  // Guardar en SP con el nuevo inicioTurnoActual
+  if(esFin&&typeof appSaveOpToSP==='function'){
+    appSaveOpToSP(sap,opId).catch(function(e){console.warn('SP resume save:',e.message);});
+  }
   // Issue 1 fix: immediately update the local button before full renderApp
-  // This prevents the visual delay on the local device
   document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
     var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;
     if(resumeBtn) resumeBtn.style.display='none';
@@ -4309,7 +4341,11 @@ function appOpenFinish(sap,opId){
     if(dRetrEl){dRetrEl.value=retVal; dRetrEl.disabled=true;}
     if(dChatEl){dChatEl.value=chatVal; dChatEl.disabled=true;}
   } else {
-    okEl.value  = op.qty_total-(op.qty_rej||0); okEl.disabled  = false;
+    // Mejora: si la op fue reanudada (tiene turnos previos), pre-rellenar con las piezas restantes
+    var _prefillOk = (op.turnos && op.turnos.length > 0 && op._pzasRestantes != null)
+      ? (op._pzasRestantes - (op.qty_rej||0))
+      : (op.qty_total-(op.qty_rej||0));
+    okEl.value  = Math.max(0, _prefillOk); okEl.disabled  = false;
     defEl.value = 0; defEl.disabled = false;
     if(chatEl){chatEl.value=0; chatEl.disabled=false;}
     if(dispPanel) dispPanel.style.display='none';
@@ -5193,7 +5229,7 @@ function appConfirmFinish(){
   var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
 
   function doFinishLocal(){
-    var elFinal = getEl(key); // recalculate at actual confirm moment
+    var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
@@ -8104,6 +8140,15 @@ async function appSaveOpToSP(of_sap, opId) {
     patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra  || 0;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
     if (op.turnoData)            patchFields.TurnoData = op.turnoData;
+    // B2 fix: persistir inicioTurnoActual dentro de TurnoData para recuperarlo al recargar
+    if (op.inicioTurnoActual) {
+      try {
+        var _td = op.turnoData ? JSON.parse(op.turnoData) : {_turnosArray:true,turnos:op.turnos||[]};
+        _td._inicioTurnoActual = op.inicioTurnoActual;
+        _td._fechaInicioTurnoActual = op.fechaInicioTurnoActual || '';
+        patchFields.TurnoData = JSON.stringify(_td);
+      } catch(e){}
+    }
 
     console.log('PATCH payload ['+opId+']: status='+patchFields.Status+' Tip='+patchFields.Tip+' _spId='+op._spId);
 
@@ -10613,11 +10658,21 @@ function nowISO(){return new Date().toISOString();}
 function getEl(key){
   var t=DB.timers[key];
   if(!t) return 0;
-  var accumulated = t.elapsed||0; // previously accumulated ms from pauses
+  // elapsed = solo el tiempo del turno actual (sin turnos anteriores)
+  var accumulated = t.elapsed||0;
   var current = t.running ? (Date.now()-t.start) : 0;
   return Math.floor((accumulated+current)/60000);
 }
-// groupByPedido defined above
+// Retorna el tiempo total real de la op: turnos previos + turno actual
+function getTotalOpMins(key){
+  var t=DB.timers[key];
+  if(!t) return 0;
+  var accumulated = t.elapsed||0;
+  var current = t.running ? (Date.now()-t.start) : 0;
+  var turnoActualMs = accumulated+current;
+  var prevTurnosMs = t._prevTurnosMs||0;
+  return Math.floor((prevTurnosMs+turnoActualMs)/60000);
+}
 
 function pedidoIsComplete(pedido){
   var ofs=DB.ofs.filter(function(o){return o.pedido===pedido;});
@@ -11811,35 +11866,31 @@ function appConfirmPause(){
     var pzDef=parseInt(document.getElementById('app-pause-pzas-def').value)||0;
     var pzProd=pzOk+pzDef;
     var pzRest=Math.max(0,op.qty_total-pzProd);
-    // Guardar segmento del turno A
     if(!op.turnos)op.turnos=[];
-    op.turnos.push({
-      tecnico:op.tecnico,ayudantes:(op.ayudantes||[]).slice(),
-      inicio:op.inicio,fin:nowT(),mins:turnoMins,
-      qty_ok:pzOk,qty_def:pzDef,qty_rest:pzRest
-    });
+    // B3 fix: un solo objeto bien estructurado; turno calculado ANTES de push
+    var turnoNum=op.turnos.length+1;
+    var turnoActual={
+      turno:turnoNum,
+      tecnico:op.tecnico,
+      ayudantes:(op.ayudantes||[]).slice(),
+      inicio:op.inicioTurnoActual||op.inicio,
+      fin:nowT(),
+      mins:turnoMins,
+      qty_ok:pzOk,
+      qty_def:pzDef,
+      qty_rest:pzRest,
+      fecha:new Date().toLocaleDateString('es-MX')
+    };
+    // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
+    var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
+    if(existIdx>=0) op.turnos[existIdx]=turnoActual;
+    else op.turnos.push(turnoActual);
     op.status='paused';
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
     op._pzasRestantes=pzRest;
-    // Serializar historial de turnos como array (soporta múltiples turnos)
-    var turnoActual = {
-      turno: (op.turnos||[]).length + 1,
-      tecnico: op.tecnico,
-      inicio: op.inicio,
-      fin: nowT(),
-      mins: turnoMins,
-      qty_ok: pzOk,
-      qty_def: pzDef,
-      qty_rest: pzRest,
-      fecha: new Date().toLocaleDateString('es-MX')
-    };
-    if(!op.turnos) op.turnos = [];
-    // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
-    var existIdx = op.turnos.findIndex(function(t){ return t.inicio === turnoActual.inicio; });
-    if(existIdx >= 0) op.turnos[existIdx] = turnoActual;
-    else op.turnos.push(turnoActual);
-    op.turnoData = JSON.stringify({_turnosArray: true, turnos: op.turnos});
+    op.inicioTurnoActual=null; // reset para el siguiente turno
+    op.turnoData=JSON.stringify({_turnosArray:true,turnos:op.turnos});
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
   }
@@ -11939,12 +11990,8 @@ function appConfirmReanudar(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   if(_traspasoTipo==='mismo'){
-    // Mismo técnico continúa — actualizar qty_ok parcial del turno anterior si existe
-    var turnoAData = op.turnos&&op.turnos.length ? op.turnos[op.turnos.length-1] : null;
-    if(turnoAData && turnoAData.qty_ok>0){
-      op.qty_ok = (op.qty_ok||0) + turnoAData.qty_ok;
-      op.qty_def = (op.qty_def||0) + (turnoAData.qty_def||0);
-    }
+    // B4 fix: NO pre-acumular qty_ok aquí; el KPI calculará las piezas del último turno
+    // como diferencia entre op.qty_ok total y la suma de turnos previos
     closeAppModal('app-modal-traspaso');
     _doResumeOp(ctx.of_sap,ctx.op_id,op.tecnico,op.ayudantes||[]);
   } else {
@@ -12055,18 +12102,26 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
-  // elapsed acumulado antes de reanudar (de pausa)
-  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0) : 0;
-  // start = now - prevElapsed → getEl = 0 + (now-start) = prevElapsed cuando inmediatamente reanuda
-  DB.timers[key] = {start: Date.now(), elapsed: prevElapsed, running: true};
+  // Si es reanudación tras fin de turno: mover elapsed a _prevTurnosMs y resetear
+  // para que getEl() devuelva solo el tiempo del turno actual
+  var esFin=op._pauseTipo==='turno';
+  var timerActual=DB.timers[key]||{elapsed:0};
+  var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
+  DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
-  op.inicio=op.inicio||nowT(); // mantener inicio original
-  // Reanudar timers de ayudantes
+  op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
+  // B2 fix: registrar inicio real del turno actual
+  if(esFin){
+    op.inicioTurnoActual=nowT();
+    op.fechaInicioTurnoActual=nowDT();
+  }
+  // Reanudar timers de ayudantes (reset si era fin de turno)
   (ayudantes||[]).forEach(function(a){
     if(op.ayudTimes&&op.ayudTimes[a]!==undefined)return; // ya terminó
     var ak=sap+'_'+opId+'_ayud_'+a.replace(/[^a-z0-9]/gi,'_');
-    var prev2=DB.timers[ak]?DB.timers[ak].elapsed||0:0;
-    DB.timers[ak]={start:Date.now(),elapsed:prev2,running:true};
+    var ayudTimer=DB.timers[ak]||{elapsed:0};
+    var prevAyudMs=(ayudTimer._prevTurnosMs||0)+(esFin?(ayudTimer.elapsed||0):0);
+    DB.timers[ak]={start:Date.now(),elapsed:esFin?0:(ayudTimer.elapsed||0),running:true,_prevTurnosMs:prevAyudMs};
   });
   // SP save al reanudar
   (async function(){
@@ -12082,7 +12137,6 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   fireSync('app','op_resumed',{of_sap:sap, op_id:opId,
     op_name:_rOp2?_rOp2.nombre:'', tecnico:_rOp2?(_rOp2.tecnico||''):''});
   // Issue 1 fix: immediately update the local button before full renderApp
-  // This prevents the visual delay on the local device
   document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
     var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;
     if(resumeBtn) resumeBtn.style.display='none';
@@ -12280,7 +12334,11 @@ function appOpenFinish(sap,opId){
     if(dRetrEl){dRetrEl.value=retVal; dRetrEl.disabled=true;}
     if(dChatEl){dChatEl.value=chatVal; dChatEl.disabled=true;}
   } else {
-    okEl.value  = op.qty_total-(op.qty_rej||0); okEl.disabled  = false;
+    // Mejora: si la op fue reanudada (tiene turnos previos), pre-rellenar con las piezas restantes
+    var _prefillOk = (op.turnos && op.turnos.length > 0 && op._pzasRestantes != null)
+      ? (op._pzasRestantes - (op.qty_rej||0))
+      : (op.qty_total-(op.qty_rej||0));
+    okEl.value  = Math.max(0, _prefillOk); okEl.disabled  = false;
     defEl.value = 0; defEl.disabled = false;
     if(chatEl){chatEl.value=0; chatEl.disabled=false;}
     if(dispPanel) dispPanel.style.display='none';
@@ -13174,7 +13232,7 @@ function appConfirmFinish(){
   }
 
   function doFinishLocal(){
-    var elFinal = getEl(key); // recalculate at actual confirm moment
+    var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
@@ -15281,6 +15339,9 @@ async function appReloadOpsFromSP() {
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
           _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos&&d.turnos.length)return d.turnos[d.turnos.length-1].qty_rest||0;if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
           turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}; return []; })(),
+          // B2 fix: recuperar inicioTurnoActual desde TurnoData al recargar desde SP
+          inicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._inicioTurnoActual||null;}catch(e){return null;} })(),
+          fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
           needsCal:    o.NeedsCal === true,
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,

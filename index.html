@@ -11554,30 +11554,45 @@ function renderHist(){
         }
         if(!techOps[t]) techOps[t]=[];
         var ayudMinsForRow=(rol==='ayudante'&&op.ayudTimes&&op.ayudTimes[t]!==undefined)?op.ayudTimes[t]:(op.mins||0);
+        // B4 fix: piezas del último turno = total - suma de turnos previos
+        var _sumTurnosPrevOk=(op.turnos||[]).reduce(function(acc,tSeg){return acc+(tSeg.qty_ok||0);},0);
+        var _sumTurnosPrevDef=(op.turnos||[]).reduce(function(acc,tSeg){return acc+(tSeg.qty_def||0);},0);
+        var _qtyOkFinal=rol==='principal' ? Math.max(0,(op.qty_ok||0)-_sumTurnosPrevOk) : 0;
+        var _qtyDefFinal=rol==='principal' ? Math.max(0,(op.qty_def||0)-_sumTurnosPrevDef) : 0;
+        // B2 fix: inicio del último turno = inicioTurnoActual si existe, sino el fin del turno previo
+        var _inicioUltimoTurno=(op.turnos&&op.turnos.length>0)
+          ? (op.inicioTurnoActual || op.turnos[op.turnos.length-1].fin || op.inicio || '—')
+          : (op.inicio||'—');
+        // Fecha del inicio: extraer de fechaInicioTurnoActual o fecha_inicio_real
+        var _fechaInicioRow=(op.turnos&&op.turnos.length>0)
+          ? (op.fechaInicioTurnoActual
+              ? op.fechaInicioTurnoActual.split(' ')[0]
+              : (op.turnos[op.turnos.length-1].fecha||op.fecha||''))
+          : (op.fecha||'');
+        // Fecha fin: extraer de fecha_fin_real
+        var _fechaFinRow=op.fecha_fin_real ? op.fecha_fin_real.split(' ')[0] : (op.fecha||'');
         techOps[t].push({
           op:op.nombre, estacion:op.estacion, rol:rol,
           isRetrabajo:!!op.isRetrabajo,
-          // numTurnos: turnos previos + 1 (el actual) si hay historial de turnos
           numTurnos: (op.turnos&&op.turnos.length>0) ? (op.turnos.length + 1) : 0,
           pauseReason: op.pauseReason||'',
           isPausedNormal: op.status==='paused' && op._pauseTipo==='normal',
           of_sap:aof.of_sap, pedido:ofRec.pedido||'—',
           mins:ayudMinsForRow,
-          qty_ok:rol==='principal'?(op.qty_ok||0):0,
-          qty_def:rol==='principal'?(op.qty_def||0):0,
+          qty_ok:_qtyOkFinal,
+          qty_def:_qtyDefFinal,
           qty_def_ret:rol==='principal'?(op.qty_def_retrabajo||0):0,
           qty_def_chat:rol==='principal'?Math.max(op.qty_chat||0, op.qty_def_chatarra||0):0,
-          // Issue 4 fix: if op has turno history, use the time AFTER the last turno ended
-          // not the original op.inicio (which is the start of turno 1)
-          inicio: (op.turnos&&op.turnos.length>0) ? (op.turnos[op.turnos.length-1].fin||op.inicio||'—') : (op.inicio||'—'),
-          fin:op.fin||'—',
-          fecha: (op.turnos&&op.turnos.length>0) ? '' : (op.fecha||'')
+          inicio: _inicioUltimoTurno,
+          fin: op.fin||'—',
+          fecha: _fechaInicioRow,
+          fechaFin: _fechaFinRow
         });
       }
 
       registerTech(op.tecnico, 'principal');
       (op.ayudantes||[]).forEach(function(a){ registerTech(a, 'ayudante'); });
-      // Registrar también segmentos de turno previos
+      // Registrar también segmentos de turnos previos (con sus piezas y tiempos individuales)
       (op.turnos||[]).forEach(function(seg, si){
         var turnoLabel = seg.turno ? 'Turno '+seg.turno : 'Turno '+(si+1);
         var segOp=Object.assign({},op,{
@@ -11587,7 +11602,7 @@ function renderHist(){
           inicio:seg.inicio,fin:seg.fin,
           fecha:seg.fecha||'',
           nombre:op.nombre+' ('+turnoLabel+')',
-          pauseReason:'🌙 '+turnoLabel, // para que el tipoBadge lo detecte
+          pauseReason:'🌙 '+turnoLabel,
           turnos:[] // segmento individual no tiene sub-turnos
         });
         var savedOp=op;op=segOp;
@@ -11758,7 +11773,7 @@ function renderHist(){
           techH+='<td style="color:var(--dim);">'+esc(r.pedido)+'</td>';
           techH+='<td>'+esc(r.op)+'</td><td style="color:var(--dim);">'+esc(r.estacion)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fecha)+'</div>':'')+esc(r.inicio)+'</td>';
-          techH+='<td style="font-family:\'DM Mono\',monospace;">'+esc(r.fin)+'</td>';
+          techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fechaFin?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fechaFin)+'</div>':'')+esc(r.fin)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+(r.mins>0?fmtM(r.mins):'—')+'</td>';
           techH+='<td>'+opRefCell+'</td>';
           techH+='<td style="color:var(--green);">'+(r.qty_ok>0?r.qty_ok:'—')+'</td>';
