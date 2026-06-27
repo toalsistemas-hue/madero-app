@@ -5607,7 +5607,22 @@ async function ftLoadDataFromSP() {
             if (recentFreeze) {
               DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
             } else {
-              var runningElapsed = Math.max(baseElapsed, (op.mins||0) * 60000);
+              // Calcular elapsed desde fecha_inicio_real (fuente confiable en FT_Operaciones)
+              var fromInicio = 0;
+              var fir = op.fecha_inicio_real || op.Fecha_Inicio || '';
+              if (fir) {
+                var firM = fir.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+                if (firM) {
+                  var dd=parseInt(firM[1]),mm=parseInt(firM[2])-1,yy=parseInt(firM[3]);
+                  var hh=parseInt(firM[4]),min=parseInt(firM[5]);
+                  var isPM = firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
+                  if(isPM && hh<12) hh+=12;
+                  if(!isPM && hh===12) hh=0;
+                  var inicioDate = new Date(yy,mm,dd,hh,min,0,0);
+                  fromInicio = Math.max(0, Date.now() - inicioDate.getTime());
+                }
+              }
+              var runningElapsed = Math.max(fromInicio, baseElapsed, (op.mins||0)*60000);
               DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
             }
           } else if (op.status === 'paused' || op.status === 'validating') {

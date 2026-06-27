@@ -7997,10 +7997,26 @@ async function _appLoadDataFromSP_impl() {
             // Mantener como detenido con el elapsed correcto
             DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
           } else {
-            // Timer activo: elapsed = mayor entre base acumulado y op.mins de SP
-            // op.mins de FT_Operaciones puede tener tiempo previo (pausas anteriores)
-            // que FT_Timers no refleja por 502s
-            var runningElapsed = Math.max(baseElapsed, (op.mins||0) * 60000);
+            // Timer activo: calcular elapsed desde fecha_inicio_real (fuente más confiable).
+            // FT_Timers.Elapsed_MS puede ser 0 o stale por 502s.
+            // fecha_inicio_real = "DD/MM/YYYY HH:MM a.m./p.m." — guardado en FT_Operaciones al iniciar.
+            var fromInicio = 0;
+            var fir = op.fecha_inicio_real || op.Fecha_Inicio || '';
+            if (fir) {
+              // Parse "DD/MM/YYYY HH:MM a.m./p.m."
+              var firM = fir.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+              if (firM) {
+                var dd=parseInt(firM[1]),mm=parseInt(firM[2])-1,yy=parseInt(firM[3]);
+                var hh=parseInt(firM[4]),min=parseInt(firM[5]);
+                var isPM = firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
+                if(isPM && hh<12) hh+=12;
+                if(!isPM && hh===12) hh=0;
+                var inicioDate = new Date(yy,mm,dd,hh,min,0,0);
+                fromInicio = Math.max(0, Date.now() - inicioDate.getTime());
+              }
+            }
+            // Usar el mayor entre: tiempo desde inicio, elapsed de SP, op.mins previos
+            var runningElapsed = Math.max(fromInicio, baseElapsed, (op.mins||0)*60000);
             DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
           }
         } else if (op.status === 'paused' || op.status === 'validating') {
