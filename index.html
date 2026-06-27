@@ -5596,7 +5596,7 @@ async function ftLoadDataFromSP() {
 
           var spElapsed  = sp  ? sp.elapsed  : 0;
           var prvElapsed = prv ? (prv.elapsed||0) : 0;
-          if (prv && prv.running && prv.start) {
+          if (prv && prv.running && prv.start && op.status === 'running') {
             prvElapsed = prvElapsed + (Date.now() - prv.start);
           }
           var baseElapsed = Math.max(spElapsed, prvElapsed);
@@ -5615,7 +5615,8 @@ async function ftLoadDataFromSP() {
                                _frozenAt: prv ? prv._frozenAt : undefined };
             if (frozenElapsed > 0) op.mins = Math.floor(frozenElapsed/60000);
           } else {
-            var doneElapsed = op.mins ? op.mins*60000 : baseElapsed;
+            // No usar baseElapsed para ops no activas — puede tener tiempo stale de FT_Timers
+            var doneElapsed = (op.status === 'done' && op.mins) ? op.mins*60000 : 0;
             DB.timers[key] = { start: Date.now(), elapsed: doneElapsed, running: false, _spId: spId };
           }
         });

@@ -7978,11 +7978,12 @@ async function _appLoadDataFromSP_impl() {
         var sp  = _spTimerData[key];
         var prv = _prevTimers[key];
 
-        // Elapsed base: tomar el mayor entre SP y local (para no perder tiempo corrido localmente)
+        // Elapsed base: tomar el mayor entre SP y local
         var spElapsed  = sp  ? sp.elapsed  : 0;
         var prvElapsed = prv ? (prv.elapsed||0) : 0;
-        // Si el timer local estaba corriendo, añadir el tiempo que corrió desde start
-        if (prv && prv.running && prv.start) {
+        // Solo sumar tiempo transcurrido si la op realmente está corriendo
+        // (evita acumular tiempo de timers fantasma en ops pending/paused/done)
+        if (prv && prv.running && prv.start && op.status === 'running') {
           prvElapsed = prvElapsed + (Date.now() - prv.start);
         }
         var baseElapsed = Math.max(spElapsed, prvElapsed);
@@ -8009,9 +8010,23 @@ async function _appLoadDataFromSP_impl() {
           // Actualizar op.mins con el elapsed correcto para el display de ⏸ Xm
           if (frozenElapsed > 0) op.mins = Math.floor(frozenElapsed/60000);
         } else {
-          // done / pending: timer detenido, sin elapsed activo
-          var doneElapsed = op.mins ? op.mins*60000 : baseElapsed;
+          // done / pending: timer detenido
+          // IMPORTANTE: no usar baseElapsed para ops pending/done —
+          // puede contener tiempo de FT_Timers con Running=true de sesiones anteriores,
+          // lo que causaría que op sin iniciar muestre tiempo transcurrido
+          var doneElapsed = (op.status === 'done' && op.mins) ? op.mins*60000 : 0;
           DB.timers[key] = { start: Date.now(), elapsed: doneElapsed, running: false, _spId: spId };
+          // Si SP tiene un timer para esta op no activa, programar corrección asíncrona
+          // (Running=true en FT_Timers de sesiones anteriores)
+          if (spId) {
+            (function(_k){ 
+              setTimeout(function(){
+                if (typeof appSaveTimerToSP === 'function') {
+                  appSaveTimerToSP(_k).catch(function(){});
+                }
+              }, 3000 + Math.random()*5000); // escalonar para no saturar el Flow
+            })(key);
+          }
         }
       });
     });
