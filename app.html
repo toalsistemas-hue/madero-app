@@ -7270,17 +7270,9 @@ async function appInitMsal() {
     }
   }
   function loginDbg(msg, isError) {
-    console.log('[LoginDebug]', msg);
-    var panel = document.getElementById('login-debug-panel');
-    var log   = document.getElementById('login-debug-log');
-    if (!panel || !log) return;
-    panel.style.display = 'block';
-    var line = document.createElement('div');
-    var ts = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    line.style.color = isError ? '#f87171' : '#4ade80';
-    line.textContent = ts + ' ' + msg;
-    log.appendChild(line);
-    panel.scrollTop = panel.scrollHeight;
+    // Solo enviar al log interceptado — el panel se abre únicamente con 5 taps en v1.0.0
+    if (isError) console.error('[LoginDebug]', msg);
+    else         console.log('[LoginDebug]', msg);
   }
   try {
     var redirectUri = appGetRedirectUri();
