@@ -3510,7 +3510,17 @@ function renderAppOpsPanel(of){
   h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
   of.ops.forEach(function(op,idx){
     var key=of.of_sap+"_"+op.id;
-    var elapsed=op.status==="running"?getEl(key):(op.status==="paused"?getEl(key):op.mins);
+    // Para running: getEl (vivo). Para paused/validating: elapsed congelado (no Date.now()).
+    // Para done/pending: op.mins guardado.
+    var elapsed=(function(){
+      if(op.status==='running') return getEl(key);
+      if(op.status==='paused'||op.status==='validating'){
+        var _t=DB.timers[key];
+        if(_t) return Math.floor((_t.elapsed||0)/60000);
+        return op.mins||0;
+      }
+      return op.mins||0;
+    })();
     h+="<div class='"+opCls(op)+"'"+(op.isRetrabajo?" style='border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04);'":"")+">"; 
     h+="<div class='app-op-top'>";
     h+="<div class='app-op-seq "+sqClass(op)+"'>"+sqLabel(op,idx)+"</div>";
@@ -3558,7 +3568,19 @@ function renderAppOpsPanel(of){
       }
       h+="</div>";
     }
-    if(op.inicio||elapsed>0){h+="<div class='app-op-times'>";if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";if(elapsed>0)h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";h+="</div>";}
+    if(op.inicio||elapsed>0){
+      h+="<div class='app-op-times'>";
+      if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";
+      if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";
+      if(elapsed>0){
+        // Para ops running: chip con data-timer-key para actualización de 1s en vivo
+        var _tiempoInner = op.status==='running'
+          ? '<span class="ft-timer-chip" data-timer-key="'+esc(key)+'">'+fmtM(elapsed)+'</span>'
+          : fmtM(elapsed);
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+_tiempoInner+"</div></div>";
+      }
+      h+="</div>";
+    }
     if(op.status==="done"){
       h+="<div class='app-op-qty-row'>";
       h+="<div class='app-oq-item'><div class='app-oq-lbl'>TOTAL</div><div class='app-oq-val'>"+op.qty_total+"</div></div>";
@@ -3887,6 +3909,8 @@ function appConfirmPause(){
   // Marcar la op con _localStatus para que el poll/reload no la sobreescriba
   // hasta que SP confirme el nuevo status (ventana de 15s)
   op._localStatus='paused'; op._localStatusAt=Date.now();
+  // Actualizar op.mins con el elapsed congelado para que el render siguiente lo muestre correctamente
+  var _t=DB.timers[key]; if(_t) op.mins=Math.floor((_t.elapsed||0)/60000);
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -4213,9 +4237,12 @@ function appConfirmValCal(){
   // Detener timer al entrar en validación
   var key = ctx.of_sap+'_'+ctx.op_id;
   ftFreezeTimer(key); // congelar display inmediatamente
-  if(DB.timers[key]){
+  var _tvk=DB.timers[key];
+  if(_tvk){
+    op.mins=Math.floor((_tvk.elapsed||0)/60000); // actualizar op.mins con elapsed congelado
     if(typeof appSaveTimerToSP==='function') appSaveTimerToSP(key).catch(function(e){});
   }
+  op._localStatus='validating'; op._localStatusAt=Date.now();
   fireSync("app","op_valcal",{of_sap:ctx.of_sap, op_id:ctx.op_id});
 }
 function openCalResp(sap,opId){
@@ -11467,7 +11494,17 @@ function renderAppOpsPanel(of){
   h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
   of.ops.forEach(function(op,idx){
     var key=of.of_sap+"_"+op.id;
-    var elapsed=op.status==="running"?getEl(key):(op.status==="paused"?getEl(key):op.mins);
+    // Para running: getEl (vivo). Para paused/validating: elapsed congelado (no Date.now()).
+    // Para done/pending: op.mins guardado.
+    var elapsed=(function(){
+      if(op.status==='running') return getEl(key);
+      if(op.status==='paused'||op.status==='validating'){
+        var _t=DB.timers[key];
+        if(_t) return Math.floor((_t.elapsed||0)/60000);
+        return op.mins||0;
+      }
+      return op.mins||0;
+    })();
     var _cId="app-op-card-"+of.of_sap+"-"+op.id.replace(/[^a-z0-9]/gi,"_");
     h+="<div id='"+_cId+"' class='"+opCls(op)+"'"+(op.isRetrabajo?" style='border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04);'":"")+">"; 
     h+="<div class='app-op-top'>";
@@ -11516,7 +11553,19 @@ function renderAppOpsPanel(of){
       }
       h+="</div>";
     }
-    if(op.inicio||elapsed>0){h+="<div class='app-op-times'>";if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";if(elapsed>0)h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";h+="</div>";}
+    if(op.inicio||elapsed>0){
+      h+="<div class='app-op-times'>";
+      if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";
+      if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";
+      if(elapsed>0){
+        // Para ops running: chip con data-timer-key para actualización de 1s en vivo
+        var _tiempoInner = op.status==='running'
+          ? '<span class="ft-timer-chip" data-timer-key="'+esc(key)+'">'+fmtM(elapsed)+'</span>'
+          : fmtM(elapsed);
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+_tiempoInner+"</div></div>";
+      }
+      h+="</div>";
+    }
     if(op.status==="done"){
       h+="<div class='app-op-qty-row'>";
       h+="<div class='app-oq-item'><div class='app-oq-lbl'>TOTAL</div><div class='app-oq-val'>"+op.qty_total+"</div></div>";
@@ -11902,6 +11951,8 @@ function appConfirmPause(){
   // Marcar la op con _localStatus para que el poll/reload no la sobreescriba
   // hasta que SP confirme el nuevo status (ventana de 15s)
   op._localStatus='paused'; op._localStatusAt=Date.now();
+  // Actualizar op.mins con el elapsed congelado para que el render siguiente lo muestre correctamente
+  var _t=DB.timers[key]; if(_t) op.mins=Math.floor((_t.elapsed||0)/60000);
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -12219,7 +12270,12 @@ function appConfirmValCal(){
     .catch(function(e){ console.warn('[ValCal] SP save error:', e.message||e); });
   var key=ctx.of_sap+'_'+ctx.op_id;
   ftFreezeTimer(key); // congelar display inmediatamente
-  if(DB.timers[key]) appSaveTimerToSP(key).catch(function(e){});
+  var _tvk2=DB.timers[key];
+  if(_tvk2){
+    op.mins=Math.floor((_tvk2.elapsed||0)/60000);
+    appSaveTimerToSP(key).catch(function(e){});
+  }
+  op._localStatus='validating'; op._localStatusAt=Date.now();
   fireSync("app","op_valcal",{of_sap:ctx.of_sap});
 }
 function openCalResp(sap,opId){
