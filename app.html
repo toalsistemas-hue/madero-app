@@ -7939,38 +7939,31 @@ async function _appLoadDataFromSP_impl() {
     window.DB_STATION_STATUS = window.DB_STATION_STATUS||{};
     (stStatusRes.value||[]).forEach(i=>{const f=i.fields;const name=f.Estacion||f.Title||'';if(name)window.DB_STATION_STATUS[name]={status:f.Status||'activa',nota:f.Nota||'',plan:JSON.parse(f.Plan_JSON||'[]')};});
     window.STATIONS.forEach(s=>{if(!window.DB_STATION_STATUS[s])window.DB_STATION_STATUS[s]={status:'activa',nota:'',plan:[]};});
-    // Preservar timers congelados recientemente (<20s) antes de reconstruir desde SP.
-    // Esto evita que un reload concurrente deshaga un ftFreezeTimer que acaba de correr.
-    var _frozenTimers = {};
-    Object.keys(DB.timers||{}).forEach(function(k){
-      var t = DB.timers[k];
-      if(t && t._frozenAt && (Date.now()-t._frozenAt < 20000)){
-        _frozenTimers[k] = t; // preservar este timer — se restaurará después del forEach
-      }
-    });
+    // Reconstruir DB.timers desde FT_Timers: guardar Start_MS y Elapsed_MS para tracking,
+    // pero IGNORAR el campo Running de SP — siempre comienza en false.
+    // La reconciliación con FT_Operaciones (bloque siguiente) establece running=true
+    // solo para las ops que realmente están corriendo. Esto elimina la dependencia de
+    // FT_Timers.Running que falla persistentemente con 502 y causa el timer fantasma.
+    var _prevTimers = {};
+    Object.keys(DB.timers||{}).forEach(function(k){ _prevTimers[k] = DB.timers[k]; });
     DB.timers = {};
     (timersRes.value||[]).forEach(function(i){
       const f=i.fields;
       const key=f.Timer_Key||f.Title||'';
       if(!key) return;
-      var startMS = parseInt(f.Start_MS||Date.now());
+      var startMS  = parseInt(f.Start_MS||Date.now());
       var elapsedMS = parseInt(f.Elapsed_MS||0);
-      var isRunning = f.Running===true;
-      // RACE CONDITION GUARD: si este dispositivo acaba de congelar este timer (<20s),
-      // NO sobreescribir con lo que viene de SP — el PATCH de FT_Timers puede estar
-      // en vuelo (o haber fallado con 502). Preservar el estado local congelado.
-      var _existing = DB.timers[key];
-      var _frozenRecently = _existing && _existing._frozenAt && (Date.now()-_existing._frozenAt < 45000);
-      if(_frozenRecently){
-        // Solo actualizar _spId si lo tenemos de SP, pero mantener estado local
-        if(i.id && !_existing._spId) _existing._spId = i.id;
-        return;
-      }
-      DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
-    });
-    // Restaurar timers congelados que el forEach puede haber sobreescrito con estado de SP
-    Object.keys(_frozenTimers).forEach(function(k){
-      DB.timers[k] = _frozenTimers[k];
+      var prev = _prevTimers[key];
+      // Si el timer local tiene más elapsed que SP (ej: corrió más tiempo localmente),
+      // usar el local para no perder tiempo acumulado
+      var useElapsed = prev ? Math.max(elapsedMS, prev.elapsed||0) : elapsedMS;
+      DB.timers[key] = {
+        start:   startMS,
+        elapsed: useElapsed,
+        running: false,        // siempre false — la reconciliación lo activa si corresponde
+        _spId:   i.id,
+        _frozenAt: prev ? prev._frozenAt : undefined  // preservar _frozenAt del timer anterior
+      };
     });
     var _colaItemsRaw = (colaRes.value||[]);
     // Restore _colaPos from snapshot for ops that colaItems won't cover (empty cola response)

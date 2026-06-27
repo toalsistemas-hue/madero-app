@@ -1008,10 +1008,11 @@ tr:last-child td{border-bottom:none;}
     <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
     <button class="coord-nav-pill" onclick="showCoordPage('flujos',this)">🔀 Flujos en proceso</button>
     <button class="coord-nav-pill" onclick="showCoordPage('reportes',this);ftRptLoad()">📋 Reportes</button>
-    <span onclick="_onCoordVersionTap()" title="Debug Console"
-      style="margin-left:auto;font-size:.58rem;color:rgba(255,255,255,.15);
-             cursor:default;user-select:none;-webkit-user-select:none;
-             padding:4px 8px;letter-spacing:.04em;flex-shrink:0;">FabTracker v1</span>
+    <button onclick="_onCoordVersionTap()" title="Debug Console (tap 5 veces)"
+      style="margin-left:auto;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+             border-radius:6px;color:rgba(255,255,255,.25);font-size:.6rem;cursor:pointer;
+             padding:4px 9px;letter-spacing:.04em;flex-shrink:0;font-family:inherit;
+             user-select:none;-webkit-user-select:none;" id="coord-debug-btn">🐛</button>
     <div style="position:relative;" id="coord-notif-wrapper">
       <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);font-size:.78rem;display:flex;align-items:center;gap:5px;font-family:'Archivo',sans-serif;transition:background .15s;" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='rgba(255,255,255,.06)'">
         🔔
@@ -5573,22 +5574,23 @@ async function ftLoadDataFromSP() {
       var key = f.Timer_Key || f.Title || '';
       if (key) _spTimerMap[key] = { f: f, id: i.id };
     });
-    // Load from SP — preservar timers congelados localmente (<20s) para no deshacer una pausa
+    // Reconstruir timers desde FT_Timers: Start_MS y Elapsed_MS son confiables,
+    // pero Running NO (falla con 502 frecuentemente). Siempre inicia en false;
+    // la reconciliación con op.status de FT_Operaciones activa running=true si corresponde.
+    var _prevTimers = {};
+    Object.keys(DB.timers||{}).forEach(function(k){ _prevTimers[k] = DB.timers[k]; });
     Object.keys(_spTimerMap).forEach(function(key){
       var t = _spTimerMap[key];
       var f = t.f;
-      var _existing = DB.timers[key];
-      var _frozenRecently = _existing && _existing._frozenAt && (Date.now()-_existing._frozenAt < 20000);
-      if(_frozenRecently){
-        // Timer congelado localmente — solo actualizar _spId, mantener estado local
-        if(t.id && !_existing._spId) _existing._spId = t.id;
-        return;
-      }
+      var prev = _prevTimers[key];
+      var spElapsed  = parseInt(f.Elapsed_MS||0);
+      var useElapsed = prev ? Math.max(spElapsed, prev.elapsed||0) : spElapsed;
       DB.timers[key] = {
-        start:   parseInt(f.Start_MS||now),
-        elapsed: parseInt(f.Elapsed_MS||0),
-        running: f.Running === true || f.Running === 1,
-        _spId:   t.id,
+        start:    parseInt(f.Start_MS||now),
+        elapsed:  useElapsed,
+        running:  false,       // siempre false — reconciliación activa si op.status=running
+        _spId:    t.id,
+        _frozenAt: prev ? prev._frozenAt : undefined
       };
     });
     // Reconstruct missing/wrong timers from op.status + op.inicio
@@ -5600,10 +5602,16 @@ async function ftLoadDataFromSP() {
           var key = aof.of_sap + '_' + op.id;
           var spTimer = DB.timers[key];
           if (op.status === 'running') {
-            // No reconstruir si el timer fue congelado localmente hace menos de 20s
-            var _isFrozen = spTimer && spTimer._frozenAt && (Date.now()-spTimer._frozenAt < 20000);
-            if (!_isFrozen && (!spTimer || !spTimer.running)) {
-              // SP has no timer or wrong Running=False — reconstruct from op.inicio
+            // spTimer.running es siempre false después del load (Running de FT_Timers ignorado)
+            // Activar running=true aquí basándonos en op.status (fuente confiable)
+            if (spTimer) {
+              // Timer existe pero running=false — activarlo ahora
+              spTimer.start = Date.now() - (spTimer.elapsed||0);
+              spTimer.elapsed = 0; // elapsed acumulado se integró en start
+              spTimer.running = true;
+            } else {
+            if (!spTimer || !spTimer.running) {
+              // Sin timer en SP — reconstruir desde op.inicio
               var elapsed = spTimer ? (spTimer.elapsed || 0) : (op.mins ? op.mins * 60000 : 0);
               // If we have op.inicio, estimate elapsed since then
               if (op.inicio && !elapsed) {
@@ -5623,6 +5631,7 @@ async function ftLoadDataFromSP() {
               };
               console.log('[Timer] Reconstruido desde op.inicio:', key, 'elapsed:', Math.round(elapsed/60000), 'min');
             }
+            } // cierre if(spTimer) else
           } else if (op.status === 'paused' || op.status === 'validating') {
             if (!spTimer) {
               // No SP timer for a paused op — use op.mins as fallback
