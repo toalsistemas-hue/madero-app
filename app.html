@@ -7924,13 +7924,15 @@ async function _appLoadDataFromSP_impl() {
       var startMS = parseInt(f.Start_MS||Date.now());
       var elapsedMS = parseInt(f.Elapsed_MS||0);
       var isRunning = f.Running===true;
-      // Si el timer está running, recalcular start para que el elapsed acumulado sea correcto
-      // start = ahora - (elapsed acumulado + tiempo desde startMS)
-      if(isRunning && startMS > 0) {
-        // startMS = when the current running session began (epoch ms)
-        // elapsedMS = time accumulated before this session
-        // Correct: keep startMS as-is, elapsed=elapsedMS
-        // getEl() = elapsed + (Date.now()-start) = total correct time
+      // RACE CONDITION GUARD: si este dispositivo acaba de congelar este timer (<20s),
+      // NO sobreescribir con lo que viene de SP — el PATCH de FT_Timers puede estar
+      // en vuelo (o haber fallado con 502). Preservar el estado local congelado.
+      var _existing = DB.timers[key];
+      var _frozenRecently = _existing && _existing._frozenAt && (Date.now()-_existing._frozenAt < 20000);
+      if(_frozenRecently){
+        // Solo actualizar _spId si lo tenemos de SP, pero mantener estado local
+        if(i.id && !_existing._spId) _existing._spId = i.id;
+        return;
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
     });
@@ -7988,7 +7990,9 @@ async function _appLoadDataFromSP_impl() {
             // Op is paused in SP but FT_Timers still has Running=True — fix it
             t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
             t.running = false;
-            // Save corrected state back to SP async
+            t._frozenAt = Date.now(); // proteger contra el siguiente reload
+            op.mins = Math.floor((t.elapsed||0)/60000); // actualizar op.mins con valor correcto
+            // Save corrected state back to SP async (con retry si falla)
             if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(key).catch(function(){});
           }
         }
@@ -8265,7 +8269,15 @@ async function appSaveTimerToSP(key) {
       Running:   t.running
     };
     if(t._spId){
-      await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
+      // Retry once on 502 (Flow throttling)
+      try {
+        await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
+      } catch(e502) {
+        if(e502.message && e502.message.includes('502')) {
+          await new Promise(function(r){setTimeout(r,2000);});
+          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
+        } else { throw e502; }
+      }
     } else {
       // Search for existing record first to avoid duplicates
       try {
