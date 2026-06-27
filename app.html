@@ -8027,41 +8027,54 @@ async function _appLoadDataFromSP_impl() {
         }
       });
     });
-    // Garantizar que ops con status=running tengan timer activo en memoria
-    // IMPORTANT: Only restore timer if there isn't already a valid local timer
-    // (avoid overwriting a timer that was set correctly by appConfirmPause or appDoResumeOp)
+    // Garantizar que ops con status=running tengan timer activo en memoria.
+    // Fuente de verdad: op.status de FT_Operaciones (confiable).
+    // FT_Timers.Running se ignora — puede estar incorrecto por 502.
     DB.activeOFs.forEach(function(aof){
       aof.ops.forEach(function(op){
-        if(op.status === 'running'){
-          var timerKey = aof.of_sap + '_' + op.id;
-          var existing = DB.timers[timerKey];
-          // If timer already running locally with a recent start — keep it
-          if(existing && existing.running && existing.start && (Date.now()-existing.start) < 3600000*48) {
-            return; // Timer is fine, don't touch it
+        var timerKey = aof.of_sap + '_' + op.id;
+        var t = DB.timers[timerKey];
+
+        if (op.status === 'running') {
+          // Timer cargado con running=false (ignoramos FT_Timers.Running).
+          // Activar aquí basándonos en op.status que es la fuente confiable.
+
+          // Caso 1: Timer existe con elapsed acumulado — reanudar desde donde estaba
+          if (t && !t.running) {
+            // _frozenAt reciente (<45s) = pausa local no confirmada por SP aún → no reactivar
+            if (t._frozenAt && (Date.now() - t._frozenAt) < 45000) return;
+            // Reactivar: start = ahora - 0 (elapsed ya acumulado en t.elapsed)
+            t.start   = Date.now();
+            t.running = true;
+            return;
           }
-          // If timer is locally paused but SP says running — the SP save may be in flight
-          // Don't overwrite a locally paused timer (it will re-sync when SP confirms)
-          if(existing && !existing.running) {
-            return; // Local pause not yet confirmed by SP — keep local state
-          }
-          // Only restore if there's no local timer at all
-          if(!existing) {
+
+          // Caso 2: Timer ya corriendo correctamente — no tocar
+          if (t && t.running) return;
+
+          // Caso 3: Sin timer — crear desde op.inicio o desde cero
+          if (!t) {
             var nowMs = Date.now();
             var startMs = nowMs;
-            if(op.inicio){
+            if (op.inicio) {
               var parts = op.inicio.match(/(\d+):(\d+)\s*(a|p)\.m\./i);
-              if(parts){
+              if (parts) {
                 var h = parseInt(parts[1]); var m2 = parseInt(parts[2]);
-                var pm = parts[3].toLowerCase()==='p';
-                if(pm && h!==12) h+=12;
-                if(!pm && h===12) h=0;
-                var d = new Date();
-                d.setHours(h, m2, 0, 0);
+                var pm = parts[3].toLowerCase() === 'p';
+                if (pm && h !== 12) h += 12;
+                if (!pm && h === 12) h = 0;
+                var d = new Date(); d.setHours(h, m2, 0, 0);
                 startMs = d.getTime();
               }
             }
             DB.timers[timerKey] = { start: startMs, elapsed: 0, running: true, _spId: null };
-            console.log('Timer creado (sin timer previo):', timerKey);
+          }
+
+        } else if (op.status === 'paused' || op.status === 'validating' || op.status === 'done') {
+          // Asegurar que el timer esté detenido para estas ops
+          if (t && t.running) {
+            t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
+            t.running = false;
           }
         }
       });

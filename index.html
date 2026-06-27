@@ -5602,14 +5602,17 @@ async function ftLoadDataFromSP() {
           var key = aof.of_sap + '_' + op.id;
           var spTimer = DB.timers[key];
           if (op.status === 'running') {
-            // spTimer.running es siempre false después del load (Running de FT_Timers ignorado)
-            // Activar running=true aquí basándonos en op.status (fuente confiable)
-            if (spTimer) {
-              // Timer existe pero running=false — activarlo ahora
-              spTimer.start = Date.now() - (spTimer.elapsed||0);
-              spTimer.elapsed = 0; // elapsed acumulado se integró en start
-              spTimer.running = true;
-            } else {
+            // Activar timer basándonos en op.status (fuente confiable, FT_Timers.Running ignorado)
+            if (spTimer && !spTimer.running) {
+              // _frozenAt reciente = pausa local pendiente de confirmación — no reactivar
+              if (spTimer._frozenAt && (Date.now()-spTimer._frozenAt) < 45000) {
+                // skip
+              } else {
+                spTimer.start   = Date.now();
+                spTimer.running = true;
+                // elapsed ya está acumulado en spTimer.elapsed
+              }
+            } else if (!spTimer) {
             if (!spTimer || !spTimer.running) {
               // Sin timer en SP — reconstruir desde op.inicio
               var elapsed = spTimer ? (spTimer.elapsed || 0) : (op.mins ? op.mins * 60000 : 0);
@@ -5631,7 +5634,7 @@ async function ftLoadDataFromSP() {
               };
               console.log('[Timer] Reconstruido desde op.inicio:', key, 'elapsed:', Math.round(elapsed/60000), 'min');
             }
-            } // cierre if(spTimer) else
+            } // cierre else (!spTimer)
           } else if (op.status === 'paused' || op.status === 'validating') {
             if (!spTimer) {
               // No SP timer for a paused op — use op.mins as fallback
