@@ -1008,12 +1008,7 @@ tr:last-child td{border-bottom:none;}
     <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
     <button class="coord-nav-pill" onclick="showCoordPage('flujos',this)">🔀 Flujos en proceso</button>
     <button class="coord-nav-pill" onclick="showCoordPage('reportes',this);ftRptLoad()">📋 Reportes</button>
-    <button onclick="_onCoordVersionTap()" title="Debug Console (tap 5 veces)"
-      style="margin-left:auto;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
-             border-radius:6px;color:rgba(255,255,255,.25);font-size:.6rem;cursor:pointer;
-             padding:4px 9px;letter-spacing:.04em;flex-shrink:0;font-family:inherit;
-             user-select:none;-webkit-user-select:none;" id="coord-debug-btn">🐛</button>
-    <div style="position:relative;" id="coord-notif-wrapper">
+    <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
       <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);font-size:.78rem;display:flex;align-items:center;gap:5px;font-family:'Archivo',sans-serif;transition:background .15s;" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='rgba(255,255,255,.06)'">
         🔔
         <span id="notif-badge" style="background:#ef4444;color:#fff;border-radius:99px;font-size:.6rem;font-weight:700;padding:1px 5px;min-width:16px;text-align:center;display:none;">0</span>
@@ -5603,38 +5598,32 @@ async function ftLoadDataFromSP() {
           var spTimer = DB.timers[key];
           if (op.status === 'running') {
             // Activar timer basándonos en op.status (fuente confiable, FT_Timers.Running ignorado)
-            if (spTimer && !spTimer.running) {
-              // _frozenAt reciente = pausa local pendiente de confirmación — no reactivar
-              if (spTimer._frozenAt && (Date.now()-spTimer._frozenAt) < 45000) {
-                // skip
-              } else {
-                spTimer.start   = Date.now();
-                spTimer.running = true;
-                // elapsed ya está acumulado en spTimer.elapsed
-              }
-            } else if (!spTimer) {
-            if (!spTimer || !spTimer.running) {
-              // Sin timer en SP — reconstruir desde op.inicio
-              var elapsed = spTimer ? (spTimer.elapsed || 0) : (op.mins ? op.mins * 60000 : 0);
-              // If we have op.inicio, estimate elapsed since then
-              if (op.inicio && !elapsed) {
-                // Parse "HH:MM a.m./p.m." format
-                var initMs = _parseTimeToMs(op.inicio);
-                if (initMs > 0) {
-                  var nowMs = _parseTimeToMs(nowT());
-                  elapsed = Math.max(0, nowMs - initMs);
+            // _frozenAt reciente (<45s) = pausa local pendiente de SP → no reactivar
+            if (spTimer && spTimer._frozenAt && (Date.now()-spTimer._frozenAt) < 45000) {
+              // skip — local freeze still active
+            } else {
+              // Calcular elapsed real desde op.inicio (más confiable que FT_Timers.Elapsed_MS)
+              var _realElapsedMs = 0;
+              if (op.inicio) {
+                var _initMs = _parseTimeToMs(op.inicio);
+                if (_initMs > 0) {
+                  var _nowMs = _parseTimeToMs(nowT());
+                  _realElapsedMs = _nowMs >= _initMs
+                    ? (_nowMs - _initMs)
+                    : (_nowMs + 86400000 - _initMs); // cruzó medianoche
                 }
               }
+              var _spElapsed = spTimer ? (spTimer.elapsed || 0) : (op.mins ? op.mins*60000 : 0);
+              var _useElapsed = Math.max(_realElapsedMs, _spElapsed);
               DB.timers[key] = {
-                start: now - elapsed,
-                elapsed: 0,
+                start: Date.now(),
+                elapsed: _useElapsed,
                 running: true,
                 _spId: spTimer ? spTimer._spId : null,
                 _reconstructed: true
               };
-              console.log('[Timer] Reconstruido desde op.inicio:', key, 'elapsed:', Math.round(elapsed/60000), 'min');
+              console.log('[Timer] Activado desde op.inicio:', key, 'elapsed:', Math.round(_useElapsed/60000), 'min');
             }
-            } // cierre else (!spTimer)
           } else if (op.status === 'paused' || op.status === 'validating') {
             if (!spTimer) {
               // No SP timer for a paused op — use op.mins as fallback
@@ -13601,84 +13590,6 @@ function ftRptExportExcel(){
   console.log('[_exposeGlobals] toggleProg:', typeof window.toggleProg, '| startEditMode:', typeof window.startEditMode, '| renderProg:', typeof window.renderProg);
 })();
 
-// ── Debug Console — Coordinador ──────────────────────────────────────
-var _coordDebugLog = [];
-var _coordDebugTapCount = 0;
-var _coordDebugTapTimer = null;
-
-function _coordDebugAddEntry(type, args) {
-  var colors = { error:'#ff6b6b', warn:'#ffd93d', log:'#aaa', info:'#74c0fc' };
-  var text = Array.from(args).map(function(a){
-    if (a instanceof Error) return a.message + (a.stack ? '\n' + a.stack.split('\n').slice(1,3).join('\n') : '');
-    try { return typeof a === 'object' ? JSON.stringify(a).slice(0,300) : String(a); }
-    catch(e) { return String(a); }
-  }).join(' ');
-  var now = new Date();
-  var ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
-  _coordDebugLog.unshift({ type:type, text:text, ts:ts, color:colors[type]||'#aaa' });
-  if (_coordDebugLog.length > 150) _coordDebugLog.pop();
-  var panel = document.getElementById('coord-debug-panel');
-  if (panel && panel.style.display !== 'none') _coordDebugRender();
-}
-
-function _coordDebugRender() {
-  var el  = document.getElementById('coord-debug-log');
-  var cnt = document.getElementById('coord-debug-count');
-  if (!el) return;
-  el.innerHTML = _coordDebugLog.map(function(e){
-    return '<div style="padding:3px 4px;border-bottom:1px solid #1a1a1a;color:'+e.color+';">' +
-      '<span style="color:#555;margin-right:6px;">'+e.ts+'</span>' +
-      '<span style="margin-right:4px;font-size:.65rem;">'+e.type.toUpperCase()+'</span>' +
-      '<span style="white-space:pre-wrap;word-break:break-all;">'+e.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span></div>';
-  }).join('');
-  if (cnt) cnt.textContent = _coordDebugLog.length;
-}
-
-function coordClearDebugLog() {
-  _coordDebugLog = [];
-  _coordDebugRender();
-  var cnt = document.getElementById('coord-debug-count');
-  if (cnt) cnt.textContent = '0';
-}
-
-function toggleCoordDebugPanel() {
-  var panel = document.getElementById('coord-debug-panel');
-  if (!panel) return;
-  var isOpen = panel.style.display !== 'none';
-  panel.style.display = isOpen ? 'none' : 'flex';
-  if (!isOpen) _coordDebugRender();
-}
-
-// Tap "FabTracker" label 5 times to open debug panel
-function _onCoordVersionTap() {
-  _coordDebugTapCount++;
-  if (_coordDebugTapTimer) clearTimeout(_coordDebugTapTimer);
-  if (_coordDebugTapCount >= 5) {
-    _coordDebugTapCount = 0;
-    toggleCoordDebugPanel();
-  } else {
-    _coordDebugTapTimer = setTimeout(function(){ _coordDebugTapCount = 0; }, 1500);
-  }
-}
-
-// Intercept console methods
-(function() {
-  var methods = ['log','warn','error','info'];
-  methods.forEach(function(m) {
-    var orig = console[m].bind(console);
-    console[m] = function() {
-      orig.apply(console, arguments);
-      _coordDebugAddEntry(m, arguments);
-    };
-  });
-  window.addEventListener('error', function(e) {
-    _coordDebugAddEntry('error', [e.message + ' (' + (e.filename||'').split('/').pop() + ':' + e.lineno + ')']);
-  });
-  window.addEventListener('unhandledrejection', function(e) {
-    _coordDebugAddEntry('error', ['Unhandled Promise: ' + (e.reason&&e.reason.message ? e.reason.message : String(e.reason))]);
-  });
-})();
-// ─────────────────────────────────────────────────────────────────────
 </script>
 
 
@@ -13695,29 +13606,5 @@ function _onCoordVersionTap() {
     </div>
   </div>
   <style>@keyframes cargando-bar{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}</style>
-<!-- ═══ DEBUG CONSOLE — COORDINADOR ════════════════════════════════════
-     Acceso: tap 5 veces en "FabTracker v1" en la barra de navegación
-═══════════════════════════════════════════════════════════════════════ -->
-<div id="coord-debug-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
-     background:#000;z-index:99999;flex-direction:column;">
-  <div style="display:flex;align-items:center;justify-content:space-between;
-              padding:10px 14px;background:#111;border-bottom:1px solid #222;flex-shrink:0;">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span style="font-size:.75rem;font-weight:600;color:#eee;">🐛 Debug Console — Monitor</span>
-      <span id="coord-debug-count" style="font-size:.65rem;color:#555;background:#1a1a1a;
-            padding:1px 7px;border-radius:10px;">0</span>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button onclick="coordClearDebugLog()" style="padding:4px 10px;background:#222;color:#aaa;
-        border:1px solid #333;border-radius:4px;font-size:.72rem;cursor:pointer;">Limpiar</button>
-      <button onclick="document.getElementById('coord-debug-panel').style.display='none'"
-        style="padding:5px 10px;background:#c0392b;color:#fff;border:none;
-               border-radius:4px;font-size:.75rem;cursor:pointer;">✕ Cerrar</button>
-    </div>
-  </div>
-  <div id="coord-debug-log" style="flex:1;overflow-y:auto;font-family:monospace;
-       font-size:.68rem;background:#0a0a0a;padding:4px 0;"></div>
-</div>
-
 </body>
 </html>

@@ -818,7 +818,7 @@ tr:last-child td{border-bottom:none;}
   </div>
   <div id="debug-log" style="flex:1;overflow-y:auto;padding:8px;font-family:monospace;font-size:.7rem;line-height:1.5;"></div>
   <div style="padding:8px 12px;background:#111;border-top:1px solid #222;font-size:.65rem;color:#555;flex-shrink:0;">
-    Toca el avatar FM 5 veces · <span id="debug-count" style="color:#00b4d8;">0</span> entradas
+    Avatar FM ×5 · 📺 Monitor ×5 · v1.0.0 ×5 · <span id="debug-count" style="color:#00b4d8;">0</span> entradas
   </div>
 </div>
 <div class="app-panel">
@@ -8039,36 +8039,38 @@ async function _appLoadDataFromSP_impl() {
           // Timer cargado con running=false (ignoramos FT_Timers.Running).
           // Activar aquí basándonos en op.status que es la fuente confiable.
 
-          // Caso 1: Timer existe con elapsed acumulado — reanudar desde donde estaba
-          if (t && !t.running) {
-            // _frozenAt reciente (<45s) = pausa local no confirmada por SP aún → no reactivar
-            if (t._frozenAt && (Date.now() - t._frozenAt) < 45000) return;
-            // Reactivar: start = ahora - 0 (elapsed ya acumulado en t.elapsed)
-            t.start   = Date.now();
-            t.running = true;
-            return;
-          }
+          // _frozenAt reciente (<45s) = pausa local no confirmada por SP aún → no reactivar
+          if (t && t._frozenAt && (Date.now() - t._frozenAt) < 45000) return;
 
-          // Caso 2: Timer ya corriendo correctamente — no tocar
-          if (t && t.running) return;
-
-          // Caso 3: Sin timer — crear desde op.inicio o desde cero
-          if (!t) {
-            var nowMs = Date.now();
-            var startMs = nowMs;
-            if (op.inicio) {
-              var parts = op.inicio.match(/(\d+):(\d+)\s*(a|p)\.m\./i);
-              if (parts) {
-                var h = parseInt(parts[1]); var m2 = parseInt(parts[2]);
-                var pm = parts[3].toLowerCase() === 'p';
-                if (pm && h !== 12) h += 12;
-                if (!pm && h === 12) h = 0;
-                var d = new Date(); d.setHours(h, m2, 0, 0);
-                startMs = d.getTime();
-              }
+          // Para ops running: calcular elapsed real desde op.inicio (fuente confiable).
+          // FT_Timers.Elapsed_MS puede estar desactualizado por fallos 502.
+          // op.inicio = hora en que arrancó la operación (ej: "01:07 p.m.")
+          var _realElapsedMs = 0;
+          if (op.inicio) {
+            var _m = op.inicio.match(/(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+            if (_m) {
+              var _h = parseInt(_m[1]), _min = parseInt(_m[2]);
+              var _isPM = _m[3] && _m[3].toLowerCase().replace(/\./g,'').indexOf('pm') >= 0;
+              if (_isPM && _h < 12) _h += 12;
+              if (!_isPM && _h === 12) _h = 0;
+              var _inicioMs = (_h * 3600 + _min * 60) * 1000; // ms desde medianoche
+              var _now = new Date();
+              var _nowMs = (_now.getHours() * 3600 + _now.getMinutes() * 60 + _now.getSeconds()) * 1000;
+              // Si nowMs < inicioMs, la op arrancó ayer (pasó la medianoche)
+              _realElapsedMs = _nowMs >= _inicioMs
+                ? (_nowMs - _inicioMs)
+                : (_nowMs + 86400000 - _inicioMs);
             }
-            DB.timers[timerKey] = { start: startMs, elapsed: 0, running: true, _spId: null };
           }
+          // Fallback: usar elapsed de SP si no tenemos op.inicio o si SP tiene más
+          var _spElapsed = t ? (t.elapsed || 0) : 0;
+          var _useElapsed = Math.max(_realElapsedMs, _spElapsed);
+
+          // Activar timer: start = ahora, elapsed = tiempo real calculado
+          // getEl() = Math.floor((elapsed + (Date.now()-start)) / 60000)
+          // Al activar: elapsed = _useElapsed, start = now → getEl() = _useElapsed/60000 inmediatamente
+          var _spId = t ? t._spId : null;
+          DB.timers[timerKey] = { start: Date.now(), elapsed: _useElapsed, running: true, _spId: _spId };
 
         } else if (op.status === 'paused' || op.status === 'validating' || op.status === 'done') {
           // Asegurar que el timer esté detenido para estas ops
@@ -10237,7 +10239,8 @@ function _monTvTap() {
     var isHidden = dbg.style.display === 'none' || !dbg.style.display;
     if (isHidden) {
       dbg.style.display = 'flex';
-      dbg.style.zIndex  = '1000'; // above monitor-screen (z-index:200)
+      dbg.style.zIndex  = '100000'; // above monitor-screen (z-index:200)
+      if (typeof _debugRender === 'function') _debugRender(); // mostrar logs actualizados
     } else {
       dbg.style.display = 'none';
     }
