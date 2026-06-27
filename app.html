@@ -3572,13 +3572,21 @@ function renderAppOpsPanel(of){
       h+="<div class='app-op-times'>";
       if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";
       if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";
-      if(elapsed>0){
-        // Para ops running: chip con data-timer-key para actualización de 1s en vivo
-        var _tiempoInner = op.status==='running'
-          ? '<span class="ft-timer-chip" data-timer-key="'+esc(key)+'">'+fmtM(elapsed)+'</span>'
-          : fmtM(elapsed);
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+_tiempoInner+"</div></div>";
+      // TIEMPO: solo mostrar cuando el valor es confiable
+      // running  → chip vivo (siempre correcto)
+      // done     → tiempo final de SP (siempre correcto)
+      // paused/validating → mostrar solo si op.mins fue guardado en SP (no el timer en vuelo)
+      //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
+      //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
+      if(op.status==='running' && elapsed>0){
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class="ft-timer-chip" data-timer-key=""+esc(key)+"">"+fmtM(elapsed)+"</span></div></div>";
+      } else if(op.status==='done' && elapsed>0){
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
+      } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
+        // Mostrar tiempo guardado en SP (op.mins) — confiable porque viene de FT_Operaciones
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins)+"</div></div>";
       }
+      // Si paused y op.mins=0: no mostrar TIEMPO (evita mostrar valor incorrecto por 502 en FT_Timers)
       h+="</div>";
     }
     if(op.status==="done"){
@@ -11592,13 +11600,21 @@ function renderAppOpsPanel(of){
       h+="<div class='app-op-times'>";
       if(op.inicio)h+="<div class='app-ot-item'><div class='app-ot-lbl'>INICIO</div><div class='app-ot-val'>"+esc(op.inicio)+"</div></div>";
       if(op.fin)h+="<div class='app-ot-item'><div class='app-ot-lbl'>FIN</div><div class='app-ot-val'>"+esc(op.fin)+"</div></div>";
-      if(elapsed>0){
-        // Para ops running: chip con data-timer-key para actualización de 1s en vivo
-        var _tiempoInner = op.status==='running'
-          ? '<span class="ft-timer-chip" data-timer-key="'+esc(key)+'">'+fmtM(elapsed)+'</span>'
-          : fmtM(elapsed);
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+_tiempoInner+"</div></div>";
+      // TIEMPO: solo mostrar cuando el valor es confiable
+      // running  → chip vivo (siempre correcto)
+      // done     → tiempo final de SP (siempre correcto)
+      // paused/validating → mostrar solo si op.mins fue guardado en SP (no el timer en vuelo)
+      //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
+      //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
+      if(op.status==='running' && elapsed>0){
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class="ft-timer-chip" data-timer-key=""+esc(key)+"">"+fmtM(elapsed)+"</span></div></div>";
+      } else if(op.status==='done' && elapsed>0){
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
+      } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
+        // Mostrar tiempo guardado en SP (op.mins) — confiable porque viene de FT_Operaciones
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins)+"</div></div>";
       }
+      // Si paused y op.mins=0: no mostrar TIEMPO (evita mostrar valor incorrecto por 502 en FT_Timers)
       h+="</div>";
     }
     if(op.status==="done"){
