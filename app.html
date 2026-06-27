@@ -7997,18 +7997,36 @@ async function _appLoadDataFromSP_impl() {
             // Mantener como detenido con el elapsed correcto
             DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
           } else {
-            // Timer activo: elapsed = base acumulado, start = ahora
-            // getEl(key) = floor((elapsed + (now-start)) / 60000) = floor(elapsed/60000) inmediatamente
-            DB.timers[key] = { start: Date.now(), elapsed: baseElapsed, running: true, _spId: spId };
+            // Timer activo: elapsed = mayor entre base acumulado y op.mins de SP
+            // op.mins de FT_Operaciones puede tener tiempo previo (pausas anteriores)
+            // que FT_Timers no refleja por 502s
+            var runningElapsed = Math.max(baseElapsed, (op.mins||0) * 60000);
+            DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
           }
         } else if (op.status === 'paused' || op.status === 'validating') {
-          // Timer detenido: guardar elapsed correcto para cuando se reanude
-          // Si hay _frozenAt reciente del timer local, usarlo (más preciso que SP)
-          var frozenElapsed = (prv && prv._frozenAt) ? (prv.elapsed||0) : baseElapsed;
+          // Timer detenido. Fuentes de elapsed en orden de confiabilidad:
+          // 1. _frozenAt reciente (pausa local reciente, más preciso)
+          // 2. op.mins de FT_Operaciones (guardado correctamente al pausar)
+          // 3. FT_Timers.Elapsed_MS (puede estar desactualizado por 502s)
+          //
+          // op.mins ya viene cargado de FT_Operaciones — es la fuente correcta.
+          // NO sobreescribir op.mins con el valor de FT_Timers (que puede ser 0 o stale).
+          var frozenElapsed;
+          if (prv && prv._frozenAt) {
+            // Pausa local reciente: usar elapsed del timer local (más preciso)
+            frozenElapsed = prv.elapsed || 0;
+            // Solo actualizar op.mins si el valor local es mayor al de SP (operación larga)
+            if (frozenElapsed > 0) {
+              var localMins = Math.floor(frozenElapsed / 60000);
+              if (localMins > (op.mins || 0)) op.mins = localMins;
+            }
+          } else {
+            // Reload fresco: usar op.mins de FT_Operaciones (fuente confiable)
+            // NO usar baseElapsed/FT_Timers que puede tener Running=true stale
+            frozenElapsed = (op.mins || 0) * 60000;
+          }
           DB.timers[key] = { start: Date.now(), elapsed: frozenElapsed, running: false, _spId: spId,
                              _frozenAt: prv ? prv._frozenAt : undefined };
-          // Actualizar op.mins con el elapsed correcto para el display de ⏸ Xm
-          if (frozenElapsed > 0) op.mins = Math.floor(frozenElapsed/60000);
         } else {
           // done / pending: timer detenido
           // IMPORTANTE: no usar baseElapsed para ops pending/done —

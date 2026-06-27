@@ -5607,13 +5607,23 @@ async function ftLoadDataFromSP() {
             if (recentFreeze) {
               DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
             } else {
-              DB.timers[key] = { start: Date.now(), elapsed: baseElapsed, running: true, _spId: spId };
+              var runningElapsed = Math.max(baseElapsed, (op.mins||0) * 60000);
+              DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
             }
           } else if (op.status === 'paused' || op.status === 'validating') {
-            var frozenElapsed = (prv && prv._frozenAt) ? (prv.elapsed||0) : baseElapsed;
+            var frozenElapsed;
+            if (prv && prv._frozenAt) {
+              frozenElapsed = prv.elapsed || 0;
+              if (frozenElapsed > 0) {
+                var localMins = Math.floor(frozenElapsed / 60000);
+                if (localMins > (op.mins || 0)) op.mins = localMins;
+              }
+            } else {
+              // Reload fresco: op.mins de FT_Operaciones es la fuente correcta
+              frozenElapsed = (op.mins || 0) * 60000;
+            }
             DB.timers[key] = { start: Date.now(), elapsed: frozenElapsed, running: false, _spId: spId,
                                _frozenAt: prv ? prv._frozenAt : undefined };
-            if (frozenElapsed > 0) op.mins = Math.floor(frozenElapsed/60000);
           } else {
             // No usar baseElapsed para ops no activas — puede tener tiempo stale de FT_Timers
             var doneElapsed = (op.status === 'done' && op.mins) ? op.mins*60000 : 0;
