@@ -507,9 +507,14 @@ tr:last-child td{border-bottom:none;}
   <div id="monitor-header" style="background:#0d1117;border-bottom:1px solid rgba(255,255,255,.08);
        padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
     <div style="display:flex;align-items:center;gap:10px;">
-      <div id="monitor-tv-icon" style="width:36px;height:36px;background:#1B5E20;border-radius:8px;
-           display:flex;align-items:center;justify-content:center;font-size:1.1rem;cursor:pointer;" onclick="_monTvTap()">📺</div>
-      <div>
+      <div id="monitor-tv-icon"
+           ontouchstart="_monTvTap(event)" onclick="_monTvTap(event)"
+           style="width:44px;height:44px;background:#1B5E20;border-radius:8px;
+                  display:flex;align-items:center;justify-content:center;
+                  font-size:1.2rem;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0);
+                  touch-action:manipulation;user-select:none;-webkit-user-select:none;">📺</div>
+      <div ontouchstart="_monTvTap(event)" onclick="_monTvTap(event)"
+           style="cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0);touch-action:manipulation;user-select:none;">
         <div style="font-weight:700;font-size:.9rem;color:#e6edf3;">Monitor de Producción</div>
         <div id="monitor-header-sub" style="font-size:.68rem;color:#8b949e;">Cargando estaciones...</div>
       </div>
@@ -8042,33 +8047,35 @@ async function _appLoadDataFromSP_impl() {
           // _frozenAt reciente (<45s) = pausa local no confirmada por SP aún → no reactivar
           if (t && t._frozenAt && (Date.now() - t._frozenAt) < 45000) return;
 
-          // Para ops running: calcular elapsed real desde op.inicio (fuente confiable).
-          // FT_Timers.Elapsed_MS puede estar desactualizado por fallos 502.
-          // op.inicio = hora en que arrancó la operación (ej: "01:07 p.m.")
-          var _realElapsedMs = 0;
-          if (op.inicio) {
+          // Si ya hay un timer corriendo localmente con elapsed > 0, respetarlo.
+          // Esto preserva el tiempo correcto al reanudar (evita recalcular desde op.inicio
+          // que incluiría el tiempo de pausa y daría un valor mayor al real).
+          if (t && t.running && t.elapsed > 0) return;
+
+          // Timer inactivo o sin elapsed — calcular desde op.inicio.
+          // IMPORTANTE: op.inicio incluye el tiempo de pausa, por eso solo se usa
+          // cuando NO hay un timer local con elapsed ya acumulado (primer arranque o login fresco).
+          var _spElapsed = t ? (t.elapsed || 0) : 0;
+
+          // Usar elapsed de SP si lo tenemos (más preciso que recalcular desde op.inicio)
+          // Solo recalcular desde op.inicio si no hay elapsed guardado en SP
+          var _useElapsed = _spElapsed;
+          if (_useElapsed === 0 && op.inicio) {
             var _m = op.inicio.match(/(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
             if (_m) {
               var _h = parseInt(_m[1]), _min = parseInt(_m[2]);
               var _isPM = _m[3] && _m[3].toLowerCase().replace(/\./g,'').indexOf('pm') >= 0;
               if (_isPM && _h < 12) _h += 12;
               if (!_isPM && _h === 12) _h = 0;
-              var _inicioMs = (_h * 3600 + _min * 60) * 1000; // ms desde medianoche
+              var _inicioMs = (_h * 3600 + _min * 60) * 1000;
               var _now = new Date();
               var _nowMs = (_now.getHours() * 3600 + _now.getMinutes() * 60 + _now.getSeconds()) * 1000;
-              // Si nowMs < inicioMs, la op arrancó ayer (pasó la medianoche)
-              _realElapsedMs = _nowMs >= _inicioMs
+              _useElapsed = _nowMs >= _inicioMs
                 ? (_nowMs - _inicioMs)
                 : (_nowMs + 86400000 - _inicioMs);
             }
           }
-          // Fallback: usar elapsed de SP si no tenemos op.inicio o si SP tiene más
-          var _spElapsed = t ? (t.elapsed || 0) : 0;
-          var _useElapsed = Math.max(_realElapsedMs, _spElapsed);
 
-          // Activar timer: start = ahora, elapsed = tiempo real calculado
-          // getEl() = Math.floor((elapsed + (Date.now()-start)) / 60000)
-          // Al activar: elapsed = _useElapsed, start = now → getEl() = _useElapsed/60000 inmediatamente
           var _spId = t ? t._spId : null;
           DB.timers[timerKey] = { start: Date.now(), elapsed: _useElapsed, running: true, _spId: _spId };
 
@@ -10228,24 +10235,45 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
 }
 
 // ── Gear menu ─────────────────────────────────────────────────────
-var _monTvTapCount = 0, _monTvTapTimer = null;
-function _monTvTap() {
+var _monTvTapCount = 0, _monTvTapTimer = null, _monTvLastEvt = 0;
+function _monTvTap(e) {
+  // Evitar doble disparo touchstart+click en mobile
+  var now = Date.now();
+  if (e && e.type === 'click' && (now - _monTvLastEvt) < 500) return;
+  if (e && e.type === 'touchstart') { e.preventDefault(); _monTvLastEvt = now; }
+
   _monTvTapCount++;
   clearTimeout(_monTvTapTimer);
+
+  // Feedback visual: destellar el icono TV
+  var icon = document.getElementById('monitor-tv-icon');
+  if (icon) {
+    icon.style.background = '#2E7D32';
+    setTimeout(function(){ icon.style.background = '#1B5E20'; }, 150);
+  }
+
   if (_monTvTapCount >= 5) {
     _monTvTapCount = 0;
     var dbg = document.getElementById('debug-panel');
-    if (!dbg) { _debugTapCount = 5; _onAvatarTap(); return; }
+    if (!dbg) { if(typeof _onAvatarTap==='function'){ _debugTapCount=4; _onAvatarTap(); } return; }
     var isHidden = dbg.style.display === 'none' || !dbg.style.display;
     if (isHidden) {
       dbg.style.display = 'flex';
-      dbg.style.zIndex  = '100000'; // above monitor-screen (z-index:200)
-      if (typeof _debugRender === 'function') _debugRender(); // mostrar logs actualizados
+      dbg.style.zIndex  = '100000';
+      if (typeof _debugRender === 'function') _debugRender();
     } else {
       dbg.style.display = 'none';
     }
   } else {
-    _monTvTapTimer = setTimeout(function(){ _monTvTapCount = 0; }, 1500);
+    // Mostrar brevemente cuántos taps faltan
+    if (icon) {
+      var remaining = 5 - _monTvTapCount;
+      icon.textContent = remaining + '...';
+      setTimeout(function(){
+        icon.textContent = '📺';
+        }, 600);
+    }
+    _monTvTapTimer = setTimeout(function(){ _monTvTapCount = 0; }, 2000);
   }
 }
 
