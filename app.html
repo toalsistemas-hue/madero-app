@@ -467,18 +467,31 @@ tr:last-child td{border-bottom:none;}
              cursor:pointer;padding:6px 14px;letter-spacing:.05em;user-select:none;"
       title="Limpiar caché y recargar">↺</button>
   </div>
-  <div style="margin-top:20px;font-size:.65rem;color:rgba(255,255,255,.2);letter-spacing:.05em;">v1.0.0</div>
+  <!-- Tap v1.0.0 cinco veces para abrir el Debug Console en login -->
+  <div id="login-version-tap" onclick="_onLoginVersionTap()"
+    style="margin-top:20px;font-size:.65rem;color:rgba(255,255,255,.2);letter-spacing:.05em;
+           cursor:default;user-select:none;-webkit-user-select:none;">v1.0.0</div>
 
-  <!-- Debug log panel — visible solo cuando hay errores de login -->
-  <div id="login-debug-panel" style="display:none;margin-top:16px;width:100%;
-       background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1);border-radius:8px;
-       padding:10px 12px;text-align:left;max-height:180px;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-      <span style="font-size:.65rem;color:rgba(255,255,255,.35);font-weight:600;">DEBUG LOG</span>
-      <button onclick="document.getElementById('login-debug-panel').style.display='none'"
-        style="background:none;border:none;color:rgba(255,255,255,.3);font-size:.7rem;cursor:pointer;">✕</button>
+  <!-- Debug Console en login — mismo estilo que el panel principal, oculto por defecto -->
+  <div id="login-debug-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+       background:#000;z-index:99999;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:10px 14px;background:#111;border-bottom:1px solid #222;flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:.75rem;font-weight:600;color:#eee;">🐛 Debug Console</span>
+        <span id="login-debug-count" style="font-size:.65rem;color:#555;background:#1a1a1a;
+              padding:1px 7px;border-radius:10px;">0</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="clearDebugLog()" style="padding:4px 10px;background:#222;color:#aaa;
+          border:1px solid #333;border-radius:4px;font-size:.72rem;cursor:pointer;">Limpiar</button>
+        <button onclick="document.getElementById('login-debug-panel').style.display='none'"
+          style="padding:5px 10px;background:#c0392b;color:#fff;border:none;
+                 border-radius:4px;font-size:.75rem;cursor:pointer;">✕ Cerrar</button>
+      </div>
     </div>
-    <div id="login-debug-log" style="font-size:.62rem;color:#4ade80;font-family:monospace;line-height:1.6;"></div>
+    <div id="login-debug-log" style="flex:1;overflow-y:auto;font-family:monospace;
+         font-size:.68rem;background:#0a0a0a;padding:4px 0;"></div>
   </div>
 </div>
 
@@ -3579,7 +3592,7 @@ function renderAppOpsPanel(of){
       //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
       //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
       if(op.status==='running' && elapsed>0){
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class="ft-timer-chip" data-timer-key=""+esc(key)+"">"+fmtM(elapsed)+"</span></div></div>";
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
       } else if(op.status==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
       } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
@@ -11607,7 +11620,7 @@ function renderAppOpsPanel(of){
       //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
       //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
       if(op.status==='running' && elapsed>0){
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class="ft-timer-chip" data-timer-key=""+esc(key)+"">"+fmtM(elapsed)+"</span></div></div>";
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
       } else if(op.status==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
       } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
@@ -15287,25 +15300,47 @@ function _debugAddEntry(type, args) {
   var ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
   _debugLog.unshift({ type:type, text:text, ts:ts, color:colors[type]||'#aaa' });
   if (_debugLog.length > 100) _debugLog.pop();
-  // Update panel if open
+  // Actualizar cualquier panel que esté abierto (app o login)
   var panel = document.getElementById('debug-panel');
-  if (panel && panel.style.display !== 'none') _debugRender();
+  var loginPanel = document.getElementById('login-debug-panel');
+  if ((panel && panel.style.display !== 'none') ||
+      (loginPanel && loginPanel.style.display !== 'none')) {
+    _debugRender();
+  }
 }
 
 function _debugRender() {
-  var el = document.getElementById('debug-log');
-  var cnt = document.getElementById('debug-count');
-  if (!el) return;
-  el.innerHTML = _debugLog.map(function(e){
+  var html = _debugLog.map(function(e){
     return '<div style="padding:3px 4px;border-bottom:1px solid #1a1a1a;color:'+e.color+';">' +
       '<span style="color:#555;margin-right:6px;">'+e.ts+'</span>' +
       '<span style="margin-right:4px;font-size:.65rem;">'+e.type.toUpperCase()+'</span>' +
       '<span style="white-space:pre-wrap;word-break:break-all;">'+e.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span></div>';
   }).join('');
-  if (cnt) cnt.textContent = _debugLog.length;
+  var count = _debugLog.length;
+  // Actualizar panel principal (dentro de la app)
+  var el = document.getElementById('debug-log');
+  var cnt = document.getElementById('debug-count');
+  if (el) el.innerHTML = html;
+  if (cnt) cnt.textContent = count;
+  // Actualizar panel de login (si está abierto)
+  var loginPanel = document.getElementById('login-debug-panel');
+  var loginEl = document.getElementById('login-debug-log');
+  var loginCnt = document.getElementById('login-debug-count');
+  if (loginEl && loginPanel && loginPanel.style.display !== 'none') {
+    loginEl.innerHTML = html;
+    if (loginCnt) loginCnt.textContent = count;
+  }
 }
 
-function clearDebugLog() { _debugLog = []; _debugRender(); }
+function clearDebugLog() {
+  _debugLog = [];
+  _debugRender();
+  // Limpiar contadores visualmente aunque el panel esté cerrado
+  var cnt = document.getElementById('debug-count');
+  var lcnt = document.getElementById('login-debug-count');
+  if (cnt) cnt.textContent = '0';
+  if (lcnt) lcnt.textContent = '0';
+}
 
 function toggleDebugPanel() {
   var panel = document.getElementById('debug-panel');
@@ -15334,7 +15369,7 @@ function toggleDebugPanel() {
   });
 })();
 
-// Tap avatar 5 times to open debug panel
+// Tap avatar 5 times to open debug panel (inside app)
 function _onAvatarTap() {
   _debugTapCount++;
   if (_debugTapTimer) clearTimeout(_debugTapTimer);
@@ -15343,6 +15378,24 @@ function _onAvatarTap() {
     toggleDebugPanel();
   } else {
     _debugTapTimer = setTimeout(function(){ _debugTapCount = 0; }, 1500);
+  }
+}
+
+// Tap version label 5 times to open debug panel (on login screen)
+var _loginVersionTapCount = 0;
+var _loginVersionTapTimer = null;
+function _onLoginVersionTap() {
+  _loginVersionTapCount++;
+  if (_loginVersionTapTimer) clearTimeout(_loginVersionTapTimer);
+  if (_loginVersionTapCount >= 5) {
+    _loginVersionTapCount = 0;
+    var panel = document.getElementById('login-debug-panel');
+    if (panel) {
+      panel.style.display = 'flex';
+      _debugRender(); // render all logs captured so far
+    }
+  } else {
+    _loginVersionTapTimer = setTimeout(function(){ _loginVersionTapCount = 0; }, 1500);
   }
 }
 </script>
