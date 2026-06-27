@@ -7945,125 +7945,98 @@ async function _appLoadDataFromSP_impl() {
     (stStatusRes.value||[]).forEach(i=>{const f=i.fields;const name=f.Estacion||f.Title||'';if(name)window.DB_STATION_STATUS[name]={status:f.Status||'activa',nota:f.Nota||'',plan:JSON.parse(f.Plan_JSON||'[]')};});
     window.STATIONS.forEach(s=>{if(!window.DB_STATION_STATUS[s])window.DB_STATION_STATUS[s]={status:'activa',nota:'',plan:[]};});
     // ── Reconstrucción de DB.timers ─────────────────────────────────────────────
-    // Regla única: op.status de FT_Operaciones es la fuente de verdad.
-    //   running  → timer debe estar corriendo
-    //   paused / validating / done → timer debe estar detenido
-    // FT_Timers solo aporta el Elapsed_MS acumulado (Start_MS es referencia secundaria).
-    // El campo Running de FT_Timers se IGNORA porque falla con 502 frecuentemente.
+    // Enfoque original que funcionaba:
+    // 1. Cargar FT_Timers tal como está: start=startMS, elapsed=elapsedMS, running=isRunning
+    //    getEl(key) = elapsed + (Date.now()-start) → siempre correcto aunque el save sea antiguo
+    // 2. Reconciliar con op.status: si op es paused/done pero timer dice running → detenerlo
+    // 3. Si op es running pero no hay timer en FT_Timers → crearlo desde fecha_inicio_real
     //
-    // _prevTimers: snapshot de DB.timers ANTES del reload, para preservar:
-    //   - elapsed acumulado localmente si es mayor al de SP
-    //   - _frozenAt de pausas locales recientes
+    // Protección para race condition de pausa local:
+    // _prevTimers preserva _frozenAt para detectar pausas locales aún no confirmadas en SP
+
     var _prevTimers = {};
     Object.keys(DB.timers||{}).forEach(function(k){ _prevTimers[k] = DB.timers[k]; });
 
-    // Paso 1: Cargar datos de FT_Timers en un mapa auxiliar (no escribir en DB.timers aún)
-    var _spTimerData = {};
+    // Paso 1: Cargar FT_Timers directamente en DB.timers (lógica original)
+    DB.timers = {};
     (timersRes.value||[]).forEach(function(i){
       var f = i.fields;
       var key = f.Timer_Key||f.Title||'';
       if (!key) return;
-      _spTimerData[key] = {
-        elapsed: parseInt(f.Elapsed_MS||0),
-        start:   parseInt(f.Start_MS||Date.now()),
-        spId:    i.id
-      };
+      var startMS   = parseInt(f.Start_MS||Date.now());
+      var elapsedMS = parseInt(f.Elapsed_MS||0);
+      var isRunning = f.Running === true;
+      var prv = _prevTimers[key];
+      // Preservar _frozenAt de pausa local reciente
+      var frozenAt = prv ? prv._frozenAt : undefined;
+      DB.timers[key] = { start: startMS, elapsed: elapsedMS, running: isRunning,
+                         _spId: i.id, _frozenAt: frozenAt };
     });
 
-    // Paso 2: Reconstruir DB.timers según op.status (fuente de verdad)
-    DB.timers = {};
+    // Paso 2: Reconciliar con op.status de FT_Operaciones (fuente de verdad para estado)
     DB.activeOFs.forEach(function(aof){
       aof.ops.forEach(function(op){
         var key = aof.of_sap + '_' + op.id;
-        var sp  = _spTimerData[key];
+        var t   = DB.timers[key];
         var prv = _prevTimers[key];
 
-        // Elapsed base: tomar el mayor entre SP y local
-        var spElapsed  = sp  ? sp.elapsed  : 0;
-        var prvElapsed = prv ? (prv.elapsed||0) : 0;
-        // Solo sumar tiempo transcurrido si la op realmente está corriendo
-        // (evita acumular tiempo de timers fantasma en ops pending/paused/done)
-        if (prv && prv.running && prv.start && op.status === 'running') {
-          prvElapsed = prvElapsed + (Date.now() - prv.start);
-        }
-        var baseElapsed = Math.max(spElapsed, prvElapsed);
-
-        var spId = sp ? sp.spId : (prv ? prv._spId : null);
-
         if (op.status === 'running') {
-          // Protección: si acaba de ser pausado localmente, no reactivar aún
-          var recentFreeze = prv && prv._frozenAt && (Date.now()-prv._frozenAt) < 45000;
-          if (recentFreeze) {
-            // Mantener como detenido con el elapsed correcto
-            DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
-          } else {
-            // Timer activo: calcular elapsed desde fecha_inicio_real (fuente más confiable).
-            // FT_Timers.Elapsed_MS puede ser 0 o stale por 502s.
-            // fecha_inicio_real = "DD/MM/YYYY HH:MM a.m./p.m." — guardado en FT_Operaciones al iniciar.
+          // Protección: pausa local reciente no confirmada en SP → mantener detenido
+          if (prv && prv._frozenAt && (Date.now()-prv._frozenAt) < 45000) {
+            if (t) { t.running = false; t._frozenAt = prv._frozenAt; }
+            return;
+          }
+          if (!t) {
+            // Sin registro en FT_Timers: calcular elapsed desde fecha_inicio_real
             var fromInicio = 0;
-            var fir = op.fecha_inicio_real || op.Fecha_Inicio || '';
+            var fir = op.fecha_inicio_real || '';
             if (fir) {
-              // Parse "DD/MM/YYYY HH:MM a.m./p.m."
-              var firM = fir.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+              var firM = fir.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
               if (firM) {
-                var dd=parseInt(firM[1]),mm=parseInt(firM[2])-1,yy=parseInt(firM[3]);
-                var hh=parseInt(firM[4]),min=parseInt(firM[5]);
-                var isPM = firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
-                if(isPM && hh<12) hh+=12;
-                if(!isPM && hh===12) hh=0;
-                var inicioDate = new Date(yy,mm,dd,hh,min,0,0);
-                fromInicio = Math.max(0, Date.now() - inicioDate.getTime());
+                var dd=parseInt(firM[1]),mo=parseInt(firM[2])-1,yy=parseInt(firM[3]);
+                var hh=parseInt(firM[4]),mi=parseInt(firM[5]);
+                var isPM=firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
+                if(isPM&&hh<12)hh+=12; if(!isPM&&hh===12)hh=0;
+                fromInicio = Math.max(0, Date.now() - new Date(yy,mo,dd,hh,mi,0,0).getTime());
               }
             }
-            // Usar el mayor entre: tiempo desde inicio, elapsed de SP, op.mins previos
-            var runningElapsed = Math.max(fromInicio, baseElapsed, (op.mins||0)*60000);
-            DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
+            // Fallback: usar op.mins si hay tiempo acumulado de pausas previas
+            var initElapsed = Math.max(fromInicio, (op.mins||0)*60000);
+            DB.timers[key] = { start: Date.now()-initElapsed, elapsed: 0,
+                               running: true, _spId: null };
           }
+          // Si t existe y running=true → getEl funciona correctamente (elapsed+(now-start))
+          // Si t existe y running=false → puede ser un timer antiguo de pausa; reactivarlo
+          if (t && !t.running && !t._frozenAt) {
+            t.running = true;
+          }
+
         } else if (op.status === 'paused' || op.status === 'validating') {
-          // Timer detenido. Fuentes de elapsed en orden de confiabilidad:
-          // 1. _frozenAt reciente (pausa local reciente, más preciso)
-          // 2. op.mins de FT_Operaciones (guardado correctamente al pausar)
-          // 3. FT_Timers.Elapsed_MS (puede estar desactualizado por 502s)
-          //
-          // op.mins ya viene cargado de FT_Operaciones — es la fuente correcta.
-          // NO sobreescribir op.mins con el valor de FT_Timers (que puede ser 0 o stale).
-          var frozenElapsed;
-          if (prv && prv._frozenAt) {
-            // Pausa local reciente: usar elapsed del timer local (más preciso)
-            frozenElapsed = prv.elapsed || 0;
-            // Solo actualizar op.mins si el valor local es mayor al de SP (operación larga)
-            if (frozenElapsed > 0) {
-              var localMins = Math.floor(frozenElapsed / 60000);
-              if (localMins > (op.mins || 0)) op.mins = localMins;
-            }
-          } else {
-            // Reload fresco: usar op.mins de FT_Operaciones (fuente confiable)
-            // NO usar baseElapsed/FT_Timers que puede tener Running=true stale
-            frozenElapsed = (op.mins || 0) * 60000;
+          if (t && t.running) {
+            // FT_Timers dice running pero op está pausada — detener y acumular
+            t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
+            t.running = false;
+            // op.mins: usar el mayor entre SP y el elapsed local calculado
+            var localMins = Math.floor((t.elapsed||0)/60000);
+            if (localMins > (op.mins||0)) op.mins = localMins;
+            if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(key).catch(function(){});
           }
-          DB.timers[key] = { start: Date.now(), elapsed: frozenElapsed, running: false, _spId: spId,
-                             _frozenAt: prv ? prv._frozenAt : undefined };
+          if (!t) {
+            // Sin timer en FT_Timers: crear desde op.mins (guardado al pausar)
+            DB.timers[key] = { start: Date.now(), elapsed: (op.mins||0)*60000,
+                               running: false, _spId: null };
+          }
+
         } else {
-          // done / pending: timer detenido
-          // IMPORTANTE: no usar baseElapsed para ops pending/done —
-          // puede contener tiempo de FT_Timers con Running=true de sesiones anteriores,
-          // lo que causaría que op sin iniciar muestre tiempo transcurrido
-          var doneElapsed = (op.status === 'done' && op.mins) ? op.mins*60000 : 0;
-          DB.timers[key] = { start: Date.now(), elapsed: doneElapsed, running: false, _spId: spId };
-          // Si SP tiene un timer para esta op no activa, programar corrección asíncrona
-          // (Running=true en FT_Timers de sesiones anteriores)
-          if (spId) {
-            (function(_k){ 
-              setTimeout(function(){
-                if (typeof appSaveTimerToSP === 'function') {
-                  appSaveTimerToSP(_k).catch(function(){});
-                }
-              }, 3000 + Math.random()*5000); // escalonar para no saturar el Flow
-            })(key);
+          // done / pending: asegurar que el timer esté detenido
+          if (t && t.running) {
+            t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
+            t.running = false;
           }
         }
       });
     });
+
     var _colaItemsRaw = (colaRes.value||[]);
     // Restore _colaPos from snapshot for ops that colaItems won't cover (empty cola response)
     DB.activeOFs.forEach(function(aof){

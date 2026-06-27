@@ -5570,83 +5570,82 @@ async function ftLoadDataFromSP() {
       if (key) _spTimerMap[key] = { f: f, id: i.id };
     });
     // ── Reconstrucción de DB.timers (coordinador) ──────────────────────────────
-    // Misma regla que app.html: op.status es fuente de verdad, FT_Timers.Running ignorado.
+    // Mismo enfoque restaurado que app.html: confiar en FT_Timers start+elapsed,
+    // reconciliar con op.status, fallback a fecha_inicio_real si no hay registro.
+
     var _prevTimers = {};
     Object.keys(DB.timers||{}).forEach(function(k){ _prevTimers[k] = DB.timers[k]; });
 
-    // Mapa de datos de SP por key
-    var _spTimerDataCoord = {};
+    // Paso 1: Cargar FT_Timers directamente (lógica original)
+    DB.timers = {};
     Object.keys(_spTimerMap).forEach(function(key){
       var t = _spTimerMap[key];
-      _spTimerDataCoord[key] = {
-        elapsed: parseInt(t.f.Elapsed_MS||0),
-        start:   parseInt(t.f.Start_MS||now),
-        spId:    t.id
+      var f = t.f;
+      var prv = _prevTimers[key];
+      DB.timers[key] = {
+        start:    parseInt(f.Start_MS||now),
+        elapsed:  parseInt(f.Elapsed_MS||0),
+        running:  f.Running === true || f.Running === 1,
+        _spId:    t.id,
+        _frozenAt: prv ? prv._frozenAt : undefined
       };
     });
 
-    // Reconstruir según op.status
-    DB.timers = {};
+    // Paso 2: Reconciliar con op.status
     if (typeof DB.activeOFs !== 'undefined') {
       DB.activeOFs.forEach(function(aof){
         aof.ops.forEach(function(op){
           var key = aof.of_sap + '_' + op.id;
-          var sp  = _spTimerDataCoord[key];
+          var t   = DB.timers[key];
           var prv = _prevTimers[key];
 
-          var spElapsed  = sp  ? sp.elapsed  : 0;
-          var prvElapsed = prv ? (prv.elapsed||0) : 0;
-          if (prv && prv.running && prv.start && op.status === 'running') {
-            prvElapsed = prvElapsed + (Date.now() - prv.start);
-          }
-          var baseElapsed = Math.max(spElapsed, prvElapsed);
-          var spId = sp ? sp.spId : (prv ? prv._spId : null);
-
           if (op.status === 'running') {
-            var recentFreeze = prv && prv._frozenAt && (Date.now()-prv._frozenAt) < 45000;
-            if (recentFreeze) {
-              DB.timers[key] = { start: Date.now(), elapsed: prv.elapsed||0, running: false, _spId: spId, _frozenAt: prv._frozenAt };
-            } else {
-              // Calcular elapsed desde fecha_inicio_real (fuente confiable en FT_Operaciones)
+            // Pausa local reciente no confirmada → mantener detenido
+            if (prv && prv._frozenAt && (Date.now()-prv._frozenAt) < 45000) {
+              if (t) { t.running = false; t._frozenAt = prv._frozenAt; }
+              return;
+            }
+            if (!t) {
+              // Sin registro en FT_Timers → calcular desde fecha_inicio_real
               var fromInicio = 0;
               var fir = op.fecha_inicio_real || op.Fecha_Inicio || '';
               if (fir) {
-                var firM = fir.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+                var firM = fir.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
                 if (firM) {
-                  var dd=parseInt(firM[1]),mm=parseInt(firM[2])-1,yy=parseInt(firM[3]);
-                  var hh=parseInt(firM[4]),min=parseInt(firM[5]);
-                  var isPM = firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
-                  if(isPM && hh<12) hh+=12;
-                  if(!isPM && hh===12) hh=0;
-                  var inicioDate = new Date(yy,mm,dd,hh,min,0,0);
-                  fromInicio = Math.max(0, Date.now() - inicioDate.getTime());
+                  var dd=parseInt(firM[1]),mo=parseInt(firM[2])-1,yy=parseInt(firM[3]);
+                  var hh=parseInt(firM[4]),mi=parseInt(firM[5]);
+                  var isPM=firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
+                  if(isPM&&hh<12)hh+=12; if(!isPM&&hh===12)hh=0;
+                  fromInicio = Math.max(0, Date.now()-new Date(yy,mo,dd,hh,mi,0,0).getTime());
                 }
               }
-              var runningElapsed = Math.max(fromInicio, baseElapsed, (op.mins||0)*60000);
-              DB.timers[key] = { start: Date.now(), elapsed: runningElapsed, running: true, _spId: spId };
+              var initElapsed = Math.max(fromInicio, (op.mins||0)*60000);
+              DB.timers[key] = { start: Date.now()-initElapsed, elapsed: 0, running: true, _spId: null };
+              t = DB.timers[key];
             }
+            if (t && !t.running && !t._frozenAt) t.running = true;
+
           } else if (op.status === 'paused' || op.status === 'validating') {
-            var frozenElapsed;
-            if (prv && prv._frozenAt) {
-              frozenElapsed = prv.elapsed || 0;
-              if (frozenElapsed > 0) {
-                var localMins = Math.floor(frozenElapsed / 60000);
-                if (localMins > (op.mins || 0)) op.mins = localMins;
-              }
-            } else {
-              // Reload fresco: op.mins de FT_Operaciones es la fuente correcta
-              frozenElapsed = (op.mins || 0) * 60000;
+            if (t && t.running) {
+              t.elapsed = (t.elapsed||0) + (Date.now()-(t.start||Date.now()));
+              t.running = false;
+              var localMins = Math.floor((t.elapsed||0)/60000);
+              if (localMins > (op.mins||0)) op.mins = localMins;
             }
-            DB.timers[key] = { start: Date.now(), elapsed: frozenElapsed, running: false, _spId: spId,
-                               _frozenAt: prv ? prv._frozenAt : undefined };
+            if (!t) {
+              DB.timers[key] = { start: Date.now(), elapsed: (op.mins||0)*60000, running: false, _spId: null };
+            }
+
           } else {
-            // No usar baseElapsed para ops no activas — puede tener tiempo stale de FT_Timers
-            var doneElapsed = (op.status === 'done' && op.mins) ? op.mins*60000 : 0;
-            DB.timers[key] = { start: Date.now(), elapsed: doneElapsed, running: false, _spId: spId };
+            if (t && t.running) {
+              t.elapsed = (t.elapsed||0) + (Date.now()-(t.start||Date.now()));
+              t.running = false;
+            }
           }
         });
       });
     }
+
 
 
     // Rebuild DB.articles: primero desde OFs, luego enriquecer con FT_Articulos (lista maestra)
