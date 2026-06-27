@@ -7960,7 +7960,7 @@ async function _appLoadDataFromSP_impl() {
       // NO sobreescribir con lo que viene de SP — el PATCH de FT_Timers puede estar
       // en vuelo (o haber fallado con 502). Preservar el estado local congelado.
       var _existing = DB.timers[key];
-      var _frozenRecently = _existing && _existing._frozenAt && (Date.now()-_existing._frozenAt < 20000);
+      var _frozenRecently = _existing && _existing._frozenAt && (Date.now()-_existing._frozenAt < 45000);
       if(_frozenRecently){
         // Solo actualizar _spId si lo tenemos de SP, pero mantener estado local
         if(i.id && !_existing._spId) _existing._spId = i.id;
@@ -15592,7 +15592,7 @@ async function appReloadOpsFromSP() {
           // Op is running in SP but timer stopped locally → restart it
           // BUT: if _frozenAt is recent (<15s), this device just paused/finished it locally
           // and the SP PATCH hasn't arrived yet — don't undo the local freeze
-          var _frozenRecently = t._frozenAt && (Date.now()-t._frozenAt < 15000);
+          var _frozenRecently = t._frozenAt && (Date.now()-t._frozenAt < 45000);
           if (!t.running && !_frozenRecently) {
             t.start = Date.now(); // elapsed stays as-is, timer resumes
             t.running = true;
