@@ -7826,14 +7826,21 @@ async function _appLoadDataFromSP_impl() {
         tecnico: o.Tecnico||'',
         ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
                  : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        // _ldLocalStatus: buscar estado local vigente antes de construir el objeto
+        // (declarado aquí para poder usarlo también en _localStatus/_localStatusAt más abajo)
         status: (function(){
-          // If local timer says running but SP says pending — trust local timer
-          // (flow may filter out running ops from FT_Operaciones)
           var spStatus = o.Status||'pending';
-          var key = (f.OF_SAP||f.Title||'') + '_' + (o.Op_ID||('op_'+(o.ID||'')));
-          var localTimer = DB.timers && DB.timers[key];
-          if (spStatus === 'pending' && localTimer && localTimer.running) return 'running';
-          if (spStatus === 'pending' && localTimer && !localTimer.running && localTimer.elapsed > 0) return 'paused';
+          var _opKey = (f.OF_SAP||f.Title||'') + '_' + (o.Op_ID||('op_'+(o.ID||'')));
+          var _ldLocalTimer = DB.timers && DB.timers[_opKey];
+          var _ldExAof = DB.activeOFs && DB.activeOFs.find(function(a){return a.of_sap===(f.OF_SAP||f.Title||'');});
+          var _ldExOp = _ldExAof && _ldExAof.ops && _ldExAof.ops.find(function(p){return p.id===(o.Op_ID||('op_'+(o.ID||'')));});
+          var _ldUseLocal = _ldExOp && _ldExOp._localStatus
+            && _ldExOp._localStatusAt && (Date.now()-_ldExOp._localStatusAt < 15000);
+          // Almacenar para uso en _localStatus/_localStatusAt al final del objeto
+          o._ld_useLocal = _ldUseLocal; o._ld_exOp = _ldExOp;
+          if (_ldUseLocal) return _ldExOp._localStatus;
+          if (spStatus === 'pending' && _ldLocalTimer && _ldLocalTimer.running) return 'running';
+          if (spStatus === 'pending' && _ldLocalTimer && !_ldLocalTimer.running && _ldLocalTimer.elapsed > 0) return 'paused';
           return spStatus;
         })(),
         inicio: o.Inicio||'', fin: o.Fin||'',
@@ -7874,6 +7881,9 @@ async function _appLoadDataFromSP_impl() {
         qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||o.qty_def_retrabajo||0),
         qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||o.qty_def_chatarra||0),
         _spId: o.ID||o._itemId||null,
+        // Propagar _localStatus si sigue vigente — para que la reconciliación lo use
+        _localStatus: (o._ld_useLocal && o._ld_exOp) ? o._ld_exOp._localStatus : null,
+        _localStatusAt: (o._ld_useLocal && o._ld_exOp) ? o._ld_exOp._localStatusAt : null,
       })),
     }));
     // Sync timer state to op.status (flow may return stale status)
@@ -7916,6 +7926,15 @@ async function _appLoadDataFromSP_impl() {
     window.DB_STATION_STATUS = window.DB_STATION_STATUS||{};
     (stStatusRes.value||[]).forEach(i=>{const f=i.fields;const name=f.Estacion||f.Title||'';if(name)window.DB_STATION_STATUS[name]={status:f.Status||'activa',nota:f.Nota||'',plan:JSON.parse(f.Plan_JSON||'[]')};});
     window.STATIONS.forEach(s=>{if(!window.DB_STATION_STATUS[s])window.DB_STATION_STATUS[s]={status:'activa',nota:'',plan:[]};});
+    // Preservar timers congelados recientemente (<20s) antes de reconstruir desde SP.
+    // Esto evita que un reload concurrente deshaga un ftFreezeTimer que acaba de correr.
+    var _frozenTimers = {};
+    Object.keys(DB.timers||{}).forEach(function(k){
+      var t = DB.timers[k];
+      if(t && t._frozenAt && (Date.now()-t._frozenAt < 20000)){
+        _frozenTimers[k] = t; // preservar este timer — se restaurará después del forEach
+      }
+    });
     DB.timers = {};
     (timersRes.value||[]).forEach(function(i){
       const f=i.fields;
@@ -7935,6 +7954,10 @@ async function _appLoadDataFromSP_impl() {
         return;
       }
       DB.timers[key]={start:startMS, elapsed:elapsedMS, running:isRunning, _spId:i.id};
+    });
+    // Restaurar timers congelados que el forEach puede haber sobreescrito con estado de SP
+    Object.keys(_frozenTimers).forEach(function(k){
+      DB.timers[k] = _frozenTimers[k];
     });
     var _colaItemsRaw = (colaRes.value||[]);
     // Restore _colaPos from snapshot for ops that colaItems won't cover (empty cola response)
