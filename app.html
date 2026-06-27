@@ -3883,7 +3883,10 @@ function appConfirmPause(){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
   }
-  ftFreezeTimer(key); // congelar display inmediatamente
+  ftFreezeTimer(key); // congelar display inmediatamente + _frozenAt
+  // Marcar la op con _localStatus para que el poll/reload no la sobreescriba
+  // hasta que SP confirme el nuevo status (ventana de 15s)
+  op._localStatus='paused'; op._localStatusAt=Date.now();
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -5246,6 +5249,7 @@ function appConfirmFinish(){
     ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op._localStatus='done'; op._localStatusAt=Date.now();
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -10690,6 +10694,8 @@ function getTotalOpMins(key){
 }
 // Congela el timer inmediatamente: acumula elapsed, marca running=false y
 // retira los chips del DOM para que el tick de 1s los deje de actualizar.
+// _frozenAt protege contra race condition: si el poll de SP llega antes que el PATCH
+// y ve status=running, NO reiniciará el timer durante 15 segundos.
 function ftFreezeTimer(key){
   var t=DB.timers[key];
   if(t){
@@ -10697,6 +10703,7 @@ function ftFreezeTimer(key){
       t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
     }
     t.running=false;
+    t._frozenAt=Date.now(); // marca de congelamiento local — protege vs race condition del poll
   }
   // Retirar chips del DOM inmediatamente
   document.querySelectorAll('.ft-timer-chip[data-timer-key="'+key+'"]').forEach(function(el){
@@ -11891,7 +11898,10 @@ function appConfirmPause(){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
   }
-  ftFreezeTimer(key); // congelar display inmediatamente
+  ftFreezeTimer(key); // congelar display inmediatamente + _frozenAt
+  // Marcar la op con _localStatus para que el poll/reload no la sobreescriba
+  // hasta que SP confirme el nuevo status (ventana de 15s)
+  op._localStatus='paused'; op._localStatusAt=Date.now();
   var turnoMins=getEl(key);
 
   if(_pauseTipo==='turno'){
@@ -13279,6 +13289,7 @@ function appConfirmFinish(){
     ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
     var elFinal = getTotalOpMins(key); // B1 fix: tiempo total = turnos previos + turno actual
     op.status="done";op.fin=nowT();op.fecha_fin_real=nowDT();op.mins=elFinal;op.qty_ok=ok;op.qty_def=def;
+    op._localStatus='done'; op._localStatusAt=Date.now();
     op.qty_def_retrabajo=dRetr;
     op.qty_def_chatarra=dChat;
     op.qty_chat=(op.qty_chat||0)+chat+dChat;
@@ -15356,6 +15367,12 @@ async function appReloadOpsFromSP() {
       }
       aof.ops = spOps.map(function(o) {
         var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
+        // Respetar _localStatus si es reciente (<15s) — protege contra race condition donde
+        // SP aún devuelve el status anterior mientras el PATCH viaja por la red
+        var _spStatus = o.Status || 'pending';
+        var _useLocalStatus = existing && existing._localStatus
+          && existing._localStatusAt && (Date.now()-existing._localStatusAt < 15000);
+        var _effectiveStatus = _useLocalStatus ? existing._localStatus : _spStatus;
         return {
           id:          o.Op_ID || o.Title || '',
           nombre:      (o.Nombre&&o.Nombre.trim()) || o.Nombre_Op || o.Title || '',
@@ -15363,7 +15380,9 @@ async function appReloadOpsFromSP() {
           tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
           tecnico:     o.Tecnico || '',
           ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
-          status:      o.Status || 'pending',
+          status:      _effectiveStatus,
+          _localStatus: _useLocalStatus ? existing._localStatus : null,
+          _localStatusAt: _useLocalStatus ? existing._localStatusAt : null,
           inicio:      o.Inicio || '',
           _inicioISO:  '',
           fin:         o.Fin || '',
@@ -15381,7 +15400,7 @@ async function appReloadOpsFromSP() {
           _queueSpId:  existing ? (existing._queueSpId||null) : null, // preservar SP ID de FT_Cola_Estacion
           isRetrabajo: o.isRetrabajo === true,
           pauseReason: o.PauseReason || '',
-          _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (o.Status==='paused'?'normal':null),
+          _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (_effectiveStatus==='paused'?'normal':null),
           _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos&&d.turnos.length)return d.turnos[d.turnos.length-1].qty_rest||0;if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
           turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}; return []; })(),
           // B2 fix: recuperar inicioTurnoActual desde TurnoData al recargar desde SP
@@ -15419,7 +15438,10 @@ async function appReloadOpsFromSP() {
           }
         } else if (op.status === 'running') {
           // Op is running in SP but timer stopped locally → restart it
-          if (!t.running) {
+          // BUT: if _frozenAt is recent (<15s), this device just paused/finished it locally
+          // and the SP PATCH hasn't arrived yet — don't undo the local freeze
+          var _frozenRecently = t._frozenAt && (Date.now()-t._frozenAt < 15000);
+          if (!t.running && !_frozenRecently) {
             t.start = Date.now(); // elapsed stays as-is, timer resumes
             t.running = true;
           }

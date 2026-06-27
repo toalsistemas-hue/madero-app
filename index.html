@@ -6012,12 +6012,15 @@ async function ftLoadDataFromSP() {
               if(op.status==='running'){
                 var key = aof.of_sap+'_'+op.id;
                 if(!DB.timers[key] || !DB.timers[key].running){
-                  // Usar elapsed guardado en SP (op.mins = mins acumulados) como base
-                  var prevElapsed = DB.timers[key] ? (DB.timers[key].elapsed||0)
-                    : (op.mins ? op.mins*60000 : 0);
-                  DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
-                  // Save running=true to SP so coordinator reload shows correct timer
-                  if (typeof ftSaveTimerToSP === 'function') ftSaveTimerToSP(key).catch(function(){});
+                  // Respetar _frozenAt: si este dispositivo acaba de congelar el timer (<15s),
+                  // no lo reiniciamos aunque SP aún diga running (race condition PATCH pendiente)
+                  var _tExist = DB.timers[key];
+                  var _frozenRecently = _tExist && _tExist._frozenAt && (Date.now()-_tExist._frozenAt < 15000);
+                  if(!_frozenRecently){
+                    var prevElapsed = _tExist ? (_tExist.elapsed||0) : (op.mins ? op.mins*60000 : 0);
+                    DB.timers[key] = { start: Date.now(), elapsed: prevElapsed, running: true };
+                    if (typeof ftSaveTimerToSP === 'function') ftSaveTimerToSP(key).catch(function(){});
+                  }
                 }
               } else if(op.status==='validating'||op.status==='paused'){
                 var key = aof.of_sap+'_'+op.id;
@@ -6710,6 +6713,7 @@ function getEl(key){
   return Math.floor((accumulated+current)/60000);
 }
 // Congela el timer inmediatamente — retira chips del DOM y detiene el elapsed
+// _frozenAt protege contra race condition: el poll no reiniciará el timer por 15s
 function ftFreezeTimer(key){
   var t=DB.timers[key];
   if(t){
@@ -6717,6 +6721,7 @@ function ftFreezeTimer(key){
       t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
     }
     t.running=false;
+    t._frozenAt=Date.now();
   }
   document.querySelectorAll('.ft-timer-chip[data-timer-key="'+key+'"]').forEach(function(el){
     if(t) el.textContent=fmtM(Math.floor((t.elapsed||0)/60000));
