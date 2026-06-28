@@ -1130,40 +1130,40 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
-  <div class="app-mo" id="app-modal-finish">
+  <div class="app-mo" id="app-modal-finish-2">
     <div class="app-ms">
       <div class="app-mh"></div><div class="app-mt">✅ Registrar Terminada</div>
-      <div id="app-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
+      <div id="app-finish-info-2" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
       <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;padding:7px 9px;margin-bottom:9px;font-size:.7rem;color:var(--adim);">
-        Total asignadas: <strong id="app-finish-total-lbl" style="color:var(--atext);">—</strong>
+        Total asignadas: <strong id="app-finish-total-lbl-2" style="color:var(--atext);">—</strong>
       </div>
       <div class="app-qty-grid">
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok" type="number" min="0" oninput="appSyncFinishQty('ok')" style="color:var(--agreen);"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def" type="number" min="0" oninput="appSyncFinishQty('def')"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat" type="number" min="0" oninput="appSyncFinishQty('chat')" style="color:var(--ared);"></div>
-        <div class="app-qi" id="app-finish-rej-wrap" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej" type="number" min="0" style="color:var(--ared);" readonly></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok-2" type="number" min="0" oninput="appSyncFinishQty('ok','-2')" style="color:var(--agreen);"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def-2" type="number" min="0" oninput="appSyncFinishQty('def','-2')"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat-2" type="number" min="0" oninput="appSyncFinishQty('chat','-2')" style="color:var(--ared);"></div>
+        <div class="app-qi" id="app-finish-rej-wrap-2" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej-2" type="number" min="0" style="color:var(--ared);" readonly></div>
       </div>
-      <div id="app-finish-qty-warn" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
+      <div id="app-finish-qty-warn-2" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
       <!-- Disposición de piezas con defecto -->
-      <div id="app-finish-def-disp" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
+      <div id="app-finish-def-disp-2" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
         <div style="font-size:.7rem;font-weight:700;color:var(--ared);margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
         <div style="display:flex;gap:8px;">
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ayellow);">→ Retrabajo</div>
-            <input class="app-qi-inp" id="app-finish-def-retrabajo" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-retrabajo-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
           </div>
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ared);">→ Chatarra</div>
-            <input class="app-qi-inp" id="app-finish-def-chatarra" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-chatarra-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
           </div>
         </div>
-        <div id="app-finish-def-disp-warn" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+        <div id="app-finish-def-disp-warn-2" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
       </div>
       <div class="app-fl">Observaciones</div>
-      <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
-      <div id="app-finish-foto-wrap"></div>
+      <input class="app-fi" id="app-finish-obs-2" placeholder="Sin incidencias...">
+      <div id="app-finish-foto-wrap-2"></div>
       <div class="app-ma">
-        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
+        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish-2')">Cancelar</button>
         <button class="app-mb app-mb-g" onclick="appConfirmFinish()">Registrar Terminada</button>
       </div>
     </div>
@@ -1372,40 +1372,40 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
-  <div class="app-mo" id="app-modal-finish">
+  <div class="app-mo" id="app-modal-finish-2">
     <div class="app-ms">
       <div class="app-mh"></div><div class="app-mt">✅ Registrar Terminada</div>
-      <div id="app-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
+      <div id="app-finish-info-2" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
       <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;padding:7px 9px;margin-bottom:9px;font-size:.7rem;color:var(--adim);">
-        Total asignadas: <strong id="app-finish-total-lbl" style="color:var(--atext);">—</strong>
+        Total asignadas: <strong id="app-finish-total-lbl-2" style="color:var(--atext);">—</strong>
       </div>
       <div class="app-qty-grid">
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok" type="number" min="0" oninput="appSyncFinishQty('ok')" style="color:var(--agreen);"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def" type="number" min="0" oninput="appSyncFinishQty('def')"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat" type="number" min="0" oninput="appSyncFinishQty('chat')" style="color:var(--ared);"></div>
-        <div class="app-qi" id="app-finish-rej-wrap" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej" type="number" min="0" style="color:var(--ared);" readonly></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok-2" type="number" min="0" oninput="appSyncFinishQty('ok','-2')" style="color:var(--agreen);"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def-2" type="number" min="0" oninput="appSyncFinishQty('def','-2')"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat-2" type="number" min="0" oninput="appSyncFinishQty('chat','-2')" style="color:var(--ared);"></div>
+        <div class="app-qi" id="app-finish-rej-wrap-2" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej-2" type="number" min="0" style="color:var(--ared);" readonly></div>
       </div>
-      <div id="app-finish-qty-warn" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
+      <div id="app-finish-qty-warn-2" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
       <!-- Disposición de piezas con defecto -->
-      <div id="app-finish-def-disp" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
+      <div id="app-finish-def-disp-2" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
         <div style="font-size:.7rem;font-weight:700;color:var(--ared);margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
         <div style="display:flex;gap:8px;">
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ayellow);">→ Retrabajo</div>
-            <input class="app-qi-inp" id="app-finish-def-retrabajo" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-retrabajo-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
           </div>
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ared);">→ Chatarra</div>
-            <input class="app-qi-inp" id="app-finish-def-chatarra" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-chatarra-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
           </div>
         </div>
-        <div id="app-finish-def-disp-warn" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+        <div id="app-finish-def-disp-warn-2" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
       </div>
       <div class="app-fl">Observaciones</div>
-      <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
-      <div id="app-finish-foto-wrap"></div>
+      <input class="app-fi" id="app-finish-obs-2" placeholder="Sin incidencias...">
+      <div id="app-finish-foto-wrap-2"></div>
       <div class="app-ma">
-        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
+        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish-2')">Cancelar</button>
         <button class="app-mb app-mb-g" onclick="appConfirmFinish()">Registrar Terminada</button>
       </div>
     </div>
@@ -3600,11 +3600,11 @@ function renderAppOpsPanel(of){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
       } else if(op.status==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
-      } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
-        // Mostrar tiempo guardado en SP (op.mins) — confiable porque viene de FT_Operaciones
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins)+"</div></div>";
+      } else if(op.status==='paused'||op.status==='validating'){
+        // ⏸ Usar op.mins de FT_Operaciones (guardado correctamente al pausar, no depende de FT_Timers)
+        // Si op.mins=0 (op recién iniciada sin tiempo): mostrar 0 con ⏸ para indicar estado paused
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins||0)+"</div></div>";
       }
-      // Si paused y op.mins=0: no mostrar TIEMPO (evita mostrar valor incorrecto por 502 en FT_Timers)
       h+="</div>";
     }
     if(op.status==="done"){
@@ -4360,27 +4360,37 @@ function appCalRespond(result){
     resultado: result
   }).catch(function(){});
   closeAppModal("app-modal-cal-resp");appPlayNotifSound('ok');renderApp();
+  // Guardar resultado de calidad en SP (qty_rej, calResult, status)
+  (async function(){
+    try {
+      if(!appSiteId && typeof appGetSiteId==='function') await appGetSiteId();
+      await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+      console.log('✅ Cal result guardado en SP:', result);
+    } catch(e){ console.warn('❌ Cal result SP error:', e.message||e); }
+  })();
 }
-function appOpenFinish(sap,opId){
+function appOpenFinish(sap,opId,_modalSfx){
   APP.currentFinishCtx={of_sap:sap,op_id:opId};
+  APP.currentFinishSfx=_modalSfx||'';
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;if(!op)return;
   var el=getEl(sap+"_"+opId);
   var calEvaluated = op.calResult==='rechazado';
 
-  document.getElementById("app-finish-info").innerHTML=
+  var _s=APP.currentFinishSfx||'';
+  document.getElementById("app-finish-info"+_s).innerHTML=
     "<strong>"+esc(op.nombre)+"</strong><br>"+esc(op.estacion)+" · "+esc(op.tecnico)+
     "<br><span style='color:var(--agreen)'>Inicio: "+esc(op.inicio)+" · Transcurrido: "+fmtM(el)+"</span>"+
     (calEvaluated?"<br><span style='color:var(--ayellow);font-size:.72rem;'>⚖ Piezas evaluadas por Calidad de Línea — campos bloqueados</span>":"");
 
-  document.getElementById("app-finish-total-lbl").textContent=op.qty_total+" piezas";
+  document.getElementById("app-finish-total-lbl"+_s).textContent=op.qty_total+" piezas";
 
-  var okEl  = document.getElementById("app-finish-ok");
-  var defEl = document.getElementById("app-finish-def");
-  var chatEl= document.getElementById("app-finish-chat");
-  var dispPanel = document.getElementById('app-finish-def-disp');
-  var dRetrEl = document.getElementById('app-finish-def-retrabajo');
-  var dChatEl = document.getElementById('app-finish-def-chatarra');
+  var okEl  = document.getElementById("app-finish-ok"+_s);
+  var defEl = document.getElementById("app-finish-def"+_s);
+  var chatEl= document.getElementById("app-finish-chat"+_s);
+  var dispPanel = document.getElementById('app-finish-def-disp'+_s);
+  var dRetrEl = document.getElementById('app-finish-def-retrabajo'+_s);
+  var dChatEl = document.getElementById('app-finish-def-chatarra'+_s);
 
   if(calEvaluated){
     // Pre-fill with cal decision and lock all qty fields
@@ -4408,12 +4418,12 @@ function appOpenFinish(sap,opId){
   }
 
   var hasRej=(op.qty_rej||0)>0;
-  document.getElementById("app-finish-rej-wrap").style.display=hasRej?"flex":"none";
-  document.getElementById("app-finish-rej").value=op.qty_rej||0;
+  document.getElementById("app-finish-rej-wrap"+_s).style.display=hasRej?"flex":"none";
+  document.getElementById("app-finish-rej"+_s).value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
-  document.getElementById("app-finish-obs").value="";
+  document.getElementById("app-finish-obs"+(APP.currentFinishSfx||'')).value="";
   document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w){w.innerHTML=appFotoBtnHTML(sap,opId,'terminada');});
-  openAppModal("app-modal-finish");
+  openAppModal("app-modal-finish"+_s);
 }
 function appValidateFinishQty(){
   var ctx=APP.currentFinishCtx;
@@ -5228,17 +5238,18 @@ markNotifRead = function(id) {
 };
 
 // ── 13: Cálculo automático OK/Defecto ────────────────────
-function appSyncFinishQty(changed) {
+function appSyncFinishQty(changed, sfx) {
+  var s = sfx || '';
   var ctx = APP.currentFinishCtx;
   var of = DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op = of ? of.ops.find(function(o){return o.id===ctx.op_id;}) : null;
   if (!op) return;
   var rej = op.qty_rej||0;
   var avail = op.qty_total - rej;
-  var okEl   = document.getElementById('app-finish-ok');
-  var defEl  = document.getElementById('app-finish-def');
-  var chatEl = document.getElementById('app-finish-chat');
-  var warn   = document.getElementById('app-finish-qty-warn');
+  var okEl   = document.getElementById('app-finish-ok'+s);
+  var defEl  = document.getElementById('app-finish-def'+s);
+  var chatEl = document.getElementById('app-finish-chat'+s);
+  var warn   = document.getElementById('app-finish-qty-warn'+s);
   var ok=parseInt(okEl.value)||0, def=parseInt(defEl.value)||0, chat=parseInt(chatEl.value)||0;
   if(changed==='ok'){
     ok=Math.min(ok,avail); okEl.value=ok;
@@ -5274,11 +5285,12 @@ function appSyncFinishQty(changed) {
     }
   }
 }
-function appSyncDefDisp(){
-  var defVal=parseInt((document.getElementById('app-finish-def')||{value:0}).value)||0;
-  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo')||{value:0}).value)||0;
-  var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
-  var warn=document.getElementById('app-finish-def-disp-warn');if(!warn)return;
+function appSyncDefDisp(sfx){
+  var s=sfx||'';
+  var defVal=parseInt((document.getElementById('app-finish-def'+s)||{value:0}).value)||0;
+  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo'+s)||{value:0}).value)||0;
+  var dChat=parseInt((document.getElementById('app-finish-def-chatarra'+s)||{value:0}).value)||0;
+  var warn=document.getElementById('app-finish-def-disp-warn'+s);if(!warn)return;
   var total=dRetr+dChat;
   if(total>defVal){warn.style.display='block';warn.textContent='⚠ Supera las piezas con defecto ('+defVal+').';}
   else if(total<defVal){warn.style.display='block';warn.textContent=(defVal-total)+' pieza(s) sin disposición asignada.';}
@@ -5286,17 +5298,18 @@ function appSyncDefDisp(){
 }
 function appConfirmFinish(){
   var ctx=APP.currentFinishCtx;
+  var s=APP.currentFinishSfx||'';
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
   var el=getEl(key);
-  var ok=parseInt(document.getElementById("app-finish-ok").value)||0;
-  var def=parseInt(document.getElementById("app-finish-def").value)||0;
-  var chat=parseInt((document.getElementById("app-finish-chat")||{value:0}).value)||0;
+  var ok=parseInt((document.getElementById("app-finish-ok"+s)||{value:0}).value)||0;
+  var def=parseInt((document.getElementById("app-finish-def"+s)||{value:0}).value)||0;
+  var chat=parseInt((document.getElementById("app-finish-chat"+s)||{value:0}).value)||0;
   var rej=op.qty_rej||0;
   var avail=op.qty_total-rej;
-  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo')||{value:0}).value)||0;
-  var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
+  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo'+s)||{value:0}).value)||0;
+  var dChat=parseInt((document.getElementById('app-finish-def-chatarra'+s)||{value:0}).value)||0;
 
   function doFinishLocal(){
     ftFreezeTimer(key); // congelar display antes de calcular el tiempo final
@@ -11646,11 +11659,11 @@ function renderAppOpsPanel(of){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
       } else if(op.status==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
-      } else if((op.status==='paused'||op.status==='validating') && op.mins>0){
-        // Mostrar tiempo guardado en SP (op.mins) — confiable porque viene de FT_Operaciones
-        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins)+"</div></div>";
+      } else if(op.status==='paused'||op.status==='validating'){
+        // ⏸ Usar op.mins de FT_Operaciones (guardado correctamente al pausar, no depende de FT_Timers)
+        // Si op.mins=0 (op recién iniciada sin tiempo): mostrar 0 con ⏸ para indicar estado paused
+        h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins||0)+"</div></div>";
       }
-      // Si paused y op.mins=0: no mostrar TIEMPO (evita mostrar valor incorrecto por 502 en FT_Timers)
       h+="</div>";
     }
     if(op.status==="done"){
@@ -12478,26 +12491,28 @@ function appCalRespond(result){
   appSaveOpToSP(ctx.of_sap, ctx.op_id).catch(function(e){ console.warn('SP calResp save:', e.message||e); });
   _basefireSync('app','op_cal_result',{of_sap:ctx.of_sap, op_id:ctx.op_id, result:result});
 }
-function appOpenFinish(sap,opId){
+function appOpenFinish(sap,opId,_modalSfx){
   APP.currentFinishCtx={of_sap:sap,op_id:opId};
+  APP.currentFinishSfx=_modalSfx||'';
   var of=DB.activeOFs.find(function(o){return o.of_sap===sap;});
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;if(!op)return;
   var el=getEl(sap+"_"+opId);
   var calEvaluated = op.calResult==='rechazado';
 
-  document.getElementById("app-finish-info").innerHTML=
+  var _s=APP.currentFinishSfx||'';
+  document.getElementById("app-finish-info"+_s).innerHTML=
     "<strong>"+esc(op.nombre)+"</strong><br>"+esc(op.estacion)+" · "+esc(op.tecnico)+
     "<br><span style='color:var(--agreen)'>Inicio: "+esc(op.inicio)+" · Transcurrido: "+fmtM(el)+"</span>"+
     (calEvaluated?"<br><span style='color:var(--ayellow);font-size:.72rem;'>⚖ Piezas evaluadas por Calidad de Línea — campos bloqueados</span>":"");
 
-  document.getElementById("app-finish-total-lbl").textContent=op.qty_total+" piezas";
+  document.getElementById("app-finish-total-lbl"+_s).textContent=op.qty_total+" piezas";
 
-  var okEl  = document.getElementById("app-finish-ok");
-  var defEl = document.getElementById("app-finish-def");
-  var chatEl= document.getElementById("app-finish-chat");
-  var dispPanel = document.getElementById('app-finish-def-disp');
-  var dRetrEl = document.getElementById('app-finish-def-retrabajo');
-  var dChatEl = document.getElementById('app-finish-def-chatarra');
+  var okEl  = document.getElementById("app-finish-ok"+_s);
+  var defEl = document.getElementById("app-finish-def"+_s);
+  var chatEl= document.getElementById("app-finish-chat"+_s);
+  var dispPanel = document.getElementById('app-finish-def-disp'+_s);
+  var dRetrEl = document.getElementById('app-finish-def-retrabajo'+_s);
+  var dChatEl = document.getElementById('app-finish-def-chatarra'+_s);
 
   if(calEvaluated){
     // Pre-fill with cal decision and lock all qty fields
@@ -12528,12 +12543,12 @@ function appOpenFinish(sap,opId){
   }
 
   var hasRej=(op.qty_rej||0)>0;
-  document.getElementById("app-finish-rej-wrap").style.display=hasRej?"flex":"none";
-  document.getElementById("app-finish-rej").value=op.qty_rej||0;
+  document.getElementById("app-finish-rej-wrap"+_s).style.display=hasRej?"flex":"none";
+  document.getElementById("app-finish-rej"+_s).value=op.qty_rej||0;
   document.getElementById("app-finish-qty-warn").style.display="none";
-  document.getElementById("app-finish-obs").value="";
+  document.getElementById("app-finish-obs"+(APP.currentFinishSfx||'')).value="";
   document.querySelectorAll('#app-finish-foto-wrap').forEach(function(w){w.innerHTML=appFotoBtnHTML(sap,opId,'terminada');});
-  openAppModal("app-modal-finish");
+  openAppModal("app-modal-finish"+_s);
 }
 function appValidateFinishQty(){
   var ctx=APP.currentFinishCtx;
@@ -13299,7 +13314,7 @@ function doFinish(ctx, el, ok, def, rej) {
   // Purge done op from queue and renumber
   sqPurge(); sqSyncColaNumbers();
   _appInstantFeedback(ctx.of_sap, ctx.op_id);
-  closeAppModal('app-modal-finish'); renderApp();
+  closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); renderApp();
   // Persistir en SP
   appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
   appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
@@ -13352,17 +13367,18 @@ markNotifRead = function(id) {
 };
 
 // ── 13: Cálculo automático OK/Defecto ────────────────────
-function appSyncFinishQty(changed) {
+function appSyncFinishQty(changed, sfx) {
+  var s = sfx || '';
   var ctx = APP.currentFinishCtx;
   var of = DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op = of ? of.ops.find(function(o){return o.id===ctx.op_id;}) : null;
   if (!op) return;
   var rej = op.qty_rej||0;
   var avail = op.qty_total - rej;
-  var okEl   = document.getElementById('app-finish-ok');
-  var defEl  = document.getElementById('app-finish-def');
-  var chatEl = document.getElementById('app-finish-chat');
-  var warn   = document.getElementById('app-finish-qty-warn');
+  var okEl   = document.getElementById('app-finish-ok'+s);
+  var defEl  = document.getElementById('app-finish-def'+s);
+  var chatEl = document.getElementById('app-finish-chat'+s);
+  var warn   = document.getElementById('app-finish-qty-warn'+s);
   var ok=parseInt(okEl.value)||0, def=parseInt(defEl.value)||0, chat=parseInt(chatEl.value)||0;
   if(changed==='ok'){
     ok=Math.min(ok,avail); okEl.value=ok;
@@ -13398,11 +13414,12 @@ function appSyncFinishQty(changed) {
     }
   }
 }
-function appSyncDefDisp(){
-  var defVal=parseInt((document.getElementById('app-finish-def')||{value:0}).value)||0;
-  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo')||{value:0}).value)||0;
-  var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
-  var warn=document.getElementById('app-finish-def-disp-warn');if(!warn)return;
+function appSyncDefDisp(sfx){
+  var s=sfx||'';
+  var defVal=parseInt((document.getElementById('app-finish-def'+s)||{value:0}).value)||0;
+  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo'+s)||{value:0}).value)||0;
+  var dChat=parseInt((document.getElementById('app-finish-def-chatarra'+s)||{value:0}).value)||0;
+  var warn=document.getElementById('app-finish-def-disp-warn'+s);if(!warn)return;
   var total=dRetr+dChat;
   if(total>defVal){warn.style.display='block';warn.textContent='⚠ Supera las piezas con defecto ('+defVal+').';}
   else if(total<defVal){warn.style.display='block';warn.textContent=(defVal-total)+' pieza(s) sin disposición asignada.';}
@@ -13410,17 +13427,18 @@ function appSyncDefDisp(){
 }
 function appConfirmFinish(){
   var ctx=APP.currentFinishCtx;
+  var s=APP.currentFinishSfx||'';
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
   var el=getEl(key);
-  var ok=parseInt(document.getElementById("app-finish-ok").value)||0;
-  var def=parseInt(document.getElementById("app-finish-def").value)||0;
-  var chat=parseInt((document.getElementById("app-finish-chat")||{value:0}).value)||0;
+  var ok=parseInt((document.getElementById("app-finish-ok"+s)||{value:0}).value)||0;
+  var def=parseInt((document.getElementById("app-finish-def"+s)||{value:0}).value)||0;
+  var chat=parseInt((document.getElementById("app-finish-chat"+s)||{value:0}).value)||0;
   var rej=op.qty_rej||0;
   var avail=op.qty_total-rej;
-  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo')||{value:0}).value)||0;
-  var dChat=parseInt((document.getElementById('app-finish-def-chatarra')||{value:0}).value)||0;
+  var dRetr=parseInt((document.getElementById('app-finish-def-retrabajo'+s)||{value:0}).value)||0;
+  var dChat=parseInt((document.getElementById('app-finish-def-chatarra'+s)||{value:0}).value)||0;
   // Si calidad evaluó: usar valores de op directamente (campos disabled pueden no leer)
   if(op.calResult==='rechazado'){
     var _cr=op.qty_def_retrabajo||0, _cc=op.qty_def_chatarra||0;

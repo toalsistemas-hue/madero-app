@@ -8430,6 +8430,22 @@ function appCalRespond(result){
   }
   DB.notifications=DB.notifications.filter(function(n){return!(n.of_sap===ctx.of_sap&&n.op_id===ctx.op_id);});
   closeAppModal("app-modal-cal-resp");renderApp();
+  // Guardar resultado de calidad en SP (qty_rej, calResult, status)
+  (async function(){
+    try {
+      if(!appSiteId && typeof appGetSiteId==='function') await appGetSiteId();
+      await appSaveOpToSP(ctx.of_sap, ctx.op_id);
+      console.log('✅ Cal result guardado en SP');
+      // Notificar a otros dispositivos del resultado
+      var _cOf=DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
+      var _cOp=_cOf?_cOf.ops.find(function(o){return o.id===ctx.op_id;}):null;
+      if(typeof fireSync==='function') fireSync('app','cal_result',{
+        of_sap:ctx.of_sap, op_id:ctx.op_id,
+        result: _cOp ? (_cOp.calResult||'') : '',
+        status: _cOp ? (_cOp.status||'') : ''
+      });
+    } catch(e){ console.warn('❌ Cal result SP error:', e.message||e); }
+  })();
 }
 function appOpenFinish(sap,opId){
   APP.currentFinishCtx={of_sap:sap,op_id:opId};
