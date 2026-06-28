@@ -7694,6 +7694,26 @@ async function _appLoadDataFromSP_impl() {
     var opsError = opsRes._error === true;
     if ((ofsError || opsError) && DB.activeOFs && DB.activeOFs.length > 0) {
       console.warn('[appLoadData] Error de red en OFs/Ops — preservando datos existentes temporalmente. ofsError:', ofsError, 'opsError:', opsError);
+      // Aunque fallaron las ops de red, aplicar el estado local de timers inmediatamente.
+      // Esto asegura que una pausa reciente se refleje aunque el reload de SP falle.
+      DB.activeOFs.forEach(function(aof){
+        aof.ops.forEach(function(op){
+          var key = aof.of_sap + '_' + op.id;
+          var t = DB.timers[key];
+          // Aplicar _localStatus reciente (pausa confirmada localmente)
+          if (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt) < 60000) {
+            op.status = op._localStatus;
+          }
+          // Si op está paused/validating/done pero timer sigue corriendo → detenerlo
+          if ((op.status === 'paused' || op.status === 'validating' || op.status === 'done') && t && t.running) {
+            t.elapsed = (t.elapsed||0) + (Date.now() - (t.start||Date.now()));
+            t.running = false;
+            t._frozenAt = Date.now();
+            console.log('[appLoadData-err] Timer congelado por _localStatus:', key, op.status);
+          }
+        });
+      });
+      renderApp();
       return; // only preserve on real errors, not on empty-but-valid responses
     }
 
