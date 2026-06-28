@@ -8349,41 +8349,50 @@ async function appSaveOpToSP(of_sap, opId) {
   } catch(e) { appErrNotify('Guardar operación', e, 'FT_Operaciones'); }
 }
 
-// GUID de la lista FT_Timers en SP — resuelto una vez y cacheado
-var _ftTimersListGuid = null;
+// ── appSaveTimerToSP — Flow con cola anti-throttling ────────────────────────
+// El Flow de Power Automate tiene límite ~6 llamadas/minuto por trigger.
+// Para evitar 502, usamos una cola por clave: si ya hay un save pendiente
+// para la misma op, lo reemplazamos con los datos más recientes (no duplicamos).
+// Entre saves consecutivos de la misma clave se respeta un mínimo de 3 segundos.
 
-async function _getFtTimersListGuid() {
-  if (_ftTimersListGuid) return _ftTimersListGuid;
-  try {
-    if (!appSiteId) await appGetSiteId();
-    // Buscar la lista por su display name
-    var res = await appGraphGet(
-      "sites/" + appSiteId + "/lists?$filter=displayName%20eq%20'FT_Timers'&$select=id,displayName"
-    );
-    var list = (res.value||[])[0];
-    if (list && list.id) {
-      _ftTimersListGuid = list.id;
-      console.log('[Timer] FT_Timers list GUID:', _ftTimersListGuid);
-      return _ftTimersListGuid;
-    }
-  } catch(e) {
-    console.warn('[Timer] No se pudo resolver GUID de FT_Timers:', e.message);
+var _timerSaveQueue  = {};   // { key: { pending: true, timer: timeoutId } }
+var _timerSaveActive = {};   // { key: true } — save en vuelo actualmente
+
+function appSaveTimerToSP(key) {
+  // Cancelar el save pendiente anterior para esta clave (los datos más recientes lo reemplazarán)
+  if (_timerSaveQueue[key] && _timerSaveQueue[key].timer) {
+    clearTimeout(_timerSaveQueue[key].timer);
   }
-  return null;
+  // Si ya hay un save en vuelo para esta clave, solo marcar como pendiente
+  // El save en vuelo hará otro al terminar si la bandera está activa
+  if (_timerSaveActive[key]) {
+    _timerSaveQueue[key] = { pending: true };
+    return Promise.resolve();
+  }
+  // Programar el save con un pequeño delay (200ms) para agrupar llamadas simultáneas
+  return new Promise(function(resolve) {
+    _timerSaveQueue[key] = {
+      pending: true,
+      timer: setTimeout(function() {
+        _timerSaveQueue[key] = null;
+        _doSaveTimerToSP(key).then(resolve).catch(resolve);
+      }, 200)
+    };
+  });
 }
 
-async function appSaveTimerToSP(key) {
-  // Intenta Graph API primero (sin throttling 502).
-  // Si falla o no hay GUID, cae al Flow como respaldo.
+async function _doSaveTimerToSP(key) {
+  _timerSaveActive[key] = true;
   try {
-    const t = DB.timers[key]; if(!t) return;
+    const t = DB.timers[key];
+    if (!t) return;
     var elapsedReal = t.elapsed || 0;
     if (t.running && t.start) {
       elapsedReal = (t.elapsed || 0) + (Date.now() - t.start);
     }
     var ofSap = key.split('_')[0] || '';
     var opId  = key.split('_').slice(1).join('_');
-    var fields = {
+    const fields = {
       Title:      key,
       Timer_Key:  key,
       OF_SAP:     ofSap,
@@ -8392,53 +8401,36 @@ async function appSaveTimerToSP(key) {
       Elapsed_MS: elapsedReal,
       Running:    t.running === true
     };
-
-    // Intentar con Graph API (usando GUID de lista)
-    var listGuid = await _getFtTimersListGuid();
-    if (listGuid) {
-      try {
-        if (t._spId) {
-          await appGraphPatch(
-            'sites/' + appSiteId + '/lists/' + listGuid + '/items/' + t._spId + '/fields',
-            fields
-          );
-          console.log('[Timer] Graph PATCH OK:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
-        } else {
-          var res = await appGraphPost(
-            'sites/' + appSiteId + '/lists/' + listGuid + '/items',
-            { fields: fields }
-          );
-          if (res && res.id) {
-            t._spId = res.id;
-            console.log('[Timer] Graph POST OK:', key, '_spId:', t._spId);
-          }
-        }
-        return; // Graph API exitoso — no usar Flow
-      } catch(graphErr) {
-        console.warn('[Timer] Graph write failed, fallback to Flow:', graphErr.message);
-        _ftTimersListGuid = null; // reset GUID cache por si cambió
-      }
-    }
-
-    // Fallback: Flow (puede tener 502 por throttling, pero es el respaldo)
-    var flowFields = {
-      Title: key, Timer_Key: key, OF_SAP: ofSap, Op_ID: opId,
-      Start_MS: t.start||0, Elapsed_MS: elapsedReal, Running: t.running
-    };
     if (t._spId) {
-      await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), flowFields);
-    } else {
-      var res2 = null;
-      for (var _r = 0; _r < 2 && !res2; _r++) {
-        try {
-          if (_r > 0) await new Promise(function(r){setTimeout(r,1000);});
-          res2 = await appFlowEscribir('FT_Timers', 'crear', 0, flowFields);
-        } catch(e3) { console.warn('[Timer] Flow create attempt', _r+1, 'failed:', e3.message); }
+      // Retry una vez si hay 502 (esperar 3s antes de reintentar)
+      try {
+        await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
+      } catch(e1) {
+        if (e1.message && e1.message.includes('502')) {
+          await new Promise(function(r){ setTimeout(r, 3000); });
+          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
+        } else { throw e1; }
       }
-      if (res2 && res2.id) t._spId = res2.id;
+    } else {
+      var res = null;
+      for (var _r = 0; _r < 2 && !res; _r++) {
+        try {
+          if (_r > 0) await new Promise(function(r){setTimeout(r,2000);});
+          res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
+        } catch(e2) { console.warn('[Timer] Create attempt', _r+1, 'failed:', e2.message); }
+      }
+      if (res && res.id) t._spId = res.id;
     }
   } catch(e) {
     console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e);
+  } finally {
+    _timerSaveActive[key] = false;
+    // Si quedó un save pendiente mientras este estaba en vuelo, ejecutarlo ahora
+    if (_timerSaveQueue[key] && _timerSaveQueue[key].pending) {
+      _timerSaveQueue[key] = null;
+      // Delay adicional de 1s para no saturar el Flow
+      setTimeout(function() { _doSaveTimerToSP(key); }, 1000);
+    }
   }
 }
 
