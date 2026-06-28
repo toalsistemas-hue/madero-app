@@ -5514,6 +5514,7 @@ async function ftLoadDataFromSP() {
               isRetrabajo: o.isRetrabajo === true,
               pauseReason: o.PauseReason || '',
               turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}return [];})(),
+              _hadNormalPause: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
               needsCal: o.NeedsCal === true,
               valcalNote: o.ValCalNote || '',
               calResult: o.CalResult || '',
@@ -11661,24 +11662,10 @@ function renderHist(){
         })();
         // Fecha fin: extraer de fecha_fin_real
         var _fechaFinRow=op.fecha_fin_real ? op.fecha_fin_real.split(' ')[0] : (op.fecha||'');
-        // Detectar si la op tuvo pausas: comparar tiempo real transcurrido vs op.mins
-        // Si la diferencia es > 3 minutos, hubo pausas (tiempo sin producir)
-        var _hasPauses = false;
-        if (op.status==='done' && op.fecha_inicio_real && op.fecha_fin_real && op.mins>0) {
-          var _parseTS = function(s) {
-            var m=s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
-            if(!m)return 0;
-            var dd=parseInt(m[1]),mo=parseInt(m[2])-1,yy=parseInt(m[3]),hh=parseInt(m[4]),mi=parseInt(m[5]);
-            var pm=m[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
-            if(pm&&hh<12)hh+=12; if(!pm&&hh===12)hh=0;
-            return new Date(yy,mo,dd,hh,mi,0,0).getTime();
-          };
-          var _tIni=_parseTS(op.fecha_inicio_real), _tFin=_parseTS(op.fecha_fin_real);
-          if(_tIni>0 && _tFin>0 && _tFin>_tIni) {
-            var _realMins=(_tFin-_tIni)/60000;
-            _hasPauses = _realMins > (op.mins + 3); // más de 3min de diferencia = hubo pausa
-          }
-        }
+        // _hadNormalPause: flag persistido en TurnoData cuando ocurre una pausa normal
+        // Es el único indicador confiable — la diferencia de tiempo no sirve porque
+        // Val.Cal y la conclusión también detienen el timer
+        var _hasPauses = op._hadNormalPause === true;
         techOps[t].push({
           op:op.nombre, estacion:op.estacion, rol:rol,
           isRetrabajo:!!op.isRetrabajo,

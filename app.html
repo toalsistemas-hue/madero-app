@@ -4006,6 +4006,11 @@ function appConfirmPause(){
     op.turnoData=JSON.stringify({_turnosArray:true,turnos:op.turnos});
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
+    // Marcar que esta operación tuvo una pausa normal — persiste en TurnoData para el KPI
+    op._hadNormalPause=true;
+    var _tdNP=op.turnoData?JSON.parse(op.turnoData):{_turnosArray:true,turnos:op.turnos||[]};
+    _tdNP._hadNormalPause=true;
+    op.turnoData=JSON.stringify(_tdNP);
   }
   // Pausar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){
@@ -7994,6 +7999,7 @@ async function _appLoadDataFromSP_impl() {
         // Propagar _localStatus si sigue vigente — para que la reconciliación lo use
         _localStatus: (o._ld_useLocal && o._ld_exOp) ? o._ld_exOp._localStatus : null,
         _localStatusAt: (o._ld_useLocal && o._ld_exOp) ? o._ld_exOp._localStatusAt : null,
+        _hadNormalPause: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
       })),
     }));
     // Sync timer state to op.status (flow may return stale status)
@@ -12262,6 +12268,11 @@ function appConfirmPause(){
     op.turnoData=JSON.stringify({_turnosArray:true,turnos:op.turnos});
   } else {
     op.status='paused';op.pauseReason=reason;op._pauseTipo='normal';
+    // Marcar que esta operación tuvo una pausa normal — persiste en TurnoData para el KPI
+    op._hadNormalPause=true;
+    var _tdNP=op.turnoData?JSON.parse(op.turnoData):{_turnosArray:true,turnos:op.turnos||[]};
+    _tdNP._hadNormalPause=true;
+    op.turnoData=JSON.stringify(_tdNP);
   }
   // Pausar timers de ayudantes
   (op.ayudantes||[]).forEach(function(a){
@@ -15802,6 +15813,7 @@ async function appReloadOpsFromSP() {
           // B2 fix: recuperar inicioTurnoActual desde TurnoData al recargar desde SP
           inicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._inicioTurnoActual||null;}catch(e){return null;} })(),
           fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
+          _hadNormalPause: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
           needsCal:    o.NeedsCal === true,
           valcalNote:  o.ValCalNote || null,
           calResult:   o.CalResult || null,
