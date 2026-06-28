@@ -3528,11 +3528,14 @@ function renderAppOpsPanel(of){
   h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
   of.ops.forEach(function(op,idx){
     var key=of.of_sap+"_"+op.id;
-    // Para running: getEl (vivo). Para paused/validating: elapsed congelado (no Date.now()).
+    // Aplicar _localStatus reciente como estado efectivo (protege contra reload lento)
+    var _effectiveStatus = (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt)<60000)
+      ? op._localStatus : op.status;
+    // Para running: getEl (vivo). Para paused/validating: elapsed congelado.
     // Para done/pending: op.mins guardado.
     var elapsed=(function(){
-      if(op.status==='running') return getEl(key);
-      if(op.status==='paused'||op.status==='validating'){
+      if(_effectiveStatus==='running') return getEl(key);
+      if(_effectiveStatus==='paused'||_effectiveStatus==='validating'){
         var _t=DB.timers[key];
         if(_t) return Math.floor((_t.elapsed||0)/60000);
         return op.mins||0;
@@ -3596,11 +3599,11 @@ function renderAppOpsPanel(of){
       // paused/validating → mostrar solo si op.mins fue guardado en SP (no el timer en vuelo)
       //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
       //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
-      if(op.status==='running' && elapsed>0){
+      if(_effectiveStatus==='running' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
-      } else if(op.status==='done' && elapsed>0){
+      } else if(_effectiveStatus==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
-      } else if(op.status==='paused'||op.status==='validating'){
+      } else if(_effectiveStatus==='paused'||_effectiveStatus==='validating'){
         // ⏸ Usar op.mins de FT_Operaciones (guardado correctamente al pausar, no depende de FT_Timers)
         // Si op.mins=0 (op recién iniciada sin tiempo): mostrar 0 con ⏸ para indicar estado paused
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins||0)+"</div></div>";
@@ -4530,13 +4533,32 @@ setInterval(function(){
   if(hasRun)renderApp();
 },30000);
 // TICK — 1s in-place timer update (no full re-render)
+// Fuente de verdad: op.status de DB.activeOFs (actualizado localmente en cada acción)
+// Si op.status != 'running' → congelar chip sin importar DB.timers.running
 setInterval(function(){
   var chips=document.querySelectorAll('.ft-timer-chip[data-timer-key]');
   if(!chips.length) return;
   chips.forEach(function(el){
     var key=el.getAttribute('data-timer-key');
     var t=DB.timers[key];
-    if(!t||!t.running){
+    // Buscar op.status directamente — más confiable que t.running
+    var opStatus='running';
+    var keyParts=key.split('_');
+    if(keyParts.length>=2){
+      var of_sap=keyParts[0];
+      var op_id=keyParts.slice(1).join('_');
+      var aof=DB.activeOFs&&DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
+      var op=aof&&aof.ops&&aof.ops.find(function(o){return o.id===op_id;});
+      if(op) opStatus=op.status||'pending';
+    }
+    // Si op no está corriendo → congelar chip inmediatamente
+    if(!t||!t.running||opStatus!=='running'){
+      if(t&&t._frozenAt==null&&opStatus!=='running'){
+        // Timer aún dice running pero op está pausada — forzar freeze
+        if(t.running&&t.start) t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
+        t.running=false;
+        t._frozenAt=Date.now();
+      }
       el.classList.remove('ft-timer-chip');
       el.removeAttribute('data-timer-key');
       return;
@@ -5938,7 +5960,8 @@ function renderSeg(){
         h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">'+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        var _ovStatus=(op._localStatus&&op._localStatusAt&&(Date.now()-op._localStatusAt)<60000)?op._localStatus:op.status;
+        if(_ovStatus==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
         // Comentarios de la operación
         var comments=[];
@@ -7672,6 +7695,21 @@ async function _appLoadDataFromSP_impl() {
     var emptyFn = function(){ return {value:[], _error:true}; };
     // Graph returns {value:[{id, fields:{...}}]} — same structure as flow
     // Use flow for all lists — Graph list names differ from display names in this tenant
+    // FT_Timers se lee via Graph API directamente (evita throttling 502 del Flow)
+    var _timersGraphFn = async function() {
+      try {
+        if (!appSiteId) await appGetSiteId();
+        var _tr = await appGraphGet(
+          'sites/'+appSiteId+'/lists/FT_Timers/items?$expand=fields&$select=id,fields&$top=200'
+        );
+        // Normalizar al mismo formato que appFlowGet devuelve
+        return { value: (_tr.value||[]).map(function(i){ return { id: i.id, fields: i.fields||{} }; }) };
+      } catch(e) {
+        console.warn('[Timer] Graph read FT_Timers error:', e.message);
+        return { value: [], _error: true };
+      }
+    };
+
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
       appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
@@ -7679,7 +7717,7 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
       appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
-      appFlowGet('FT_Timers', 2000).catch(emptyFn),
+      _timersGraphFn(),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
       appFlowGet('FT_Catalogo_Operaciones', 500).catch(emptyFn),
     ]);
@@ -7701,7 +7739,7 @@ async function _appLoadDataFromSP_impl() {
           var key = aof.of_sap + '_' + op.id;
           var t = DB.timers[key];
           // Aplicar _localStatus reciente (pausa confirmada localmente)
-          if (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt) < 60000) {
+          if (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt) < 120000) {
             op.status = op._localStatus;
           }
           // Si op está paused/validating/done pero timer sigue corriendo → detenerlo
@@ -7886,7 +7924,7 @@ async function _appLoadDataFromSP_impl() {
           var _ldExAof = DB.activeOFs && DB.activeOFs.find(function(a){return a.of_sap===(f.OF_SAP||f.Title||'');});
           var _ldExOp = _ldExAof && _ldExAof.ops && _ldExAof.ops.find(function(p){return p.id===(o.Op_ID||('op_'+(o.ID||'')));});
           var _ldUseLocal = _ldExOp && _ldExOp._localStatus
-            && _ldExOp._localStatusAt && (Date.now()-_ldExOp._localStatusAt < 15000);
+            && _ldExOp._localStatusAt && (Date.now()-_ldExOp._localStatusAt < 120000);
           // Almacenar para uso en _localStatus/_localStatusAt al final del objeto
           o._ld_useLocal = _ldUseLocal; o._ld_exOp = _ldExOp;
           if (_ldUseLocal) return _ldExOp._localStatus;
@@ -8327,64 +8365,49 @@ async function appSaveOpToSP(of_sap, opId) {
 }
 
 async function appSaveTimerToSP(key) {
+  // Usa Graph API directamente — evita el throttling 502 del Flow de Power Automate
+  // El Flow ESCRIBIR tiene límite de tasa bajo; Graph API tiene límite mucho más alto
   try {
     const t = DB.timers[key]; if(!t) return;
-    // Calcular elapsed real: si estaba running, sumar tiempo desde start
     var elapsedReal = t.elapsed || 0;
     if (t.running && t.start) {
       elapsedReal = (t.elapsed || 0) + (Date.now() - t.start);
     }
-    // Extract OF_SAP from key (format: "14353_op_14353_2")
     var ofSap = key.split('_')[0] || '';
     var opId  = key.split('_').slice(1).join('_');
-    const fields={
-      Title:     key,
-      Timer_Key: key,
-      OF_SAP:    ofSap,
-      Op_ID:     opId,
-      Start_MS:  t.start || 0,
-      Elapsed_MS:elapsedReal,
-      Running:   t.running
+    var fields = {
+      Title:      key,
+      Timer_Key:  key,
+      OF_SAP:     ofSap,
+      Op_ID:      opId,
+      Start_MS:   t.start || 0,
+      Elapsed_MS: elapsedReal,
+      Running:    t.running === true
     };
-    if(t._spId){
-      // Retry once on 502 (Flow throttling)
-      try {
-        await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
-      } catch(e502) {
-        if(e502.message && e502.message.includes('502')) {
-          await new Promise(function(r){setTimeout(r,2000);});
-          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
-        } else { throw e502; }
-      }
+
+    if (!appSiteId) await appGetSiteId();
+
+    if (t._spId) {
+      // PATCH item existente via Graph API
+      await appGraphPatch(
+        'sites/' + appSiteId + '/lists/FT_Timers/items/' + t._spId + '/fields',
+        fields
+      );
+      console.log('[Timer] Graph PATCH OK:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
     } else {
-      // Search for existing record first to avoid duplicates
-      try {
-        var ex = await appFlowGet('FT_Timers', 2000);
-        var found = (ex.value||[]).find(function(i){
-          return (i.Timer_Key||i.Title||i.fields&&(i.fields.Timer_Key||i.fields.Title)) === key;
-        });
-        if (found) {
-          t._spId = found.id || found.ID;
-          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
-          return;
-        }
-      } catch(e2) {}
-      // Create new record — retry once on failure
-      var res = null;
-      for (var _retry = 0; _retry < 2 && !res; _retry++) {
-        try {
-          if (_retry > 0) await new Promise(function(r){setTimeout(r, 1000);});
-          res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
-        } catch(e3) { console.warn('[Timer] Create attempt', _retry+1, 'failed:', e3.message); }
-      }
-      if (res && (res.id || res.resultado === 'ok')) {
-        if (res.id) t._spId = res.id;
-        console.log('[Timer] Guardado en SP:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
-      } else {
-        console.warn('[Timer] No se pudo guardar en SP después de 2 intentos:', key);
+      // Crear item nuevo via Graph API
+      var res = await appGraphPost(
+        'sites/' + appSiteId + '/lists/FT_Timers/items',
+        { fields: fields }
+      );
+      if (res && res.id) {
+        t._spId = res.id;
+        console.log('[Timer] Graph POST OK:', key, '_spId:', t._spId);
       }
     }
-  } catch(e) { console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e); }
+  } catch(e) {
+    console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e);
+  }
 }
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
@@ -11606,11 +11629,14 @@ function renderAppOpsPanel(of){
   h+="<div class='app-ops-sub'>Operaciones ("+of.ops.length+")</div>";
   of.ops.forEach(function(op,idx){
     var key=of.of_sap+"_"+op.id;
-    // Para running: getEl (vivo). Para paused/validating: elapsed congelado (no Date.now()).
+    // Aplicar _localStatus reciente como estado efectivo (protege contra reload lento)
+    var _effectiveStatus = (op._localStatus && op._localStatusAt && (Date.now()-op._localStatusAt)<60000)
+      ? op._localStatus : op.status;
+    // Para running: getEl (vivo). Para paused/validating: elapsed congelado.
     // Para done/pending: op.mins guardado.
     var elapsed=(function(){
-      if(op.status==='running') return getEl(key);
-      if(op.status==='paused'||op.status==='validating'){
+      if(_effectiveStatus==='running') return getEl(key);
+      if(_effectiveStatus==='paused'||_effectiveStatus==='validating'){
         var _t=DB.timers[key];
         if(_t) return Math.floor((_t.elapsed||0)/60000);
         return op.mins||0;
@@ -11675,11 +11701,11 @@ function renderAppOpsPanel(of){
       // paused/validating → mostrar solo si op.mins fue guardado en SP (no el timer en vuelo)
       //   Si op.mins > 0: mostrar con ícono ⏸ indicando que está pausado
       //   Si op.mins = 0 y elapsed viene solo del timer local: ocultar (puede ser incorrecto por 502)
-      if(op.status==='running' && elapsed>0){
+      if(_effectiveStatus==='running' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'><span class=\"ft-timer-chip\" data-timer-key=\""+esc(key)+"\">"+ fmtM(elapsed)+"</span></div></div>";
-      } else if(op.status==='done' && elapsed>0){
+      } else if(_effectiveStatus==='done' && elapsed>0){
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--agreen)'>"+fmtM(elapsed)+"</div></div>";
-      } else if(op.status==='paused'||op.status==='validating'){
+      } else if(_effectiveStatus==='paused'||_effectiveStatus==='validating'){
         // ⏸ Usar op.mins de FT_Operaciones (guardado correctamente al pausar, no depende de FT_Timers)
         // Si op.mins=0 (op recién iniciada sin tiempo): mostrar 0 con ⏸ para indicar estado paused
         h+="<div class='app-ot-item'><div class='app-ot-lbl'>TIEMPO</div><div class='app-ot-val' style='color:var(--adim)'>⏸ "+fmtM(op.mins||0)+"</div></div>";
@@ -12682,13 +12708,32 @@ setInterval(function(){
   if(hasRun)renderApp();
 },30000);
 // TICK — 1s in-place timer update (no full re-render)
+// Fuente de verdad: op.status de DB.activeOFs (actualizado localmente en cada acción)
+// Si op.status != 'running' → congelar chip sin importar DB.timers.running
 setInterval(function(){
   var chips=document.querySelectorAll('.ft-timer-chip[data-timer-key]');
   if(!chips.length) return;
   chips.forEach(function(el){
     var key=el.getAttribute('data-timer-key');
     var t=DB.timers[key];
-    if(!t||!t.running){
+    // Buscar op.status directamente — más confiable que t.running
+    var opStatus='running';
+    var keyParts=key.split('_');
+    if(keyParts.length>=2){
+      var of_sap=keyParts[0];
+      var op_id=keyParts.slice(1).join('_');
+      var aof=DB.activeOFs&&DB.activeOFs.find(function(a){return a.of_sap===of_sap;});
+      var op=aof&&aof.ops&&aof.ops.find(function(o){return o.id===op_id;});
+      if(op) opStatus=op.status||'pending';
+    }
+    // Si op no está corriendo → congelar chip inmediatamente
+    if(!t||!t.running||opStatus!=='running'){
+      if(t&&t._frozenAt==null&&opStatus!=='running'){
+        // Timer aún dice running pero op está pausada — forzar freeze
+        if(t.running&&t.start) t.elapsed=(t.elapsed||0)+(Date.now()-t.start);
+        t.running=false;
+        t._frozenAt=Date.now();
+      }
       el.classList.remove('ft-timer-chip');
       el.removeAttribute('data-timer-key');
       return;
@@ -14158,7 +14203,8 @@ function renderSeg(){
         h+='<span style="font-size:.76rem;font-weight:500;flex:1;">'+esc(op.nombre)+'</span>';
         if(op.tecnico) h+='<span style="font-size:.68rem;color:var(--dim);">'+esc(op.tecnico)+'</span>';
         if(op.mins>0) h+='<span style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--green);">'+fmtM(op.mins)+'</span>';
-        if(op.status==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
+        var _ovStatus=(op._localStatus&&op._localStatusAt&&(Date.now()-op._localStatusAt)<60000)?op._localStatus:op.status;
+        if(_ovStatus==='running') h+='<span class="ft-timer-chip" data-timer-key="'+esc(aof.of_sap+'_'+op.id)+'" style="font-family:\'DM Mono\',monospace;font-size:.68rem;color:var(--accent-l);">'+fmtM(getEl(aof.of_sap+'_'+op.id))+'</span>';
         h+='</div>';
         // Comentarios de la operación
         var comments=[];
@@ -15592,7 +15638,7 @@ async function appReloadOpsFromSP() {
         // SP aún devuelve el status anterior mientras el PATCH viaja por la red
         var _spStatus = o.Status || 'pending';
         var _useLocalStatus = existing && existing._localStatus
-          && existing._localStatusAt && (Date.now()-existing._localStatusAt < 15000);
+          && existing._localStatusAt && (Date.now()-existing._localStatusAt < 120000);
         var _effectiveStatus = _useLocalStatus ? existing._localStatus : _spStatus;
         return {
           id:          o.Op_ID || o.Title || '',
