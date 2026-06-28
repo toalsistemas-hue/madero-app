@@ -9214,9 +9214,12 @@ function monFinishClose() {
 }
 
 function monFinishSync(changed) {
-  var ok   = parseInt(document.getElementById('mon-finish-ok').value)   || 0;
-  var def  = parseInt(document.getElementById('mon-finish-def').value)  || 0;
-  var chat = parseInt(document.getElementById('mon-finish-chat').value) || 0;
+  var okEl   = document.getElementById('mon-finish-ok');
+  var defEl  = document.getElementById('mon-finish-def');
+  var chatEl = document.getElementById('mon-finish-chat');
+  var ok   = parseInt(okEl.value)   || 0;
+  var def  = parseInt(defEl.value)  || 0;
+  var chat = parseInt(chatEl.value) || 0;
   var ctx = _monFinishCtx;
   if (!ctx) return;
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ctx.of_sap; });
@@ -9224,6 +9227,21 @@ function monFinishSync(changed) {
   if (!op) return;
   var rej   = op.qty_rej || 0;
   var avail = op.qty_total - rej;
+
+  // Auto-ajustar: cuando cambia DEF u OK, restar para no superar avail
+  if (changed === 'def') {
+    // DEF cambia → reducir OK para que ok+def+chat = avail
+    var maxOk = Math.max(0, avail - def - chat);
+    if (ok > maxOk) { ok = maxOk; okEl.value = ok; }
+  } else if (changed === 'ok') {
+    // OK cambia → reducir DEF si necesario
+    var maxDef = Math.max(0, avail - ok - chat);
+    if (def > maxDef) { def = maxDef; defEl.value = def; }
+  } else if (changed === 'chat') {
+    var maxOk2 = Math.max(0, avail - def - chat);
+    if (ok > maxOk2) { ok = maxOk2; okEl.value = ok; }
+  }
+
   var total = ok + def + chat;
   var warnEl = document.getElementById('mon-finish-qty-warn');
   var dispPanel = document.getElementById('mon-finish-def-disp');

@@ -11650,20 +11650,42 @@ function renderHist(){
         var _inicioUltimoTurno=(op.turnos&&op.turnos.length>0)
           ? (op.inicioTurnoActual || op.turnos[op.turnos.length-1].fin || op.inicio || '—')
           : (op.inicio||'—');
-        // Fecha del inicio: extraer de fechaInicioTurnoActual o fecha_inicio_real
-        var _fechaInicioRow=(op.turnos&&op.turnos.length>0)
-          ? (op.fechaInicioTurnoActual
-              ? op.fechaInicioTurnoActual.split(' ')[0]
-              : (op.turnos[op.turnos.length-1].fecha||op.fecha||''))
-          : (op.fecha||'');
+        // Fecha del inicio: usar fecha_inicio_real para TODAS las ops
+        var _fechaInicioRow=(function(){
+          if(op.turnos&&op.turnos.length>0){
+            if(op.fechaInicioTurnoActual) return op.fechaInicioTurnoActual.split(' ')[0];
+            if(op.turnos[op.turnos.length-1].fecha) return op.turnos[op.turnos.length-1].fecha;
+          }
+          if(op.fecha_inicio_real) return op.fecha_inicio_real.split(' ')[0];
+          return op.fecha||'';
+        })();
         // Fecha fin: extraer de fecha_fin_real
         var _fechaFinRow=op.fecha_fin_real ? op.fecha_fin_real.split(' ')[0] : (op.fecha||'');
+        // Detectar si la op tuvo pausas: comparar tiempo real transcurrido vs op.mins
+        // Si la diferencia es > 3 minutos, hubo pausas (tiempo sin producir)
+        var _hasPauses = false;
+        if (op.status==='done' && op.fecha_inicio_real && op.fecha_fin_real && op.mins>0) {
+          var _parseTS = function(s) {
+            var m=s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
+            if(!m)return 0;
+            var dd=parseInt(m[1]),mo=parseInt(m[2])-1,yy=parseInt(m[3]),hh=parseInt(m[4]),mi=parseInt(m[5]);
+            var pm=m[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
+            if(pm&&hh<12)hh+=12; if(!pm&&hh===12)hh=0;
+            return new Date(yy,mo,dd,hh,mi,0,0).getTime();
+          };
+          var _tIni=_parseTS(op.fecha_inicio_real), _tFin=_parseTS(op.fecha_fin_real);
+          if(_tIni>0 && _tFin>0 && _tFin>_tIni) {
+            var _realMins=(_tFin-_tIni)/60000;
+            _hasPauses = _realMins > (op.mins + 3); // más de 3min de diferencia = hubo pausa
+          }
+        }
         techOps[t].push({
           op:op.nombre, estacion:op.estacion, rol:rol,
           isRetrabajo:!!op.isRetrabajo,
           numTurnos: (op.turnos&&op.turnos.length>0) ? (op.turnos.length + 1) : 0,
           pauseReason: op.pauseReason||'',
           isPausedNormal: op.status==='paused' && op._pauseTipo==='normal',
+          hasPauses: _hasPauses,
           of_sap:aof.of_sap, pedido:ofRec.pedido||'—',
           mins:ayudMinsForRow,
           qty_ok:_qtyOkFinal,
@@ -11833,6 +11855,8 @@ function renderHist(){
             tipoBadge='<span style="background:rgba(88,166,255,.12);color:var(--accent-l);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">🌙 Fin de turno</span>';
           } else if(r.pauseReason){
             tipoBadge='<span style="background:rgba(212,160,23,.12);color:var(--yellow);border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">⏸ Pausada</span>';
+          } else if(r.hasPauses){
+            tipoBadge='<span style="background:rgba(251,146,60,.12);color:#fb923c;border-radius:6px;padding:1px 6px;font-size:.62rem;font-weight:700;">⏸ Con Pausas</span>';
           } else {
             tipoBadge='<span style="font-size:.62rem;color:var(--dim);">Normal</span>';
           }
