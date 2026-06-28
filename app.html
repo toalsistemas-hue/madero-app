@@ -7695,21 +7695,6 @@ async function _appLoadDataFromSP_impl() {
     var emptyFn = function(){ return {value:[], _error:true}; };
     // Graph returns {value:[{id, fields:{...}}]} — same structure as flow
     // Use flow for all lists — Graph list names differ from display names in this tenant
-    // FT_Timers se lee via Graph API directamente (evita throttling 502 del Flow)
-    var _timersGraphFn = async function() {
-      try {
-        if (!appSiteId) await appGetSiteId();
-        var _tr = await appGraphGet(
-          'sites/'+appSiteId+'/lists/FT_Timers/items?$expand=fields&$select=id,fields&$top=200'
-        );
-        // Normalizar al mismo formato que appFlowGet devuelve
-        return { value: (_tr.value||[]).map(function(i){ return { id: i.id, fields: i.fields||{} }; }) };
-      } catch(e) {
-        console.warn('[Timer] Graph read FT_Timers error:', e.message);
-        return { value: [], _error: true };
-      }
-    };
-
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, catalogRes] = await Promise.all([
       appFlowGet('FT_OrdenesFabricacion', 2000).catch(emptyFn),
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
@@ -7717,7 +7702,7 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
       appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
-      _timersGraphFn(),
+      appFlowGet('FT_Timers', 2000).catch(emptyFn),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
       appFlowGet('FT_Catalogo_Operaciones', 500).catch(emptyFn),
     ]);
@@ -8364,9 +8349,32 @@ async function appSaveOpToSP(of_sap, opId) {
   } catch(e) { appErrNotify('Guardar operación', e, 'FT_Operaciones'); }
 }
 
+// GUID de la lista FT_Timers en SP — resuelto una vez y cacheado
+var _ftTimersListGuid = null;
+
+async function _getFtTimersListGuid() {
+  if (_ftTimersListGuid) return _ftTimersListGuid;
+  try {
+    if (!appSiteId) await appGetSiteId();
+    // Buscar la lista por su display name
+    var res = await appGraphGet(
+      "sites/" + appSiteId + "/lists?$filter=displayName%20eq%20'FT_Timers'&$select=id,displayName"
+    );
+    var list = (res.value||[])[0];
+    if (list && list.id) {
+      _ftTimersListGuid = list.id;
+      console.log('[Timer] FT_Timers list GUID:', _ftTimersListGuid);
+      return _ftTimersListGuid;
+    }
+  } catch(e) {
+    console.warn('[Timer] No se pudo resolver GUID de FT_Timers:', e.message);
+  }
+  return null;
+}
+
 async function appSaveTimerToSP(key) {
-  // Usa Graph API directamente — evita el throttling 502 del Flow de Power Automate
-  // El Flow ESCRIBIR tiene límite de tasa bajo; Graph API tiene límite mucho más alto
+  // Intenta Graph API primero (sin throttling 502).
+  // Si falla o no hay GUID, cae al Flow como respaldo.
   try {
     const t = DB.timers[key]; if(!t) return;
     var elapsedReal = t.elapsed || 0;
@@ -8385,25 +8393,49 @@ async function appSaveTimerToSP(key) {
       Running:    t.running === true
     };
 
-    if (!appSiteId) await appGetSiteId();
-
-    if (t._spId) {
-      // PATCH item existente via Graph API
-      await appGraphPatch(
-        'sites/' + appSiteId + '/lists/FT_Timers/items/' + t._spId + '/fields',
-        fields
-      );
-      console.log('[Timer] Graph PATCH OK:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
-    } else {
-      // Crear item nuevo via Graph API
-      var res = await appGraphPost(
-        'sites/' + appSiteId + '/lists/FT_Timers/items',
-        { fields: fields }
-      );
-      if (res && res.id) {
-        t._spId = res.id;
-        console.log('[Timer] Graph POST OK:', key, '_spId:', t._spId);
+    // Intentar con Graph API (usando GUID de lista)
+    var listGuid = await _getFtTimersListGuid();
+    if (listGuid) {
+      try {
+        if (t._spId) {
+          await appGraphPatch(
+            'sites/' + appSiteId + '/lists/' + listGuid + '/items/' + t._spId + '/fields',
+            fields
+          );
+          console.log('[Timer] Graph PATCH OK:', key, 'running:', t.running, 'elapsed:', Math.round(elapsedReal/60000)+'min');
+        } else {
+          var res = await appGraphPost(
+            'sites/' + appSiteId + '/lists/' + listGuid + '/items',
+            { fields: fields }
+          );
+          if (res && res.id) {
+            t._spId = res.id;
+            console.log('[Timer] Graph POST OK:', key, '_spId:', t._spId);
+          }
+        }
+        return; // Graph API exitoso — no usar Flow
+      } catch(graphErr) {
+        console.warn('[Timer] Graph write failed, fallback to Flow:', graphErr.message);
+        _ftTimersListGuid = null; // reset GUID cache por si cambió
       }
+    }
+
+    // Fallback: Flow (puede tener 502 por throttling, pero es el respaldo)
+    var flowFields = {
+      Title: key, Timer_Key: key, OF_SAP: ofSap, Op_ID: opId,
+      Start_MS: t.start||0, Elapsed_MS: elapsedReal, Running: t.running
+    };
+    if (t._spId) {
+      await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), flowFields);
+    } else {
+      var res2 = null;
+      for (var _r = 0; _r < 2 && !res2; _r++) {
+        try {
+          if (_r > 0) await new Promise(function(r){setTimeout(r,1000);});
+          res2 = await appFlowEscribir('FT_Timers', 'crear', 0, flowFields);
+        } catch(e3) { console.warn('[Timer] Flow create attempt', _r+1, 'failed:', e3.message); }
+      }
+      if (res2 && res2.id) t._spId = res2.id;
     }
   } catch(e) {
     console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e);
