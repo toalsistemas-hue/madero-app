@@ -9814,10 +9814,13 @@ appConfirmValCal = function() {
   var note = document.getElementById('app-valcal-note').value.trim()||'Sin nota';
   op.status='validating'; op.valcalNote=note; op.needsCal=true; op.calResult=null;
   DB.notifications.push({id:'n_'+Date.now(),type:'calidad',of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
-  // FIX: congelar el timer al solicitar Val.Cal desde el Monitor
+  // El timer del Monitor es una aproximación — NO guardarlo en SP para no sobreescribir
+  // el tiempo real que tiene FabTracker corriendo continuamente.
+  // Solo congelar el display local del Monitor (sin persistir en SP).
   var _valCalKey = ctx.of_sap+'_'+ctx.op_id;
-  ftFreezeTimer(_valCalKey);
-  if(typeof ftSaveTimerToSP==='function') ftSaveTimerToSP(_valCalKey).catch(function(){});
+  ftFreezeTimer(_valCalKey); // solo congela la UI del Monitor localmente
+  // NO llamar appSaveTimerToSP desde Monitor — FabTracker enviará el tiempo correcto
+  op._localStatus = 'validating'; op._localStatusAt = Date.now();
   closeAppModal('app-modal-valcal'); renderApp();
   fireSync('app','op_valcal',{of_sap:ctx.of_sap, op_name:op.nombre, note:note});
 };

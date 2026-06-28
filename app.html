@@ -3325,6 +3325,38 @@ onSync("app", function(event, data){
     renderApp();
     showAppNotif(event, data);
   }
+  // Cuando el Monitor solicita Val.Cal: congelar el timer con el elapsed CORRECTO de FabTracker
+  // (el Monitor tiene una aproximación; FabTracker tiene el valor real acumulado continuamente)
+  if (event === 'op_valcal' && data && data.of_sap) {
+    var _vcOf = DB.activeOFs.find(function(a){return a.of_sap===data.of_sap;});
+    if (_vcOf) {
+      var _vcOpId = data.op_id;
+      var _vcOps = _vcOpId
+        ? [_vcOf.ops.find(function(o){return o.id===_vcOpId;})]
+        : _vcOf.ops.filter(function(o){return o.status==='running'||o.status==='validating';});
+      _vcOps.forEach(function(op){
+        if (!op) return;
+        var _vcKey = data.of_sap + '_' + op.id;
+        if (op.status === 'running') {
+          // Actualizar status y congelar timer con el elapsed correcto de FabTracker
+          op.status = 'validating';
+          op.needsCal = true;
+          op._localStatus = 'validating';
+          op._localStatusAt = Date.now();
+          ftFreezeTimer(_vcKey); // congela con el elapsed real de FabTracker
+          // Guardar el timer correcto en SP
+          if (typeof appSaveTimerToSP === 'function') {
+            appSaveTimerToSP(_vcKey).catch(function(e){
+              console.warn('[ValCal sync] Timer save error:', e.message);
+            });
+          }
+          console.log('[ValCal sync] Timer congelado desde FabTracker:', _vcKey,
+            'elapsed:', fmtM(Math.floor((DB.timers[_vcKey]&&DB.timers[_vcKey].elapsed||0)/60000)));
+        }
+      });
+      renderApp();
+    }
+  }
 });
 
 function showAppNotif(event, data){
@@ -8023,7 +8055,10 @@ async function _appLoadDataFromSP_impl() {
       var f = i.fields;
       var key = f.Timer_Key||f.Title||'';
       if (!key) return;
-      var startMS   = parseInt(f.Start_MS||Date.now());
+      // Start_MS=0 means timer was saved while paused/validating (Running=false)
+      // Use 0 directly rather than Date.now() — getEl handles running=false correctly
+      var rawStart  = parseInt(f.Start_MS||0);
+      var startMS   = (rawStart > 0) ? rawStart : (f.Running === true ? Date.now() : 0);
       var elapsedMS = parseInt(f.Elapsed_MS||0);
       var isRunning = f.Running === true;
       var prv = _prevTimers[key];
@@ -8398,11 +8433,14 @@ async function _doSaveTimerToSP(key) {
     var opId  = key.split('_').slice(1).join('_');
     // Timer_Key omitted — SP internal column name may differ from display name
     // Title contains the same key value and is always reliable
+    // Start_MS: solo relevante cuando Running=true (getEl usa elapsed+(now-start))
+    // Cuando Running=false, Start_MS=0 para evitar confusión con epochs viejos
+    var startMS = t.running ? (t.start || 0) : 0;
     const fields = {
       Title:      key,
-      OF_SAP:     ofSap,
-      Op_ID:      opId,
-      Start_MS:   t.start || 0,
+      OF_SAP:     ofSap || '',
+      Op_ID:      opId  || '',
+      Start_MS:   startMS,
       Elapsed_MS: elapsedReal,
       Running:    t.running === true
     };
@@ -11469,6 +11507,38 @@ onSync("app", function(event, data){
   if(event==="prog_updated"||event==="template_updated"||event==="prio_updated") {
     renderApp();
     showAppNotif(event, data);
+  }
+  // Cuando el Monitor solicita Val.Cal: congelar el timer con el elapsed CORRECTO de FabTracker
+  // (el Monitor tiene una aproximación; FabTracker tiene el valor real acumulado continuamente)
+  if (event === 'op_valcal' && data && data.of_sap) {
+    var _vcOf = DB.activeOFs.find(function(a){return a.of_sap===data.of_sap;});
+    if (_vcOf) {
+      var _vcOpId = data.op_id;
+      var _vcOps = _vcOpId
+        ? [_vcOf.ops.find(function(o){return o.id===_vcOpId;})]
+        : _vcOf.ops.filter(function(o){return o.status==='running'||o.status==='validating';});
+      _vcOps.forEach(function(op){
+        if (!op) return;
+        var _vcKey = data.of_sap + '_' + op.id;
+        if (op.status === 'running') {
+          // Actualizar status y congelar timer con el elapsed correcto de FabTracker
+          op.status = 'validating';
+          op.needsCal = true;
+          op._localStatus = 'validating';
+          op._localStatusAt = Date.now();
+          ftFreezeTimer(_vcKey); // congela con el elapsed real de FabTracker
+          // Guardar el timer correcto en SP
+          if (typeof appSaveTimerToSP === 'function') {
+            appSaveTimerToSP(_vcKey).catch(function(e){
+              console.warn('[ValCal sync] Timer save error:', e.message);
+            });
+          }
+          console.log('[ValCal sync] Timer congelado desde FabTracker:', _vcKey,
+            'elapsed:', fmtM(Math.floor((DB.timers[_vcKey]&&DB.timers[_vcKey].elapsed||0)/60000)));
+        }
+      });
+      renderApp();
+    }
   }
 });
 
