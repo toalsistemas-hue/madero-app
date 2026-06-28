@@ -7611,6 +7611,10 @@ async function appGetSiteId() {
 // ═══════════════════════════════════════════════════════════════════
 var APP_FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU';
 var APP_FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ';
+// URL de Flow exclusivo para FT_Timers (copia del Flow Escribir con diferente trigger URL)
+// Configurar con la URL del Flow duplicado para evitar throttling 502
+// Si está vacío, se usa APP_FLOW_URL_ESCRIBIR con delay de 5s
+var APP_FLOW_URL_ESCRIBIR_TIMERS = '';
 
 async function appFlowGet(lista, top) {
   top = top || 500;
@@ -8392,31 +8396,46 @@ async function _doSaveTimerToSP(key) {
     }
     var ofSap = key.split('_')[0] || '';
     var opId  = key.split('_').slice(1).join('_');
+    // Timer_Key omitted — SP internal column name may differ from display name
+    // Title contains the same key value and is always reliable
     const fields = {
       Title:      key,
-      Timer_Key:  key,
       OF_SAP:     ofSap,
       Op_ID:      opId,
       Start_MS:   t.start || 0,
       Elapsed_MS: elapsedReal,
       Running:    t.running === true
     };
+
+    // Usar Flow dedicado para Timers si está configurado (evita throttling con el Flow principal)
+    // Si no está configurado, esperar 5s para no competir con el save de FT_Operaciones
+    var hasOwnFlow = typeof APP_FLOW_URL_ESCRIBIR_TIMERS !== 'undefined' && APP_FLOW_URL_ESCRIBIR_TIMERS;
+    if (!hasOwnFlow) {
+      await new Promise(function(r){ setTimeout(r, 5000); });
+    }
+
+    var _flowEscribir = hasOwnFlow
+      ? async function(lista, op, id, datos) {
+          var payload = { lista: lista, operacion: op, itemId: id || 0, datos: datos };
+          var res = await fetch(APP_FLOW_URL_ESCRIBIR_TIMERS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error('AppFlow ESCRIBIR TIMERS ' + lista + ' ' + res.status);
+          var txt = await res.text();
+          try { return JSON.parse(txt); } catch(e){ return {resultado:'ok'}; }
+        }
+      : appFlowEscribir;
+
     if (t._spId) {
-      // Retry una vez si hay 502 (esperar 3s antes de reintentar)
-      try {
-        await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
-      } catch(e1) {
-        if (e1.message && e1.message.includes('502')) {
-          await new Promise(function(r){ setTimeout(r, 3000); });
-          await appFlowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
-        } else { throw e1; }
-      }
+      await _flowEscribir('FT_Timers', 'actualizar', parseInt(t._spId), fields);
     } else {
       var res = null;
       for (var _r = 0; _r < 2 && !res; _r++) {
         try {
           if (_r > 0) await new Promise(function(r){setTimeout(r,2000);});
-          res = await appFlowEscribir('FT_Timers', 'crear', 0, fields);
+          res = await _flowEscribir('FT_Timers', 'crear', 0, fields);
         } catch(e2) { console.warn('[Timer] Create attempt', _r+1, 'failed:', e2.message); }
       }
       if (res && res.id) t._spId = res.id;
@@ -8425,11 +8444,9 @@ async function _doSaveTimerToSP(key) {
     console.warn('[Timer] appSaveTimerToSP error:', key, e.message||e);
   } finally {
     _timerSaveActive[key] = false;
-    // Si quedó un save pendiente mientras este estaba en vuelo, ejecutarlo ahora
     if (_timerSaveQueue[key] && _timerSaveQueue[key].pending) {
       _timerSaveQueue[key] = null;
-      // Delay adicional de 1s para no saturar el Flow
-      setTimeout(function() { _doSaveTimerToSP(key); }, 1000);
+      setTimeout(function() { _doSaveTimerToSP(key); }, 2000);
     }
   }
 }
