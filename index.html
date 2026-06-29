@@ -639,6 +639,8 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
   --ared:#ef4444;--apurple:#a855f7;--aorange:#f97316;
 }
 #page-Fabricaciones *{box-sizing:border-box;}
+/* Acceso lectura: botones deshabilitados */
+#page-Fabricaciones.fab-lectura .fab-read-only-hide { display:none !important; }
 /* body styles handled by platform */
 
 /* Wrapper split */
@@ -1032,7 +1034,7 @@ tr:last-child td{border-bottom:none;}
         <div><div class="page-title">📅 Programación</div><div class="page-sub">Gestiona qué OFs se fabrican hoy</div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
-          <button class="btn btn-primary btn-sm" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
+          <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
           <button class="btn btn-success btn-sm" onclick="confirmProgMain()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelEditMode()" id="btn-cancel-prog" style="display:none;">✕ Cancelar</button>
         </div>
@@ -1065,9 +1067,9 @@ tr:last-child td{border-bottom:none;}
       <div class="page-hdr">
         <div><div class="page-title">📋 Plantillas de Operaciones</div><div class="page-sub">Configura operaciones por artículo — se reutilizan automáticamente</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-ghost btn-sm" onclick="openGestionArticulosModal()" title="Gestionar catálogo de artículos SP">📦 Gestionar Artículos</button>
-          <button class="btn btn-ghost btn-sm" onclick="openGestionOpCatModal()" title="Gestionar catálogo de operaciones">⚙ Catálogo Ops</button>
-          <button class="btn btn-primary btn-sm" onclick="openNewTplModalWithArt(null)">+ Nueva Plantilla</button>
+          <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="openGestionArticulosModal()" title="Gestionar catálogo de artículos SP">📦 Gestionar Artículos</button>
+          <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="openGestionOpCatModal()" title="Gestionar catálogo de operaciones">⚙ Catálogo Ops</button>
+          <button class="btn btn-primary btn-sm fab-read-only-hide" id="openNewTplModalWithArt" onclick="openNewTplModalWithArt(null)">+ Nueva Plantilla</button>
         </div>
       </div>
       <div class="alert alert-info">ℹ Al programar una OF cuyo artículo tenga plantilla, las operaciones se cargan automáticamente en la app.</div>
@@ -1231,7 +1233,7 @@ tr:last-child td{border-bottom:none;}
                 <div style="font-size:.78rem;color:var(--dim,#64748b);margin-bottom:16px;">Sube el archivo Excel con las OFs del período. El sistema detecta duplicados automáticamente.</div>
                 
                 <!-- Drop zone -->
-                <div id="ft-drop-zone" onclick="document.getElementById('ft-file-input').click()"
+                <div id="ft-drop-zone" class="fab-read-only-hide" onclick="document.getElementById('ft-file-input').click()"
                   ondragover="event.preventDefault();this.style.borderColor='var(--accent-l,#58a6ff)'"
                   ondragleave="this.style.borderColor='rgba(255,255,255,.15)'"
                   ondrop="ftHandleDrop(event)"
@@ -1289,7 +1291,7 @@ tr:last-child td{border-bottom:none;}
               <div class="ft-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin-bottom:16px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
                   <div style="font-family:\'Syne\',sans-serif;font-size:1rem;font-weight:700;">👷 Técnicos de Fabricación</div>
-                  <button onclick="ftOpenTecnico()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar técnico</button>
+                  <button class="fab-read-only-hide" onclick="ftOpenTecnico()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar técnico</button>
                 </div>
                 <div id="ft-tecnicos-list" style="display:flex;flex-direction:column;gap:6px;">
                   <div style="text-align:center;padding:20px;color:var(--dim,#64748b);font-size:.8rem;">Cargando técnicos...</div>
@@ -1302,7 +1304,7 @@ tr:last-child td{border-bottom:none;}
               <div class="ft-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
                   <div style="font-family:\'Syne\',sans-serif;font-size:1rem;font-weight:700;">🏗️ Estaciones de Trabajo</div>
-                  <button onclick="ftOpenEstacion()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar estación</button>
+                  <button class="fab-read-only-hide" onclick="ftOpenEstacion()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar estación</button>
                 </div>
                 <div id="ft-estaciones-list" style="display:flex;flex-direction:column;gap:6px;">
                   <div style="text-align:center;padding:20px;color:var(--dim,#64748b);font-size:.8rem;">Cargando estaciones...</div>
@@ -1316,8 +1318,8 @@ tr:last-child td{border-bottom:none;}
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                   <div style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;">📦 Artículos</div>
                   <div style="display:flex;gap:8px;">
-                    <button id="btn-art-cargar-excel" onclick="ftAdmArtOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
-                    <button id="btn-art-agregar" onclick="ftAdmArtOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar artículo</button>
+                    <button id="btn-art-cargar-excel" class="fab-read-only-hide" onclick="ftAdmArtOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
+                    <button id="btn-art-agregar" class="fab-read-only-hide" onclick="ftAdmArtOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar artículo</button>
                   </div>
                 </div>
                 <input type="text" id="ft-art-search" placeholder="🔍 Buscar por número o descripción..." oninput="ftAdmArtRender()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;color:var(--text);font-size:.78rem;margin-bottom:12px;">
@@ -1349,8 +1351,8 @@ tr:last-child td{border-bottom:none;}
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                   <div style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;">⚙️ Catálogo de Operaciones</div>
                   <div style="display:flex;gap:8px;">
-                    <button id="btn-op-cargar-excel" onclick="ftAdmOpOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
-                    <button id="btn-op-agregar" onclick="ftAdmOpOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar operación</button>
+                    <button id="btn-op-cargar-excel" class="fab-read-only-hide" onclick="ftAdmOpOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
+                    <button id="btn-op-agregar" class="fab-read-only-hide" onclick="ftAdmOpOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar operación</button>
                   </div>
                 </div>
                 <input type="text" id="ft-op-search" placeholder="🔍 Buscar por nombre u artículo..." oninput="ftAdmOpRender()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;color:var(--text);font-size:.78rem;margin-bottom:12px;">
@@ -1603,7 +1605,7 @@ tr:last-child td{border-bottom:none;}
           <div id="prio-list-modal" style="max-height:360px;overflow-y:auto;padding-right:4px;"></div>
           <div class="coord-modal-actions" style="margin-top:16px;">
             <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-prio')">Cancelar</button>
-            <button class="btn btn-primary btn-sm" onclick="savePrios()">💾 Guardar prioridades</button>
+            <button class="btn btn-primary btn-sm fab-read-only-hide" id="savePrios" onclick="savePrios()">💾 Guardar prioridades</button>
           </div>
         </div>
       </div>
@@ -2731,60 +2733,10 @@ function _fabNivel() {
 // Aplica restricciones de lectura en la interfaz de Fabricaciones.
 // Se llama al entrar a la pantalla y cada vez que se renderizan los botones.
 function applyFabAccessControl() {
-  var nivel = _fabNivel();
-  var soloLectura = (nivel === 'lectura');
-
-  // ── Selector de CSS: deshabilitar visualmente un elemento ──────────────
-  var _dis = function(el) {
-    if (!el) return;
-    el.disabled = true;
-    el.style.opacity = '0.35';
-    el.style.cursor  = 'not-allowed';
-    el.style.pointerEvents = 'none';
-    el.title = '⛔ Tu perfil solo tiene acceso de lectura en Fabricaciones';
-  };
-
-  if (!soloLectura) return; // Completo o Admin → sin restricciones
-
-  // ─── Administración ────────────────────────────────────────────────────
-
-  // OFs: drop zone y file input del cargar Excel
-  var ftDropZone = document.getElementById('ft-drop-zone');
-  if (ftDropZone) {
-    ftDropZone.onclick = function(e){ e.stopPropagation(); return false; };
-    ftDropZone.style.opacity = '0.35';
-    ftDropZone.style.cursor = 'not-allowed';
-    ftDropZone.style.pointerEvents = 'none';
-    ftDropZone.title = '⛔ Tu perfil solo tiene acceso de lectura';
-  }
-  var ftFileInput = document.getElementById('ft-file-input');
-  if (ftFileInput) ftFileInput.disabled = true;
-
-  // Artículos: Cargar Excel, Agregar artículo (IDs fijos en HTML)
-  ['btn-art-cargar-excel','btn-art-agregar','btn-op-cargar-excel','btn-op-agregar'].forEach(function(id){
-    _dis(document.getElementById(id));
-  });
-
-  // Técnicos: + Agregar técnico
-  document.querySelectorAll('#ft-adm-tecnicos button').forEach(function(btn){
-    if (btn.textContent.trim().includes('Agregar técnico')) _dis(btn);
-  });
-  // Estaciones: + Agregar estación
-  document.querySelectorAll('#ft-adm-estaciones button').forEach(function(btn){
-    if (btn.textContent.trim().includes('Agregar estación')) _dis(btn);
-  });
-
-  // ─── Plantillas ─────────────────────────────────────────────────────────
-  ['openGestionArticulosModal','openGestionOpCatModal','openNewTplModalWithArt'].forEach(function(fn){
-    document.querySelectorAll('button[onclick*="'+fn+'"]').forEach(_dis);
-  });
-
-  // ─── Programación ───────────────────────────────────────────────────────
-  var btnProg = document.getElementById('btn-prog'); // ✏ Editar Programación
-  if (btnProg) _dis(btnProg);
-
-  // 💾 Guardar prioridades (fixed button in Prioridades section)
-  document.querySelectorAll('button[onclick*="savePrios"]').forEach(_dis);
+  // All static button hiding is handled by CSS class 'fab-lectura' on #page-Fabricaciones
+  // set in enterApp(). Dynamic rendered buttons (✏ Editar in lists) are handled
+  // directly in their render functions via _fabNivel() checks.
+  // This function is kept as a no-op for backwards compatibility with call sites.
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2810,6 +2762,12 @@ function enterApp() {
   buildSidebarNav();
   buildWelcomeModules();
   showPage('inicio');
+  // Marcar la página de Fabricaciones con clase de nivel de acceso
+  var _fabPage = document.getElementById('page-Fabricaciones');
+  if (_fabPage) {
+    _fabPage.classList.remove('fab-lectura');
+    if (_fabNivel() === 'lectura') _fabPage.classList.add('fab-lectura');
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2983,6 +2941,9 @@ function navigateToPantalla(pantallaID) {
       if (typeof ftLoadDataFromSP === 'function') {
         ftLoadDataFromSP();
       }
+      // Aplicar control de acceso al entrar a Fabricaciones
+      // Delay más largo para que el DOM esté completamente listo (incluye portal activo por defecto)
+      setTimeout(applyFabAccessControl, 400);
     }
   }
 }
@@ -3978,8 +3939,8 @@ function ftShowTab(tab) {
     if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + tab + "'")) b.classList.add('active');
   });
   if (tab === 'admin') { ftAdmTab('excel'); ftLoadTecnicos(); ftLoadEstaciones(); }
-  // Aplicar control de acceso de lectura cada vez que se abre Fabricaciones
-  setTimeout(applyFabAccessControl, 200);
+  // Aplicar control de acceso de lectura al cambiar de pestaña principal
+  setTimeout(applyFabAccessControl, 300);
 }
 
 function ftAdmTab(tab) {
@@ -5981,6 +5942,8 @@ async function ftLoadDataFromSP() {
     });
     // Re-render
     (window.renderProg||renderProg)(); (window.renderTpls||renderTpls)(); (window.renderSeg||renderSeg)(); (window.renderApp||renderApp)();
+    // Aplicar control de acceso después de la carga inicial completa
+    setTimeout(applyFabAccessControl, 300);
     DB.calTiemposGuardados = DB.calTiemposGuardados || {};
     (calTiemposRes.value||[]).forEach(function(i){
       var f = i.fields;
