@@ -2582,7 +2582,9 @@ function startSessionWatch() {
   _sessionWatchTimer = setInterval(checkSessionAndVersion, 5 * 60 * 1000);
   setTimeout(checkSessionAndVersion, 30 * 1000);
   // Heartbeat cada 3 min — registra actividad en SP
-  sendHeartbeat(); // primer heartbeat inmediato al entrar
+  // Delay 5s en el primer heartbeat para evitar 409 Conflict con markSessionLogin
+  // (ambos parchean el mismo item de Usuarios al login)
+  setTimeout(sendHeartbeat, 5000);
   _heartbeatTimer = setInterval(sendHeartbeat, 3 * 60 * 1000);
   // Marcar cierre al salir de la página (best-effort)
   window.addEventListener('beforeunload', markSessionClosed);
