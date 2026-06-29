@@ -12369,11 +12369,11 @@ async function _colaLockRead(estacion) {
     var sid = await getSiteId();
     var key = _colaLockKey(estacion);
     var res = await graphGet(
-      'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
-        "'" + key + "'"
+      'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50'
     ).catch(function(){ return null; });
     if (res && res.value && res.value.length) {
-      var item = res.value[0];
+      var item = res.value.find(function(i){ return (i.fields&&i.fields.Title||'')===key; });
+      if (!item) return null;
       _colaLockSpIdCache[estacion] = item.id;
       var val = (item.fields && item.fields.Valor) ? item.fields.Valor : '';
       if (!val) return null;
@@ -12397,11 +12397,11 @@ async function _colaLockAcquire(estacion, userName, role) {
     } else {
       // Buscar si existe, luego POST o PATCH
       var res = await graphGet(
-        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
-          "'" + key + "'"
+        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50'
       ).catch(function(){ return null; });
-      if (res && res.value && res.value.length) {
-        _colaLockSpIdCache[estacion] = res.value[0].id;
+      var foundItem = res && res.value ? res.value.find(function(i){ return (i.fields&&i.fields.Title||'')===key; }) : null;
+      if (foundItem) {
+        _colaLockSpIdCache[estacion] = foundItem.id;
         await graphPatch(
           'sites/'+sid+'/lists/Configuracion/items/'+_colaLockSpIdCache[estacion]+'/fields',
           { Valor: lockVal }
@@ -12424,11 +12424,10 @@ async function _colaLockRelease(estacion) {
     var key = _colaLockKey(estacion);
     if (!_colaLockSpIdCache[estacion]) {
       var res = await graphGet(
-        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
-          "'" + key + "'"
+        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50'
       ).catch(function(){ return null; });
-      if (res && res.value && res.value.length)
-        _colaLockSpIdCache[estacion] = res.value[0].id;
+      var found = res && res.value ? res.value.find(function(i){ return (i.fields&&i.fields.Title||'')===key; }) : null;
+      if (found) _colaLockSpIdCache[estacion] = found.id;
     }
     if (_colaLockSpIdCache[estacion]) {
       await graphPatch(
