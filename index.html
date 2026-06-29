@@ -1496,7 +1496,7 @@ tr:last-child td{border-bottom:none;}
         <div id="qmgr-subtitle" style="font-size:.72rem;color:var(--dim);margin-top:2px;"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-queue-mgr');_refreshStationViews();">✕ Cerrar</button>
+        <button class="btn btn-ghost btn-sm" onclick="_colaLockRelease(_qmgrStation).catch(function(){});closeCModal('modal-queue-mgr');_refreshStationViews();">✕ Cerrar</button>
       </div>
     </div>
     <div style="padding:8px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);font-size:.71rem;color:var(--dim);flex-shrink:0;">
@@ -12352,11 +12352,116 @@ function debouncedRenderHist(){
   },350);
 }
 // -- Queue Manager (Coordinador) ----------------------------
+
+// ── Cola Lock — previene edición simultánea de la cola de estación ────────────
+// Lock por estación en SP lista Configuracion (Title = 'cola_lock_<estacion>')
+// Valor = JSON: {ts: epoch_ms, editor: "nombre", by: "coord"|"supervisor"}
+// Expira automáticamente a los 30 segundos (lock huérfano por crash/cierre)
+var _COLA_LOCK_TTL = 30000; // 30 segundos
+var _colaLockSpIdCache = {}; // cache de SP item IDs por estación
+
+function _colaLockKey(estacion) {
+  return 'cola_lock_' + estacion.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+async function _colaLockRead(estacion) {
+  try {
+    var sid = await getSiteId();
+    var key = _colaLockKey(estacion);
+    var res = await graphGet(
+      'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
+        "'" + key + "'"
+    ).catch(function(){ return null; });
+    if (res && res.value && res.value.length) {
+      var item = res.value[0];
+      _colaLockSpIdCache[estacion] = item.id;
+      var val = (item.fields && item.fields.Valor) ? item.fields.Valor : '';
+      if (!val) return null;
+      try { return JSON.parse(val); } catch(e) { return null; }
+    }
+  } catch(e) { /* SP no disponible — asumir libre */ }
+  return null;
+}
+
+async function _colaLockAcquire(estacion, userName, role) {
+  try {
+    var sid = await getSiteId();
+    var key = _colaLockKey(estacion);
+    var lockVal = JSON.stringify({ ts: Date.now(), editor: userName || 'Usuario', by: role || 'coord' });
+    if (_colaLockSpIdCache[estacion]) {
+      // PATCH record existente
+      await graphPatch(
+        'sites/'+sid+'/lists/Configuracion/items/'+_colaLockSpIdCache[estacion]+'/fields',
+        { Valor: lockVal }
+      );
+    } else {
+      // Buscar si existe, luego POST o PATCH
+      var res = await graphGet(
+        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
+          "'" + key + "'"
+      ).catch(function(){ return null; });
+      if (res && res.value && res.value.length) {
+        _colaLockSpIdCache[estacion] = res.value[0].id;
+        await graphPatch(
+          'sites/'+sid+'/lists/Configuracion/items/'+_colaLockSpIdCache[estacion]+'/fields',
+          { Valor: lockVal }
+        );
+      } else {
+        var created = await graphPost(
+          'sites/'+sid+'/lists/Configuracion/items',
+          { fields: { Title: key, Valor: lockVal } }
+        ).catch(function(){ return null; });
+        if (created && created.id) _colaLockSpIdCache[estacion] = created.id;
+      }
+    }
+  } catch(e) { console.warn('[ColaLock] acquire error:', e.message); }
+}
+
+async function _colaLockRelease(estacion) {
+  if (!estacion) return;
+  try {
+    var sid = await getSiteId();
+    var key = _colaLockKey(estacion);
+    if (!_colaLockSpIdCache[estacion]) {
+      var res = await graphGet(
+        'sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50&$filter=fields/Title eq '+
+          "'" + key + "'"
+      ).catch(function(){ return null; });
+      if (res && res.value && res.value.length)
+        _colaLockSpIdCache[estacion] = res.value[0].id;
+    }
+    if (_colaLockSpIdCache[estacion]) {
+      await graphPatch(
+        'sites/'+sid+'/lists/Configuracion/items/'+_colaLockSpIdCache[estacion]+'/fields',
+        { Valor: '' }
+      );
+    }
+  } catch(e) { /* silencioso — el lock expirará en 30s de todas formas */ }
+}
+
+function _colaLockIsStale(lockData) {
+  if (!lockData || !lockData.ts) return true;
+  return (Date.now() - lockData.ts) > _COLA_LOCK_TTL;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 var _qmgrStation = null;
-function openQueueMgr(estacion){
+async function openQueueMgr(estacion){
   _qmgrStation = estacion;
   sqPurge();
   document.getElementById('qmgr-title').textContent = '≡ Cola — '+estacion;
+  // Verificar lock antes de abrir
+  try {
+    var lock = await _colaLockRead(estacion);
+    var myName = (state.currentUser && state.currentUser.displayName) ? state.currentUser.displayName : 'Coordinador';
+    if (lock && !_colaLockIsStale(lock) && lock.editor !== myName) {
+      var elapsed = Math.round((Date.now() - lock.ts) / 1000);
+      showToast('🔒 Cola de "'+estacion+'" siendo editada por '+lock.editor+' ('+elapsed+'s). Intenta en unos segundos.', 'warn');
+      return; // No abrir el modal
+    }
+    // Adquirir lock
+    await _colaLockAcquire(estacion, myName, 'coord');
+  } catch(e) { /* Si falla, abrir de todas formas (best-effort) */ }
   renderQueueMgr();
   openCModal('modal-queue-mgr');
 }
@@ -12475,6 +12580,8 @@ async function portalSaveColaToSP(estacion){
   addCoordNotif('queue_reordered', {estacion: estacion, moved_by: 'coordinador'});
   fireSync('coord','queue_reordered',{estacion: estacion, moved_by:'coordinador'});
   ntfyNotificarEvento('queue_reordered', {estacion: estacion}).catch(function(){});
+  // Liberar lock al terminar de guardar
+  _colaLockRelease(estacion).catch(function(){});
 }
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);

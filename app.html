@@ -1110,7 +1110,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div id="app-queue-list" style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:4px;"></div>
       <div class="app-ma" style="margin-top:10px;">
-        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-queue')">Cerrar</button>
+        <button class="app-mb app-mb-s" onclick="_colaLockRelease(_appQueueStation).catch(function(){});closeAppModal('app-modal-queue')">Cerrar</button>
         <button class="app-mb app-mb-p" onclick="appQueueSave()">💾 Guardar orden</button>
       </div>
     </div>
@@ -1352,7 +1352,7 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div id="app-queue-list" style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:4px;"></div>
       <div class="app-ma" style="margin-top:10px;">
-        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-queue')">Cerrar</button>
+        <button class="app-mb app-mb-s" onclick="_colaLockRelease(_appQueueStation).catch(function(){});closeAppModal('app-modal-queue')">Cerrar</button>
         <button class="app-mb app-mb-p" onclick="appQueueSave()">💾 Guardar orden</button>
       </div>
     </div>
@@ -6915,11 +6915,95 @@ function qConflictPauseAll(){
 }
 
 // ── App mobile queue manager ───────────────────────────────
+
+// ── Cola Lock (app.html) — misma lógica que index.html, API de app ────────────
+var _COLA_LOCK_TTL = 30000;
+var _appColaLockSpIdCache = {};
+
+function _colaLockKey(estacion) {
+  return 'cola_lock_' + estacion.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+async function _colaLockRead(estacion) {
+  try {
+    var key = _colaLockKey(estacion);
+    var res = await appFlowGet('Configuracion', 50).catch(function(){ return null; });
+    if (res && res.value) {
+      var item = res.value.find(function(i){
+        var f = i.fields||i; return (f.Title||'') === key;
+      });
+      if (item) {
+        _appColaLockSpIdCache[estacion] = item.id || (item.fields && item.fields.id);
+        var f = item.fields || item;
+        var val = f.Valor || '';
+        if (!val) return null;
+        try { return JSON.parse(val); } catch(e) { return null; }
+      }
+    }
+  } catch(e) { /* SP no disponible — asumir libre */ }
+  return null;
+}
+
+async function _colaLockAcquire(estacion, userName, role) {
+  try {
+    var key = _colaLockKey(estacion);
+    var lockVal = JSON.stringify({ ts: Date.now(), editor: userName || 'Supervisor', by: role || 'supervisor' });
+    if (_appColaLockSpIdCache[estacion]) {
+      await appFlowEscribir('Configuracion', 'actualizar', parseInt(_appColaLockSpIdCache[estacion]), { Valor: lockVal });
+    } else {
+      var res = await appFlowGet('Configuracion', 50).catch(function(){ return null; });
+      var found = res && res.value ? res.value.find(function(i){ var f=i.fields||i; return (f.Title||'')===key; }) : null;
+      if (found) {
+        _appColaLockSpIdCache[estacion] = found.id || (found.fields && found.fields.id);
+        await appFlowEscribir('Configuracion', 'actualizar', parseInt(_appColaLockSpIdCache[estacion]), { Valor: lockVal });
+      } else {
+        var created = await appFlowEscribir('Configuracion', 'crear', 0, { Title: key, Valor: lockVal }).catch(function(){ return null; });
+        if (created && created.id) _appColaLockSpIdCache[estacion] = created.id;
+      }
+    }
+  } catch(e) { console.warn('[ColaLock] acquire error:', e.message); }
+}
+
+async function _colaLockRelease(estacion) {
+  if (!estacion) return;
+  try {
+    var key = _colaLockKey(estacion);
+    if (!_appColaLockSpIdCache[estacion]) {
+      var res = await appFlowGet('Configuracion', 50).catch(function(){ return null; });
+      var found = res && res.value ? res.value.find(function(i){ var f=i.fields||i; return (f.Title||'')===key; }) : null;
+      if (found) _appColaLockSpIdCache[estacion] = found.id || (found.fields && found.fields.id);
+    }
+    if (_appColaLockSpIdCache[estacion]) {
+      await appFlowEscribir('Configuracion', 'actualizar', parseInt(_appColaLockSpIdCache[estacion]), { Valor: '' });
+    }
+  } catch(e) { /* silencioso — el lock expirará en 30s */ }
+}
+
+function _colaLockIsStale(lockData) {
+  if (!lockData || !lockData.ts) return true;
+  return (Date.now() - lockData.ts) > _COLA_LOCK_TTL;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 var _appQueueStation=null;
-function appOpenQueueMgr(estacion){
+async function appOpenQueueMgr(estacion){
   _appQueueStation=estacion;
   sqPurge();
   document.getElementById('app-queue-title').textContent='≡ Cola — '+estacion;
+  // Verificar lock antes de abrir
+  try {
+    var lock = await _colaLockRead(estacion);
+    var myName = (typeof APP !== 'undefined' && APP.tecnico) ? APP.tecnico
+               : (typeof APP !== 'undefined' && APP.userName) ? APP.userName : 'Supervisor';
+    if (lock && !_colaLockIsStale(lock) && lock.editor !== myName) {
+      var elapsed = Math.round((Date.now() - lock.ts) / 1000);
+      if(typeof showAppNotif==='function')
+        showAppNotif('warn', '🔒 Cola de "'+estacion+'" siendo editada por '+lock.editor+' ('+elapsed+'s)');
+      else alert('🔒 Cola de "'+estacion+'" siendo editada por '+lock.editor+'. Intenta en unos segundos.');
+      return;
+    }
+    await _colaLockAcquire(estacion, myName, 'supervisor');
+  } catch(e) { /* best-effort — abrir de todas formas */ }
   renderAppQueueList();
   openAppModal('app-modal-queue');
 }
@@ -7019,6 +7103,7 @@ async function appQueueSave(){
     time:nowT(), read:false
   });
   renderNotif();
+  _colaLockRelease(_appQueueStation).catch(function(){});
   closeAppModal('app-modal-queue');
   _refreshStationViews();
   renderApp();
@@ -15366,10 +15451,24 @@ function qConflictPauseAll(){
 
 // ── App mobile queue manager ───────────────────────────────
 var _appQueueStation=null;
-function appOpenQueueMgr(estacion){
+async function appOpenQueueMgr(estacion){
   _appQueueStation=estacion;
   sqPurge();
   document.getElementById('app-queue-title').textContent='≡ Cola — '+estacion;
+  // Verificar lock antes de abrir
+  try {
+    var lock = await _colaLockRead(estacion);
+    var myName = (typeof APP !== 'undefined' && APP.tecnico) ? APP.tecnico
+               : (typeof APP !== 'undefined' && APP.userName) ? APP.userName : 'Supervisor';
+    if (lock && !_colaLockIsStale(lock) && lock.editor !== myName) {
+      var elapsed = Math.round((Date.now() - lock.ts) / 1000);
+      if(typeof showAppNotif==='function')
+        showAppNotif('warn', '🔒 Cola de "'+estacion+'" siendo editada por '+lock.editor+' ('+elapsed+'s)');
+      else alert('🔒 Cola de "'+estacion+'" siendo editada por '+lock.editor+'. Intenta en unos segundos.');
+      return;
+    }
+    await _colaLockAcquire(estacion, myName, 'supervisor');
+  } catch(e) { /* best-effort — abrir de todas formas */ }
   renderAppQueueList();
   openAppModal('app-modal-queue');
 }
@@ -15469,6 +15568,7 @@ async function appQueueSave(){
     time:nowT(), read:false
   });
   renderNotif();
+  _colaLockRelease(_appQueueStation).catch(function(){});
   closeAppModal('app-modal-queue');
   _refreshStationViews();
   renderApp();
