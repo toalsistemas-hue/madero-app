@@ -2018,6 +2018,16 @@ tr:last-child td{border-bottom:none;}
 </div>
 
 
+<div class="page" id="page-BPMDashboard" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="bpm-iframe"
+    src="Dashboard_BPM_JUNTA.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:block;z-index:10;"
+    title="Dashboard BPM SENASICA">
+  </iframe>
+</div>
+
+
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal-box">
@@ -2058,7 +2068,9 @@ const CONFIG = {
   },
   // Puestos demo (fallback)
   demoPuestos: {
-    'AdminGeneral':      { nombre:'Administrador General',         esAdmin:true,  pantallas:[{pantallaID:'PedidosEspeciales',nivel:'completo'},{pantallaID:'Fabricaciones',nivel:'completo'},{pantallaID:'Cotizador',nivel:'completo'}] },
+    'AdminGeneral':      { nombre:'Administrador General',         esAdmin:true,  pantallas:[{pantallaID:'PedidosEspeciales',nivel:'completo'},{pantallaID:'Fabricaciones',nivel:'completo'},{pantallaID:'Cotizador',nivel:'completo'},{pantallaID:'BPMDashboard',nivel:'completo'}] },
+    'ResponsableCalidad':{ nombre:'Responsable de Calidad',         esAdmin:false, pantallas:[{pantallaID:'BPMDashboard',nivel:'completo'}] },
+    'AuditorBPM':        { nombre:'Auditor BPM',                    esAdmin:false, pantallas:[{pantallaID:'BPMDashboard',nivel:'lectura'}] },
     'AnalistaComprasInt':{ nombre:'Analista Compras Int.',         esAdmin:false, pantallas:[{pantallaID:'PedidosEspeciales',nivel:'completo'}] },
     'CoordComprasInt':   { nombre:'Coordinador Compras Int.',      esAdmin:false, pantallas:[{pantallaID:'PedidosEspeciales',nivel:'completo'},{pantallaID:'Fabricaciones',nivel:'lectura'}] },
     'Director':          { nombre:'Director',                      esAdmin:false, pantallas:[{pantallaID:'PedidosEspeciales',nivel:'completo'},{pantallaID:'Fabricaciones',nivel:'completo'}] },
@@ -2070,7 +2082,8 @@ const CONFIG = {
       { nombre:'Compras Internacionales', icono:'🌐', orden:1, pantallas:['PedidosEspeciales'] }
     ]},
     { nombre:'Producción', icono:'🏭', orden:2, submodulos:[], pantallas:['Fabricaciones'] },
-    { nombre:'Comercial USA', icono:'🇺🇸', orden:3, submodulos:[], pantallas:['Cotizador'] }
+    { nombre:'Comercial USA', icono:'🇺🇸', orden:3, submodulos:[], pantallas:['Cotizador'] },
+    { nombre:'Calidad / BPM', icono:'📋', orden:4, submodulos:[], pantallas:['BPMDashboard'] }
   ]
 };
 
@@ -2937,6 +2950,26 @@ function navigateToPantalla(pantallaID) {
         }
       }, 600);
     }
+    if (pantallaID==='BPMDashboard') {
+      var bpmIfrm = document.getElementById('bpm-iframe');
+      if (bpmIfrm) {
+        bpmIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (bpmIfrm && bpmIfrm.contentWindow) {
+            var nivel = (state.currentUser && state.currentUser.pantallas)
+              ? (state.currentUser.pantallas['BPMDashboard'] || 'lectura') : 'lectura';
+            if (state.currentUser && state.currentUser.esAdmin) nivel = 'completo';
+            bpmIfrm.contentWindow.postMessage({
+              type: 'BPM_AUTH',
+              token: state.token || null,
+              userName: state.currentUser ? state.currentUser.nombre : '',
+              access: nivel,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 600);
+      }
+    }
     if (pantallaID==='Fabricaciones' && state.currentUser && !state.isDemoMode && state.token) {
       if (typeof ftLoadDataFromSP === 'function') {
         ftLoadDataFromSP();
@@ -3194,6 +3227,8 @@ function doLogout() {
   // Ocultar iframe del cotizador para que no tape la pantalla de login
   var ifrm = document.getElementById('cot-iframe');
   if (ifrm) ifrm.style.display = 'none';
+  var bpmIfrm = document.getElementById('bpm-iframe');
+  if (bpmIfrm) bpmIfrm.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
@@ -3204,6 +3239,179 @@ function doLogout() {
 
 // ═══════════════════════════════════════════════════════
 // SP BRIDGE — responde peticiones del iframe cotizador
+
+// ═══════════════════════════════════════════════════════
+// BPM SP BRIDGE — responde peticiones del iframe BPM Dashboard
+// ═══════════════════════════════════════════════════════
+window.addEventListener('message', async function(e) {
+  if (!e.data || e.data.type !== 'BPM_SP_REQUEST') return;
+  var callId  = e.data.callId;
+  var action  = e.data.action;
+  var payload = e.data.payload || {};
+  var bpmIfrm = document.getElementById('bpm-iframe');
+  if (!bpmIfrm) { console.warn('[BPM Bridge] iframe no encontrado'); return; }
+
+  function reply(error, result) {
+    bpmIfrm.contentWindow.postMessage({
+      type: 'BPM_SP_RESPONSE', callId: callId,
+      error: error || null, result: result || null
+    }, '*');
+  }
+
+  if (!state.token || state.isDemoMode) { reply('no_token', null); return; }
+
+  try {
+    var sid = await getSiteId();
+
+    // ── GET ESTATUS ──────────────────────────────────────────────
+    if (action === 'BPM_GET_ESTATUS') {
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields&$top=200&$orderby=lastModifiedDateTime%20desc');
+      var lastMod = res.value && res.value.length ? (res.value[0].lastModifiedDateTime||'') : '';
+      reply(null, {value: res.value||[], _lastMod: lastMod});
+
+    // ── GET COMENTARIOS ──────────────────────────────────────────
+    } else if (action === 'BPM_GET_COMENTARIOS') {
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields&$top=2000&$orderby=fields/FechaComentario%20asc');
+      var lastMod = res.value && res.value.length ? (res.value[res.value.length-1].lastModifiedDateTime||'') : '';
+      reply(null, {value: res.value||[], _lastMod: lastMod});
+
+    // ── POLL CHECK ───────────────────────────────────────────────
+    } else if (action === 'BPM_POLL_CHECK') {
+      var [estR, comR] = await Promise.all([
+        graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
+        graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};})
+      ]);
+      var newEstMod = estR.value&&estR.value.length ? estR.value[0].lastModifiedDateTime : '';
+      var newComMod = comR.value&&comR.value.length ? comR.value[0].lastModifiedDateTime : '';
+      reply(null, {
+        estatusChanged: newEstMod && newEstMod !== payload.lastEstatusMod,
+        comentariosChanged: newComMod && newComMod !== payload.lastComMod
+      });
+
+    // ── CREATE ESTATUS ───────────────────────────────────────────
+    } else if (action === 'BPM_CREATE_ESTATUS') {
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Estatus/items', {fields: payload.data});
+      reply(null, {id: res.id});
+
+    // ── UPDATE ESTATUS ───────────────────────────────────────────
+    } else if (action === 'BPM_UPDATE_ESTATUS') {
+      await graphPatch('sites/'+sid+'/lists/BPM_Estatus/items/'+payload.spId+'/fields', payload.data);
+      reply(null, 'ok');
+
+    // ── CREATE COMENTARIO ────────────────────────────────────────
+    } else if (action === 'BPM_CREATE_COMENTARIO') {
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Comentarios/items', {fields: payload.data});
+      reply(null, {id: res.id});
+
+    // ── DELETE COMENTARIO ────────────────────────────────────────
+    } else if (action === 'BPM_DELETE_COMENTARIO') {
+      await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/BPM_Comentarios/items/'+payload.spId, {
+        method: 'DELETE',
+        headers: {Authorization: 'Bearer '+state.token}
+      });
+      reply(null, 'deleted');
+
+    // ── LIST DOCS (listar archivos de BPM_Documentos/) ───────────
+    } else if (action === 'BPM_LIST_DOCS') {
+      try {
+        var drivesRes = await graphGet('sites/'+sid+'/drives');
+        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
+        if (!drive) { reply(null, {files:[]}); return; }
+        // List all folders under BPM_Documentos root
+        var rootItems = await graphGet('drives/'+drive.id+'/root:/BPM_Documentos:/children').catch(function(){return {value:[]};});
+        var allFiles = [];
+        var folders = (rootItems.value||[]).filter(function(i){ return i.folder; });
+        await Promise.all(folders.map(async function(folder) {
+          var puntoMatch = folder.name.match(/^punto_(\d+)$/);
+          if (!puntoMatch) return;
+          var puntoID = parseInt(puntoMatch[1]);
+          var children = await graphGet('drives/'+drive.id+'/items/'+folder.id+'/children').catch(function(){return {value:[]};});
+          (children.value||[]).forEach(function(f) {
+            if (!f.folder) {
+              allFiles.push({
+                id: f.id,
+                puntoID: puntoID,
+                name: f.name,
+                size: f.size,
+                downloadUrl: f['@microsoft.graph.downloadUrl'] || '',
+                previewUrl: ''
+              });
+            }
+          });
+        }));
+        reply(null, {files: allFiles});
+      } catch(ex) { reply(ex.message, null); }
+
+    // ── UPLOAD DOC ───────────────────────────────────────────────
+    } else if (action === 'BPM_UPLOAD_DOC') {
+      try {
+        var drivesRes = await graphGet('sites/'+sid+'/drives');
+        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
+        if (!drive) { reply('drive_not_found', null); return; }
+        var folderName = 'punto_' + String(payload.puntoID).padStart(3,'0');
+        var fileName = payload.fileName.replace(/[^\w.\-_() ]/g,'_');
+        var uploadPath = 'BPM_Documentos/'+folderName+'/'+fileName;
+        // Convert base64 to binary
+        var binary = atob(payload.fileBase64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+        var uploadRes = await fetch(
+          'https://graph.microsoft.com/v1.0/drives/'+drive.id+'/root:/'+encodeURIComponent(uploadPath)+':/content',
+          {
+            method: 'PUT',
+            headers: {
+              'Authorization': 'Bearer '+state.token,
+              'Content-Type': payload.fileType || 'application/octet-stream'
+            },
+            body: bytes
+          }
+        );
+        if (!uploadRes.ok) { reply('upload_failed_'+uploadRes.status, null); return; }
+        var uploadedItem = await uploadRes.json();
+        // Get preview URL
+        var previewUrl = '';
+        try {
+          var prevRes = await fetch(
+            'https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+uploadedItem.id+'/preview',
+            {method:'POST', headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'}, body:'{}'}
+          );
+          if (prevRes.ok) {
+            var prevData = await prevRes.json();
+            previewUrl = prevData.getUrl || '';
+          }
+        } catch(ex) {}
+        reply(null, {
+          id: uploadedItem.id,
+          puntoID: payload.puntoID,
+          name: uploadedItem.name,
+          size: uploadedItem.size,
+          downloadUrl: uploadedItem['@microsoft.graph.downloadUrl'] || '',
+          previewUrl: previewUrl
+        });
+      } catch(ex) { reply(ex.message, null); }
+
+    // ── DELETE DOC ───────────────────────────────────────────────
+    } else if (action === 'BPM_DELETE_DOC') {
+      try {
+        var drivesRes = await graphGet('sites/'+sid+'/drives');
+        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
+        if (!drive) { reply('drive_not_found', null); return; }
+        await fetch('https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+payload.docId, {
+          method: 'DELETE',
+          headers: {Authorization: 'Bearer '+state.token}
+        });
+        reply(null, 'deleted');
+      } catch(ex) { reply(ex.message, null); }
+
+    } else {
+      reply('unknown_action_'+action, null);
+    }
+  } catch(err) {
+    reply(err.message || 'bridge_error', null);
+  }
+});
+
+
 // ═══════════════════════════════════════════════════════
 window.addEventListener('message', async function(e) {
   if (!e.data || e.data.type !== 'MADERO_SP_REQUEST') return;
