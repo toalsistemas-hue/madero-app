@@ -5626,7 +5626,12 @@ async function ftLoadDataFromSP() {
               DB.timers[key] = { start: Date.now()-initElapsed, elapsed: 0, running: true, _spId: null };
               t = DB.timers[key];
             }
-            if (t && !t.running && !t._frozenAt) t.running = true;
+            if (t && !t.running && !t._frozenAt) {
+              // Activar timer: si start es 0/null (ocurre después de op_concluded),
+              // corregirlo a Date.now() para que getEl = elapsed + 0 arranque correcto
+              if (!t.start) t.start = Date.now();
+              t.running = true;
+            }
 
           } else if (op.status === 'paused' || op.status === 'validating') {
             if (t && t.running) {
@@ -13118,6 +13123,19 @@ async function coordRevertOpConclusion(ofSap, opId) {
   try {
     await flowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), { Status: 'running', Fin: '' });
     showToast('↩ Operación devuelta a En curso.', 'info');
+    // Guardar timer en SP con Running=true y Start_MS correcto
+    // Así el siguiente poll de FT_Timers carga el estado correcto
+    var _t = DB.timers[key];
+    if (_t && _t._spId) {
+      flowEscribir('FT_Timers', 'actualizar', parseInt(_t._spId), {
+        Title:      key,
+        OF_SAP:     ofSap,
+        Op_ID:      opId,
+        Start_MS:   _t.start || Date.now(),
+        Elapsed_MS: _t.elapsed || 0,
+        Running:    true
+      }).catch(function(e){ console.warn('[revert timer SP]', e.message); });
+    }
   } catch(e) { showToast('Error al guardar: '+e.message, 'error'); }
 }
 

@@ -8197,6 +8197,8 @@ async function _appLoadDataFromSP_impl() {
           // Si t existe y running=true → getEl funciona correctamente (elapsed+(now-start))
           // Si t existe y running=false → puede ser un timer antiguo de pausa; reactivarlo
           if (t && !t.running && !t._frozenAt) {
+            // Corregir start=0/null (puede ocurrir tras op_concluded → revert)
+            if (!t.start) t.start = Date.now();
             t.running = true;
           }
 
