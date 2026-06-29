@@ -478,6 +478,8 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .fab-loading{padding:50px;text-align:center;color:var(--text-mid);}
 .fab-loading-spinner{width:34px;height:34px;border:3px solid var(--border-color);border-top-color:var(--accent);border-radius:50%;animation:spinA .9s linear infinite;margin:0 auto 12px;}
 .fab-sync-banner{background:rgba(212,160,23,.12);border:1px solid rgba(212,160,23,.3);color:var(--yellow);border-radius:8px;padding:9px 14px;font-size:.8rem;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+/* ── Fabricaciones: acceso lectura ── */
+#page-Fabricaciones.fab-lectura .fab-read-only-hide { display:none !important; }
 </style>
 </head>
 <body>
@@ -639,8 +641,6 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
   --ared:#ef4444;--apurple:#a855f7;--aorange:#f97316;
 }
 #page-Fabricaciones *{box-sizing:border-box;}
-/* Acceso lectura: botones deshabilitados */
-#page-Fabricaciones.fab-lectura .fab-read-only-hide { display:none !important; }
 /* body styles handled by platform */
 
 /* Wrapper split */
@@ -2759,15 +2759,15 @@ function enterApp() {
   // Config visible solo para admins
   document.getElementById('nav-config-item').style.display = u.esAdmin ? 'block' : 'none';
 
-  buildSidebarNav();
-  buildWelcomeModules();
-  showPage('inicio');
-  // Marcar la página de Fabricaciones con clase de nivel de acceso
+  // Marcar la página de Fabricaciones con clase de nivel de acceso ANTES de mostrar nada
   var _fabPage = document.getElementById('page-Fabricaciones');
   if (_fabPage) {
     _fabPage.classList.remove('fab-lectura');
     if (_fabNivel() === 'lectura') _fabPage.classList.add('fab-lectura');
   }
+  buildSidebarNav();
+  buildWelcomeModules();
+  showPage('inicio');
 }
 
 // ═══════════════════════════════════════════════════════
