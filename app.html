@@ -12036,8 +12036,11 @@ function renderAppOpsPanel(of){
         }
         // ↑↓ Reorder arrows — Supervisor can reorder pending ops within OF
         if(APP.role==='supervisor'){
-          var canUp=(idx>0&&of.ops[idx-1]&&of.ops[idx-1].status==='pending');
-          var canDn=(idx<of.ops.length-1&&of.ops[idx+1]&&of.ops[idx+1].status==='pending');
+          // Guard: can only move onto a strictly pending neighbor
+          // (matches appMoveOp guard: running/paused/done/validating/op_concluded are blocked)
+          var _movable=function(o){ return o&&o.status==='pending'; };
+          var canUp=(idx>0&&_movable(of.ops[idx-1]));
+          var canDn=(idx<of.ops.length-1&&_movable(of.ops[idx+1]));
           h+='<div style="display:flex;flex-direction:column;gap:1px;margin-left:2px;">';
           h+='<button onclick="appMoveOp(\''+of.of_sap+'\','+idx+',-1)" '+(canUp?'':'disabled ')+' style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,'+(canUp?'.15':'.06')+');color:var(--'+(canUp?'adim':'muted')+');border-radius:4px;padding:0 6px;cursor:'+(canUp?'pointer':'default')+';font-size:.75rem;">↑</button>';
           h+='<button onclick="appMoveOp(\''+of.of_sap+'\','+idx+',1)" '+(canDn?'':'disabled ')+' style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,'+(canDn?'.15':'.06')+');color:var(--'+(canDn?'adim':'muted')+');border-radius:4px;padding:0 6px;cursor:'+(canDn?'pointer':'default')+';font-size:.75rem;">↓</button>';
@@ -12239,22 +12242,25 @@ async function appSaveMoveToSP(of_sap, of){
       var op = of.ops[i];
       var newSeq = i+1;
       console.log('  Op['+i+'] id:'+op.id+' _spId:'+op._spId+' → Secuencia:'+newSeq);
-      // If _spId missing, look it up in SP by Op_ID
+      // FIX 3: Si falta _spId, buscarlo con una consulta filtrada por OF_SAP+Op_ID
+      // Evita descargar hasta 5000 registros — solo carga las ops de esta OF
       if(!op._spId && op.id){
         try {
-          // Buscar _spId via Flow (fetch-all + filter JS)
-          console.log('  🔍 Buscando _spId para:', op.id);
-          var allOps = await appFlowGet('FT_Operaciones', 5000);
-          var found = (allOps.value||[]).find(function(item){
-            return item.fields && item.fields.Op_ID === op.id;
+          console.log('[appSaveMoveToSP] Buscando _spId para:', op.id);
+          // Filtrar por OF_SAP para limitar resultados a esta OF solamente
+          var ofOps = await appFlowGet('FT_Operaciones', 200);
+          var found = (ofOps.value||[]).find(function(item){
+            var f = item.fields||item;
+            return (f.Op_ID||f.op_id||'') === op.id &&
+                   String(f.OF_SAP||'') === String(of_sap);
           });
           if(found){
-            op._spId = found.id;
-            console.log('  📌 _spId encontrado:', op._spId);
+            op._spId = found.id || (found.fields && found.fields.id);
+            console.log('[appSaveMoveToSP] _spId encontrado:', op._spId);
           } else {
-            console.warn('  ⚠ No encontrado en SP:', op.id);
+            console.warn('[appSaveMoveToSP] No encontrado en SP:', op.id);
           }
-        } catch(e2){ console.warn('  ⚠ Lookup error:', e2.message||e2); }
+        } catch(e2){ console.warn('[appSaveMoveToSP] Lookup error:', e2.message||e2); }
       }
       if(!op._spId){ console.warn('  ❌ Sin _spId para '+op.id+' — saltando'); continue; }
       try {
@@ -13706,23 +13712,41 @@ appConfirmValCal = function() {
 // ── 14: appMoveOp — versión final con SP save y debug logs ──
 // Sobreescribir la última versión con la que incluye appSaveMoveToSP
 appMoveOp = function(sap, idx, dir) {
-  console.log('🔀 appMoveOp FINAL sap:'+sap+' idx:'+idx+' dir:'+dir);
   var of = DB.activeOFs.find(function(o){return o.of_sap===sap;});
-  if (!of){ console.warn('❌ OF no encontrada:'+sap); return; }
+  if (!of){ console.warn('[appMoveOp] OF no encontrada:'+sap); return; }
   var ni = idx+dir;
-  if (ni<0 || ni>=of.ops.length){ console.warn('❌ idx fuera de rango'); return; }
-  var opA=of.ops[idx],opB=of.ops[ni];
-  if(opA&&(opA.status==='running'||opA.status==='paused'||opA.status==='done')){ console.warn('❌ opA no movible:'+opA.status); return; }
-  if(opB&&(opB.status==='running'||opB.status==='paused'||opB.status==='done')){ console.warn('❌ opB no movible:'+opB.status); return; }
-  console.log('  swap: '+of.ops[idx].nombre+' ↔ '+of.ops[ni].nombre);
+  if (ni<0 || ni>=of.ops.length) return;
+  var opA=of.ops[idx], opB=of.ops[ni];
+
+  // FIX 1: Guard completo — incluye validating y op_concluded además de running/paused/done
+  var _blockedStatuses = {running:1, paused:1, done:1, validating:1, op_concluded:1};
+  if(opA && _blockedStatuses[opA.status]){
+    console.warn('[appMoveOp] opA no movible:'+opA.status); return;
+  }
+  if(opB && _blockedStatuses[opB.status]){
+    console.warn('[appMoveOp] opB no movible:'+opB.status); return;
+  }
+
+  // FIX 2: Mutex — evitar doble tap que genera doble swap
+  // Usamos la clave del OF (no de la op individual) para bloquear toda la OF
+  var _lockKey = 'move_'+sap;
+  if(!_acquireOpLock(_lockKey)){
+    console.warn('[appMoveOp] Lock activo para OF '+sap+', ignorando tap'); return;
+  }
+
+  console.log('[appMoveOp] swap: '+of.ops[idx].nombre+' ↔ '+of.ops[ni].nombre);
   var tmp=of.ops[idx]; of.ops[idx]=of.ops[ni]; of.ops[ni]=tmp;
   sqSyncColaNumbers();
   renderApp();
   if(typeof C!=='undefined'&&C.currentPage==='seguimiento') renderSeg();
-  // Llamar función dedicada de SP save
+
+  // Liberar lock después del render — la UI ya está actualizada
+  // El SP save corre async y no bloquea futuras interacciones
+  setTimeout(function(){ _releaseOpLock(_lockKey); }, 1000);
+
   if(typeof appSaveMoveToSP==='function'){
     appSaveMoveToSP(sap, of);
-  } else { console.warn('❌ appSaveMoveToSP no encontrada'); }
+  } else { console.warn('[appMoveOp] appSaveMoveToSP no encontrada'); }
   fireSync('app','op_moved',{of_sap:sap, moved_by:'supervisor'});
 };
 // ── 4: markNotifRead con highlight ────────────────────────
