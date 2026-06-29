@@ -1105,8 +1105,8 @@ tr:last-child td{border-bottom:none;}
     <div class="app-ms">
       <div class="app-mh"></div>
       <div class="app-mt" id="app-queue-title">≡ Cola de Estación</div>
-      <div style="font-size:.68rem;color:var(--adim);margin-bottom:8px;padding:5px 8px;background:rgba(245,158,11,.07);border-radius:5px;">
-        ★ Slots 1–5 son <span style="color:var(--ayellow);font-weight:700;">prioritarios</span>. Usa ↑↓ para reordenar. Las ops ▶ en curso no se mueven.
+      <div style="font-size:.68rem;color:var(--adim);margin-bottom:8px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:5px;">
+        Usa <strong>↑↓</strong> para reordenar la cola. Las ops activas no se pueden mover.
       </div>
       <div id="app-queue-list" style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:4px;"></div>
       <div class="app-ma" style="margin-top:10px;">
@@ -1347,8 +1347,8 @@ tr:last-child td{border-bottom:none;}
     <div class="app-ms">
       <div class="app-mh"></div>
       <div class="app-mt" id="app-queue-title">≡ Cola de Estación</div>
-      <div style="font-size:.68rem;color:var(--adim);margin-bottom:8px;padding:5px 8px;background:rgba(245,158,11,.07);border-radius:5px;">
-        ★ Slots 1–5 son <span style="color:var(--ayellow);font-weight:700;">prioritarios</span>. Usa ↑↓ para reordenar. Las ops ▶ en curso no se mueven.
+      <div style="font-size:.68rem;color:var(--adim);margin-bottom:8px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:5px;">
+        Usa <strong>↑↓</strong> para reordenar la cola. Las ops activas no se pueden mover.
       </div>
       <div id="app-queue-list" style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:4px;"></div>
       <div class="app-ma" style="margin-top:10px;">
@@ -6798,8 +6798,7 @@ function renderQueueMgr(){
   });
   document.getElementById('qmgr-subtitle').textContent=
     (runningItems.length?runningItems.length+' en curso · ':'')+
-    pendingItems.length+' en cola · '+
-    q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
+    pendingItems.length+' en cola';
   var h='';
   // ── En operación / Pausa ──────────────────────────────────────────
   runningItems.forEach(function(item){
@@ -6820,24 +6819,18 @@ function renderQueueMgr(){
   // ── Cola de espera ────────────────────────────────────────────────
   if(pendingItems.length){
     if(runningItems.length){
-      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">★ Cola de espera</div>';
+      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">Cola de espera</div>';
     }
     pendingItems.forEach(function(item,pendIdx){
       var op=item._op; var i=item._origIdx;
-      var isPrio=item.tipo==='prioritaria';
-      var isTop5=pendIdx<5;
-      var bgCol=isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
-      var borderCol=isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
       var slotNum=pendIdx+1;
-      var slotCol=isTop5?'#f59e0b':'var(--adim)';
-      var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
-      h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+slotNum+'</div>';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08);border-radius:7px;margin-bottom:4px;">';
+      h+='<div style="min-width:28px;height:28px;background:rgba(255,255,255,.06);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:var(--adim);">'+slotNum+'</div>';
       h+='<div style="flex:1;min-width:0;">';
       h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
       h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
       h+='</div>';
-      if(isPrio) h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
+
       h+='<div style="display:flex;flex-direction:column;gap:2px;">';
       h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
       h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
@@ -6858,7 +6851,6 @@ function qmgrMove(idx, dir){
     return;
   }
   sqMove(_qmgrStation, idx, dir);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
@@ -6866,7 +6858,6 @@ function qmgrMove(idx, dir){
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
   q.splice(idx,1);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
@@ -6943,23 +6934,24 @@ function renderAppQueueList(){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
-    var isRunning=op.status==='running';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(34,197,94,.08)':isTop5?'rgba(245,158,11,.07)':'rgba(255,255,255,.03)';
-    var borderCol=isRunning?'rgba(34,197,94,.3)':isTop5?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    // Active = any non-pending status (these ops cannot be moved in queue)
+    var isActive=op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded';
+    var bgCol=op.status==='running'?'rgba(34,197,94,.08)':'rgba(255,255,255,.03)';
+    var borderCol=op.status==='running'?'rgba(34,197,94,.3)':'rgba(255,255,255,.08)';
     h+='<div style="display:flex;align-items:center;gap:7px;padding:7px 9px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;">';
-    var slotCol=isTop5?'var(--ayellow)':'var(--adim)';
-    h+='<div style="min-width:24px;height:24px;background:'+(isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)')+';border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
+    h+='<div style="min-width:24px;height:24px;background:rgba(255,255,255,.06);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:var(--adim);">'+(i+1)+'</div>';
     h+='<div style="flex:1;min-width:0;"><div style="font-size:.74rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.62rem;color:var(--adim);">OF '+esc(item.of_sap)+(op.tecnico?' · '+esc(op.tecnico):'')+'</div></div>';
-    if(isRunning){
-      h+='<span style="font-size:.62rem;color:var(--agreen);">▶</span>';
-    } else {
-      h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+    var _stLabel={running:'▶',paused:'⏸',validating:'🔍',op_concluded:'⏳'}[op.status]||'';
+    if(_stLabel) h+='<span style="font-size:.68rem;color:var(--adim);">'+_stLabel+'</span>';
+    h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+    if(!isActive){
       h+='<button onclick="appQueueMove('+i+',-1)" style="background:rgba(255,255,255,.08);border:none;border-radius:4px;color:var(--adim);cursor:pointer;padding:2px 7px;font-size:.72rem;"'+(i===0?' disabled':'')+'>↑</button>';
       h+='<button onclick="appQueueMove('+i+',1)" style="background:rgba(255,255,255,.08);border:none;border-radius:4px;color:var(--adim);cursor:pointer;padding:2px 7px;font-size:.72rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
-      h+='</div>';
+    } else {
+      h+='<span style="font-size:.6rem;color:var(--adim);" title="Operación activa — no se puede mover">—</span>';
     }
+    h+='</div>';
     h+='</div>';
   });
   document.getElementById('app-queue-list').innerHTML=h;
@@ -6976,7 +6968,6 @@ function appQueueMove(idx, dir){
       if(key&&DB.timers[key]){DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);DB.timers[key].running=false;}
       conflict.status='paused';conflict.pauseReason='⏸ Pausada por reordenamiento';
       sqMove(_appQueueStation,idx,dir);
-      q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
       sqSyncColaNumbers();
       renderAppQueueList();
       renderApp();
@@ -6984,7 +6975,6 @@ function appQueueMove(idx, dir){
     return;
   }
   sqMove(_appQueueStation, idx, dir);
-  q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
   sqSyncColaNumbers();
   renderAppQueueList();
 }
@@ -15258,8 +15248,7 @@ function renderQueueMgr(){
   });
   document.getElementById('qmgr-subtitle').textContent=
     (runningItems.length?runningItems.length+' en curso · ':'')+
-    pendingItems.length+' en cola · '+
-    q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
+    pendingItems.length+' en cola';
   var h='';
   // ── En operación / Pausa ──────────────────────────────────────────
   runningItems.forEach(function(item){
@@ -15280,24 +15269,18 @@ function renderQueueMgr(){
   // ── Cola de espera ────────────────────────────────────────────────
   if(pendingItems.length){
     if(runningItems.length){
-      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">★ Cola de espera</div>';
+      h+='<div style="font-size:.6rem;color:var(--adim);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 3px;">Cola de espera</div>';
     }
     pendingItems.forEach(function(item,pendIdx){
       var op=item._op; var i=item._origIdx;
-      var isPrio=item.tipo==='prioritaria';
-      var isTop5=pendIdx<5;
-      var bgCol=isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
-      var borderCol=isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
       var slotNum=pendIdx+1;
-      var slotCol=isTop5?'#f59e0b':'var(--adim)';
-      var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
-      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
-      h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+slotNum+'</div>';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08);border-radius:7px;margin-bottom:4px;">';
+      h+='<div style="min-width:28px;height:28px;background:rgba(255,255,255,.06);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:var(--adim);">'+slotNum+'</div>';
       h+='<div style="flex:1;min-width:0;">';
       h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
       h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
       h+='</div>';
-      if(isPrio) h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
+
       h+='<div style="display:flex;flex-direction:column;gap:2px;">';
       h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
       h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
@@ -15318,7 +15301,6 @@ function qmgrMove(idx, dir){
     return;
   }
   sqMove(_qmgrStation, idx, dir);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
@@ -15326,7 +15308,6 @@ function qmgrMove(idx, dir){
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
   q.splice(idx,1);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
@@ -15403,23 +15384,24 @@ function renderAppQueueList(){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
-    var isRunning=op.status==='running';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(34,197,94,.08)':isTop5?'rgba(245,158,11,.07)':'rgba(255,255,255,.03)';
-    var borderCol=isRunning?'rgba(34,197,94,.3)':isTop5?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    // Active = any non-pending status (these ops cannot be moved in queue)
+    var isActive=op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded';
+    var bgCol=op.status==='running'?'rgba(34,197,94,.08)':'rgba(255,255,255,.03)';
+    var borderCol=op.status==='running'?'rgba(34,197,94,.3)':'rgba(255,255,255,.08)';
     h+='<div style="display:flex;align-items:center;gap:7px;padding:7px 9px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;">';
-    var slotCol=isTop5?'var(--ayellow)':'var(--adim)';
-    h+='<div style="min-width:24px;height:24px;background:'+(isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)')+';border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
+    h+='<div style="min-width:24px;height:24px;background:rgba(255,255,255,.06);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:var(--adim);">'+(i+1)+'</div>';
     h+='<div style="flex:1;min-width:0;"><div style="font-size:.74rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.62rem;color:var(--adim);">OF '+esc(item.of_sap)+(op.tecnico?' · '+esc(op.tecnico):'')+'</div></div>';
-    if(isRunning){
-      h+='<span style="font-size:.62rem;color:var(--agreen);">▶</span>';
-    } else {
-      h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+    var _stLabel={running:'▶',paused:'⏸',validating:'🔍',op_concluded:'⏳'}[op.status]||'';
+    if(_stLabel) h+='<span style="font-size:.68rem;color:var(--adim);">'+_stLabel+'</span>';
+    h+='<div style="display:flex;flex-direction:column;gap:2px;">';
+    if(!isActive){
       h+='<button onclick="appQueueMove('+i+',-1)" style="background:rgba(255,255,255,.08);border:none;border-radius:4px;color:var(--adim);cursor:pointer;padding:2px 7px;font-size:.72rem;"'+(i===0?' disabled':'')+'>↑</button>';
       h+='<button onclick="appQueueMove('+i+',1)" style="background:rgba(255,255,255,.08);border:none;border-radius:4px;color:var(--adim);cursor:pointer;padding:2px 7px;font-size:.72rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
-      h+='</div>';
+    } else {
+      h+='<span style="font-size:.6rem;color:var(--adim);" title="Operación activa — no se puede mover">—</span>';
     }
+    h+='</div>';
     h+='</div>';
   });
   document.getElementById('app-queue-list').innerHTML=h;
@@ -15436,7 +15418,6 @@ function appQueueMove(idx, dir){
       if(key&&DB.timers[key]){DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);DB.timers[key].running=false;}
       conflict.status='paused';conflict.pauseReason='⏸ Pausada por reordenamiento';
       sqMove(_appQueueStation,idx,dir);
-      q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
       sqSyncColaNumbers();
       renderAppQueueList();
       renderApp();
@@ -15444,7 +15425,6 @@ function appQueueMove(idx, dir){
     return;
   }
   sqMove(_appQueueStation, idx, dir);
-  q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
   sqSyncColaNumbers();
   renderAppQueueList();
 }
