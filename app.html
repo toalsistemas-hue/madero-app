@@ -3954,6 +3954,60 @@ function appOpenPause(sap,opId){
   setPauseTipo('normal');
   openAppModal("app-modal-pause");
 }
+
+// ── Mutex de acciones por operación ─────────────────────────────────────────
+// Previene que dos acciones (pausar/reanudar/valcal/terminar) corran simultáneamente
+// sobre la misma operación — ya sea por doble tap o acción concurrente supervisor+monitor.
+var _opActionLock = {};  // { key: timestamp } — key = of_sap_op_id
+
+function _acquireOpLock(key) {
+  var now = Date.now();
+  var existing = _opActionLock[key];
+  // Si hay un lock de menos de 8 segundos → rechazar (acción en vuelo)
+  if (existing && (now - existing) < 8000) return false;
+  _opActionLock[key] = now;
+  return true;
+}
+
+function _releaseOpLock(key) {
+  delete _opActionLock[key];
+}
+
+// Lock visual: deshabilitar botones de una op durante la acción
+function _lockOpButtons(key, label) {
+  var opId = key.split('_').slice(1).join('_');
+  document.querySelectorAll(
+    '[data-op-id="' + opId + '"] .app-ob, ' +
+    '[data-resume-op="' + opId + '"], ' +
+    '[data-op-id="' + opId + '"]'
+  ).forEach(function(el) {
+    if (el.tagName === 'BUTTON' || el.classList.contains('app-ob')) {
+      el.disabled = true;
+      el.style.opacity = '0.5';
+      el.dataset._wasLabel = el.textContent;
+      if (label) el.textContent = label;
+    }
+  });
+}
+
+function _unlockOpButtons(key) {
+  var opId = key.split('_').slice(1).join('_');
+  document.querySelectorAll(
+    '[data-op-id="' + opId + '"] .app-ob, ' +
+    '[data-resume-op="' + opId + '"], ' +
+    '[data-op-id="' + opId + '"]'
+  ).forEach(function(el) {
+    if (el.tagName === 'BUTTON' || el.classList.contains('app-ob')) {
+      el.disabled = false;
+      el.style.opacity = '';
+      if (el.dataset._wasLabel) {
+        el.textContent = el.dataset._wasLabel;
+        delete el.dataset._wasLabel;
+      }
+    }
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 function appConfirmPause(){
   var reason=document.getElementById("app-pause-reason").value.trim();
   if(!reason){alert("Describe la causa de la pausa.");return;}
@@ -3962,6 +4016,12 @@ function appConfirmPause(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
+  // Guard: solo pausar si está corriendo
+  if(op.status!=='running'){
+    console.warn('[Guard] appConfirmPause: op no está running ('+op.status+')');
+    closeAppModal('app-modal-pause'); return;
+  }
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Pause lock activo:', key); return; }
   if(DB.timers[key]){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
@@ -4048,6 +4108,8 @@ function appConfirmPause(){
       }
     } catch(e) {
       console.warn('❌ Pausa SP error:', e.message||e);
+    } finally {
+      _releaseOpLock(ctx.of_sap+'_'+ctx.op_id);
     }
   })();
   // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
@@ -4235,6 +4297,14 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
+  // Guard: solo reanudar si está pausada
+  if(op.status!=='paused'){
+    console.warn('[Guard] _doResumeOp: op no está paused ('+op.status+')'); return;
+  }
+  // Mutex: evitar doble ejecución
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Resume lock activo:', key); return; }
+  // _localStatus protege contra reloads que restauren status=paused de SP
+  op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: acumular ms de turnos previos en _prevTurnosMs
   // y resetear elapsed del timer para que getEl() devuelva solo el tiempo del turno actual
   var esFin=op._pauseTipo==='turno';
@@ -4267,6 +4337,8 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   });
   renderApp();
   _refreshStationViews();
+  // Liberar lock tras un breve delay — el SP save corre async
+  setTimeout(function(){ _releaseOpLock(sap+'_'+opId); }, 5000);
 }
 function appOpenValCal(sap,opId){
   APP.currentOpCtx={of_sap:sap,op_id:opId};
@@ -4282,6 +4354,13 @@ function appConfirmValCal(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
+  var key=ctx.of_sap+'_'+ctx.op_id;
+  // Guard: solo si está corriendo
+  if(op.status!=='running'){
+    console.warn('[Guard] appConfirmValCal: op no está running ('+op.status+')');
+    closeAppModal('app-modal-valcal'); return;
+  }
+  if(!_acquireOpLock(key)){ console.warn('[Guard] ValCal lock activo:', key); return; }
   var note=document.getElementById("app-valcal-note").value.trim()||"Sin nota";
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
@@ -4310,6 +4389,7 @@ function appConfirmValCal(){
   }
   op._localStatus='validating'; op._localStatusAt=Date.now();
   fireSync("app","op_valcal",{of_sap:ctx.of_sap, op_id:ctx.op_id});
+  setTimeout(function(){ _releaseOpLock(key); }, 3000);
 }
 function openCalResp(sap,opId){
   APP.currentCalRespCtx={of_sap:sap,op_id:opId};
@@ -5361,6 +5441,13 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
+  // Guard: solo terminar si está corriendo o en validación
+  if(op.status!=='running' && op.status!=='validating'){
+    console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
+    closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
+  }
+  // Mutex: evitar doble tap / doble ejecución
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Finish lock activo:', key); return; }
   var el=getEl(key);
   var ok=parseInt((document.getElementById("app-finish-ok"+s)||{value:0}).value)||0;
   var def=parseInt((document.getElementById("app-finish-def"+s)||{value:0}).value)||0;
@@ -5431,6 +5518,7 @@ function appConfirmFinish(){
     appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
     appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
     fireSync("app","op_finished",{of_sap:ctx.of_sap});
+    setTimeout(function(){ _releaseOpLock(key); }, 5000);
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
   else doFinishLocal();
@@ -9160,7 +9248,16 @@ function monitorConfirmOp(ofSap, opId) {
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
-
+  var key = ofSap+'_'+opId;
+  // Guard: solo terminar si está corriendo o en validación
+  if (op.status !== 'running' && op.status !== 'validating') {
+    console.warn('[Guard] monitorConfirmOp: status inválido ('+op.status+')');
+    showAppNotif('info','⚠️ Esta operación ya no está activa ('+op.status+')'); return;
+  }
+  // Mutex: evitar doble apertura del modal
+  if (!_acquireOpLock(key)) {
+    console.warn('[Guard] monitorConfirmOp lock activo:', key); return;
+  }
   _monFinishCtx = { of_sap: ofSap, op_id: opId };
 
   var key = ofSap + '_' + opId;
@@ -9211,8 +9308,11 @@ function monitorConfirmOp(ofSap, opId) {
 }
 
 function monFinishClose() {
+  // Liberar lock si se cancela el modal
+  if (_monFinishCtx) {
+    _releaseOpLock(_monFinishCtx.of_sap+'_'+_monFinishCtx.op_id);
+  }
   document.getElementById('monitor-finish-modal').style.display = 'none';
-  // Re-enable all fields for next use
   ['mon-finish-ok','mon-finish-def','mon-finish-chat','mon-finish-def-ret','mon-finish-def-chat2'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.disabled = false;
   });
@@ -9344,7 +9444,7 @@ function monFinishConfirm() {
     }
 
     sqPurge(); sqSyncColaNumbers();
-    monFinishClose();
+    monFinishClose(); // también libera lock vía _releaseOpLock en monFinishClose
     appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('[mon-finish] op SP:', e.message); });
     if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(key).catch(function(){});
     fireSync('app', 'op_finished', { of_sap: ctx.of_sap });
@@ -12224,6 +12324,12 @@ function appConfirmPause(){
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
+  // Guard: solo pausar si está corriendo
+  if(op.status!=='running'){
+    console.warn('[Guard] appConfirmPause: op no está running ('+op.status+')');
+    closeAppModal('app-modal-pause'); return;
+  }
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Pause lock activo:', key); return; }
   if(DB.timers[key]){
     DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);
     DB.timers[key].running=false;
@@ -12295,7 +12401,8 @@ function appConfirmPause(){
       await appSaveOpToSP(ctx.of_sap, ctx.op_id);
       console.log('✅ Pausa SP OK _spId:'+_pOp._spId);
       if(typeof appSaveTimerToSP==='function') await appSaveTimerToSP(ctx.of_sap+'_'+ctx.op_id);
-    } catch(e){ console.warn('❌ Pausa SP error:',e.message||e); }
+    } catch(e){ console.warn('❌ Pausa SP error:',e.message||e);
+    } finally { _releaseOpLock(ctx.of_sap+'_'+ctx.op_id); }
   })();
   // Pasar reason y op_name en fireSync para que coord-notif muestre detalles
   var _pauseCtxOf = DB.activeOFs.find(function(a){return a.of_sap===ctx.of_sap;});
@@ -12482,6 +12589,12 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var op=of?of.ops.find(function(o){return o.id===opId;}):null;
   if(!op)return;
   var key=sap+'_'+opId;
+  // Guard + mutex
+  if(op.status!=='paused'){
+    console.warn('[Guard] _doResumeOp: op no está paused ('+op.status+')'); return;
+  }
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Resume lock activo:', key); return; }
+  op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: mover elapsed a _prevTurnosMs y resetear
   // para que getEl() devuelva solo el tiempo del turno actual
   var esFin=op._pauseTipo==='turno';
@@ -12523,6 +12636,8 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   });
   renderApp();
   _refreshStationViews();
+  // Liberar lock tras un breve delay — el SP save corre async
+  setTimeout(function(){ _releaseOpLock(sap+'_'+opId); }, 5000);
 }
 function appOpenValCal(sap,opId){
   APP.currentOpCtx={of_sap:sap,op_id:opId};
@@ -12538,6 +12653,13 @@ function appConfirmValCal(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;
   if(!op)return;
+  var key=ctx.of_sap+'_'+ctx.op_id;
+  // Guard: solo si está corriendo
+  if(op.status!=='running'){
+    console.warn('[Guard] appConfirmValCal: op no está running ('+op.status+')');
+    closeAppModal('app-modal-valcal'); return;
+  }
+  if(!_acquireOpLock(key)){ console.warn('[Guard] ValCal lock activo:', key); return; }
   var note=document.getElementById("app-valcal-note").value.trim()||"Sin nota";
   op.status="validating";op.valcalNote=note;op.needsCal=true;op.calResult=null;
   DB.notifications.push({id:"n_"+Date.now(),type:"calidad",of_sap:ctx.of_sap,op_id:ctx.op_id,note:note,time:nowT(),read:false});
@@ -12563,6 +12685,7 @@ function appConfirmValCal(){
   }
   op._localStatus='validating'; op._localStatusAt=Date.now();
   fireSync("app","op_valcal",{of_sap:ctx.of_sap});
+  setTimeout(function(){ _releaseOpLock(key); }, 3000);
 }
 function openCalResp(sap,opId){
   APP.currentCalRespCtx={of_sap:sap,op_id:opId};
@@ -13636,6 +13759,13 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
+  // Guard: solo terminar si está corriendo o en validación
+  if(op.status!=='running' && op.status!=='validating'){
+    console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
+    closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
+  }
+  // Mutex: evitar doble tap / doble ejecución
+  if(!_acquireOpLock(key)){ console.warn('[Guard] Finish lock activo:', key); return; }
   var el=getEl(key);
   var ok=parseInt((document.getElementById("app-finish-ok"+s)||{value:0}).value)||0;
   var def=parseInt((document.getElementById("app-finish-def"+s)||{value:0}).value)||0;
@@ -13721,6 +13851,7 @@ function appConfirmFinish(){
     appSaveOpToSP(ctx.of_sap, op.id).catch(function(e){ console.warn('SP finish save:', e.message); });
     appSaveTimerToSP(key).catch(function(e){ console.warn('SP timer finish save:', e.message); });
     fireSync("app","op_finished",{of_sap:ctx.of_sap});
+    setTimeout(function(){ _releaseOpLock(key); }, 5000);
   }
   if(ok+def+chat<avail){showAppConfirm("Piezas sin registrar","Hay "+(avail-ok-def-chat)+" pieza(s) sin clasificar. ¿Terminar de todas formas?",doFinishLocal,"Terminar de todos modos");}
   else doFinishLocal();
