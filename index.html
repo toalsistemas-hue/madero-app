@@ -11636,8 +11636,18 @@ function renderHist(){
             ? Math.max(0,(op.mins||0)-_prevTurnosMinsSum)
             : (op.mins||0);
           techStats[t].mins+=_lastTurnoMinsStats;
-          techStats[t].ok+=(op.qty_ok||0);
-          techStats[t].def+=(op.qty_def||0);
+          // Para ops con turnos: acumular solo las piezas del último turno en stats.
+          // Los turnos previos acumulan sus propias piezas en el forEach siguiente.
+          var _prevTurnosOkSum=(op.turnos||[]).reduce(function(a,s){return a+(s.qty_ok||0);},0);
+          var _prevTurnosDefSum=(op.turnos||[]).reduce(function(a,s){return a+(s.qty_def||0);},0);
+          var _lastTurnoOk=(op.turnos&&op.turnos.length>0)
+            ? Math.max(0,(op.qty_ok||0)-_prevTurnosOkSum)
+            : (op.qty_ok||0);
+          var _lastTurnoDef=(op.turnos&&op.turnos.length>0)
+            ? Math.max(0,(op.qty_def||0)-_prevTurnosDefSum)
+            : (op.qty_def||0);
+          techStats[t].ok+=_lastTurnoOk;
+          techStats[t].def+=_lastTurnoDef;
           techStats[t].chat+=Math.max(op.qty_chat||0, op.qty_def_chatarra||0);
           if(op.isRetrabajo){
             techStats[t].retrabajos++;
