@@ -13097,8 +13097,23 @@ async function coordRevertOpConclusion(ofSap, opId) {
   var aof = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op  = aof ? aof.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
+  var key = ofSap+'_'+opId;
+
+  // Restaurar status
   op.status = 'running';
   op.fin    = null;
+
+  // Restaurar timer: start=Date.now() para que el elapsed sea correcto
+  // elapsed ya tiene el tiempo acumulado hasta que se concluyó
+  var t = DB.timers[key];
+  if (t) {
+    t.running   = true;
+    t.start     = Date.now();
+    t._frozenAt = undefined;
+  } else {
+    DB.timers[key] = { start: Date.now(), elapsed: (op.mins||0)*60000, running: true, _spId: null };
+  }
+
   renderSeg(); renderApp();
   try {
     await flowEscribir('FT_Operaciones', 'actualizar', parseInt(op._spId), { Status: 'running', Fin: '' });

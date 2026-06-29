@@ -9471,10 +9471,43 @@ async function monitorRevertOp(ofSap, opId) {
   var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
   var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
   if (!op) return;
+  var key = ofSap+'_'+opId;
+
+  // Restaurar status
   op.status = 'running';
   op.fin = null;
+  op._localStatus = 'running';
+  op._localStatusAt = Date.now();
+
+  // Restaurar timer correctamente:
+  // Al concluir: timer.start=null, timer.elapsed=tiempo acumulado, timer.running=false
+  // Para reactivar: elapsed ya tiene el tiempo correcto, solo necesitamos:
+  //   start=Date.now() (el timer arranca desde ahora)
+  //   running=true
+  //   elapsed permanece = tiempo que llevaba cuando se concluyó
+  var t = DB.timers[key];
+  if (t) {
+    t.running = true;
+    t.start   = Date.now();  // arranca desde ahora, elapsed ya acumulado
+    // elapsed ya tiene el tiempo correcto guardado al momento de concluir
+    t._frozenAt = undefined;
+  } else {
+    // Sin timer local: crear desde op.mins (tiempo guardado en SP al concluir)
+    DB.timers[key] = {
+      start:   Date.now(),
+      elapsed: (op.mins||0)*60000,
+      running: true,
+      _spId:   null
+    };
+  }
+
   renderApp();
-  await appSaveOpToSP(ofSap, opId).catch(function(e){ console.warn('[monitorRevert]', e.message); });
+
+  // Guardar en SP: op con status=running + timer con Running=true
+  await appSaveOpToSP(ofSap, opId).catch(function(e){ console.warn('[monitorRevert] op:', e.message); });
+  appSaveTimerToSP(key).catch(function(e){ console.warn('[monitorRevert] timer:', e.message); });
+
+  console.log('[monitorRevert] Op reactivada:', key, 'elapsed:', Math.round((DB.timers[key].elapsed||0)/60000)+'min');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -10202,9 +10235,13 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
     op.fin    = timeStr;
     var timer = DB.timers ? DB.timers[of.of_sap+'_'+op.id] : null;
     if (timer) {
+      // Acumular elapsed antes de detener
+      if (timer.running && timer.start) {
+        timer.elapsed = (timer.elapsed||0) + (Date.now()-timer.start);
+      }
       timer.running = false;
-      if (timer.start) timer.elapsed = (timer.elapsed||0) + (Date.now()-timer.start);
-      timer.start = null;
+      timer.start   = 0;     // 0 indica detenido; null causaba 495195h al reactivar
+      timer._frozenAt = Date.now();
       op.mins = Math.round((timer.elapsed||0)/60000);
       appSaveTimerToSP(of.of_sap+'_'+op.id).catch(function(){});
     }
