@@ -1316,8 +1316,8 @@ tr:last-child td{border-bottom:none;}
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                   <div style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;">📦 Artículos</div>
                   <div style="display:flex;gap:8px;">
-                    <button onclick="ftAdmArtOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
-                    <button onclick="ftAdmArtOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar artículo</button>
+                    <button id="btn-art-cargar-excel" onclick="ftAdmArtOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
+                    <button id="btn-art-agregar" onclick="ftAdmArtOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar artículo</button>
                   </div>
                 </div>
                 <input type="text" id="ft-art-search" placeholder="🔍 Buscar por número o descripción..." oninput="ftAdmArtRender()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;color:var(--text);font-size:.78rem;margin-bottom:12px;">
@@ -1349,8 +1349,8 @@ tr:last-child td{border-bottom:none;}
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                   <div style="font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;">⚙️ Catálogo de Operaciones</div>
                   <div style="display:flex;gap:8px;">
-                    <button onclick="ftAdmOpOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
-                    <button onclick="ftAdmOpOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar operación</button>
+                    <button id="btn-op-cargar-excel" onclick="ftAdmOpOpenExcel()" style="background:rgba(255,255,255,.07);color:var(--text);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;">📊 Cargar Excel</button>
+                    <button id="btn-op-agregar" onclick="ftAdmOpOpenNew()" style="background:var(--accent-l,#58a6ff);color:#000;border:none;border-radius:7px;padding:7px 16px;font-weight:700;cursor:pointer;font-size:.78rem;">+ Agregar operación</button>
                   </div>
                 </div>
                 <input type="text" id="ft-op-search" placeholder="🔍 Buscar por nombre u artículo..." oninput="ftAdmOpRender()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 12px;color:var(--text);font-size:.78rem;margin-bottom:12px;">
@@ -2760,8 +2760,10 @@ function applyFabAccessControl() {
   var ftFileInput = document.getElementById('ft-file-input');
   if (ftFileInput) ftFileInput.disabled = true;
 
-  // Artículos: botones Cargar Excel, Agregar artículo
-  // (rendered dynamically in ftAdmArtRender — handled via DOM query after render)
+  // Artículos: Cargar Excel, Agregar artículo (IDs fijos en HTML)
+  ['btn-art-cargar-excel','btn-art-agregar','btn-op-cargar-excel','btn-op-agregar'].forEach(function(id){
+    _dis(document.getElementById(id));
+  });
 
   // Técnicos: + Agregar técnico
   document.querySelectorAll('#ft-adm-tecnicos button').forEach(function(btn){
