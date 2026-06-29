@@ -1586,6 +1586,7 @@ tr:last-child td{border-bottom:none;}
             </div>
           </div>
           <div style="font-size:.78rem;font-weight:700;margin-bottom:8px;">Operaciones</div>
+          <div id="tpl-active-banner" style="display:none;padding:8px 12px;border-radius:7px;border:1px solid rgba(245,158,11,.3);background:rgba(245,158,11,.08);font-size:.74rem;color:var(--text);margin-bottom:10px;line-height:1.5;"></div>
           <div id="tpl-ops-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;"></div>
           <button class="btn btn-ghost btn-sm" onclick="addTplOpRow()" style="margin-bottom:14px;">+ Agregar operación del catálogo</button>
           <datalist id="op-suggestions"></datalist>
@@ -7353,6 +7354,9 @@ function expandTpl(art){expandedTpls[art]=true;renderTpls();}
 
 function openNewTplModalWithArt(art){
   C.editingTplArt=null; C.tplOpIdx=0;
+  C._tplOriginalOps=null; C._tplLockedOps={};
+  var _banner=document.getElementById('tpl-active-banner');
+  if(_banner) _banner.style.display='none';
   document.getElementById("tpl-ops-list").innerHTML="";
   document.getElementById("tpl-modal-title").textContent="+ Nueva Plantilla";
   // Reset all fields
@@ -7375,31 +7379,47 @@ function onTplArtChange(){
   if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
   setTplSubarts([]);
 }
-function addTplOpRow(nombre,estacion,tipo){
+function addTplOpRow(nombre,estacion,tipo,locked){
   C.tplOpIdx++;
   var idx=C.tplOpIdx;
-  var h="<div class='op-drag-row' id='tpl-op-"+idx+"'>";
-  h+="<span style='color:var(--muted);cursor:grab;'>⠿</span>";
+  var _locked=locked===true;
+  var _lockInfo=_locked&&C._tplLockedOps&&C._tplLockedOps[nombre+'|'+estacion];
+  var _stLbl=_lockInfo?({running:'▶ En proceso',paused:'⏸ Pausada',validating:'🔍 Validación',op_concluded:'⏳ Concluida'}[_lockInfo.status]||_lockInfo.status):'';
+  var _rowBg=_locked?'background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);':'';
+  var _dis=_locked?' disabled':'';
+  var _dop=_locked?'opacity:.6;cursor:not-allowed;':'';
+  var h="<div class='op-drag-row' id='tpl-op-"+idx+"' style='"+_rowBg+"'>";
+  h+="<span style='color:var(--muted);cursor:"+(_locked?'not-allowed':'grab')+";'>"+(_locked?'🔒':'⠿')+"</span>";
   h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
   h+="<div style='flex:2;position:relative;'>";
   h+="<div style='display:flex;gap:3px;'>";
-  h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;'";
-  h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'>";
-  h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
+  h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;"+_dop+"'"+_dis;
+  if(!_locked) h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'";
+  h+=">";
+  if(!_locked) h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
   h+="</div>";
-  h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
+  if(!_locked) h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
+  if(_locked) h+="<div style='font-size:.6rem;color:#f87171;margin-top:2px;'>"+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+"</div>";
   h+="</div>";
-  h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;'><option value=''>Estación...</option>";
+  h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;"+_dop+"'"+_dis+"><option value=''>Estación...</option>";
   STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
   h+="</select>";
-  h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;'>";
+  h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;"+_dop+"'"+_dis+">";
   ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
   h+="</select>";
   h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
-  h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
-  h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
+  if(!_locked){
+    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
+    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
+  }else{
+    h+="<span style='font-size:.75rem;opacity:.4;' title='Operación activa'>🔒</span>";
+  }
   h+="</div>";
-  h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")'>✕</button>";
+  if(!_locked){
+    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")' title='Eliminar operación'>✕</button>";
+  }else{
+    h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
+  }
   h+="</div>";
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
@@ -10241,21 +10261,65 @@ function openEditTpl(art){
   C.editingTplArt = art; C.tplOpIdx = 0;
   var tpl = DB.templates[art];
   if(!tpl) return;
+
+  // ── Guardar snapshot de ops originales para detectar eliminaciones al guardar
+  C._tplOriginalOps = tpl.ops.map(function(o){ return {nombre:o.nombre, estacion:o.estacion, tipo:o.tipo}; });
+
+  // ── Detectar OFs activas afectadas por esta plantilla
+  var _activeStatuses = {running:1, paused:1, validating:1, op_concluded:1};
+  var _affectedOFs = (DB.activeOFs||[]).filter(function(aof){ return aof.articulo === art; });
+  var _hasActiveOp = _affectedOFs.some(function(aof){
+    return (aof.ops||[]).some(function(op){ return _activeStatuses[op.status]; });
+  });
+
+  // ── Construir mapa: nombre+estacion → estado activo (para candados)
+  // Un op está bloqueado si CUALQUIER OF activa lo tiene en running/paused/validating/op_concluded
+  C._tplLockedOps = {};
+  _affectedOFs.forEach(function(aof){
+    (aof.ops||[]).forEach(function(op){
+      if(_activeStatuses[op.status]){
+        var k = op.nombre+'|'+op.estacion;
+        if(!C._tplLockedOps[k]) C._tplLockedOps[k] = {status:op.status, of_sap:aof.of_sap};
+      }
+    });
+  });
+
   document.getElementById('tpl-modal-title').textContent = '✏ Editar Plantilla — '+art;
-  // Set article input
   var artInp = document.getElementById('tpl-art-sel');
   if(artInp) artInp.value = art;
   document.getElementById('tpl-desc-disp').textContent = DB.articles[art] || '—';
-  // Set padre input
   var padreInp = document.getElementById('tpl-padre-sel');
   if(padreInp){ padreInp.value = tpl.padre || ''; padreInp.placeholder = tpl.padre ? '' : 'Sin padre'; }
-  // Set subarts
   setTplSubarts(tpl.subarts && tpl.subarts.length ? tpl.subarts : []);
-  // Cargar ops
+
+  // ── Banner de advertencia si hay OFs activas afectadas
+  var bannerEl = document.getElementById('tpl-active-banner');
+  if(bannerEl){
+    if(_affectedOFs.length > 0){
+      var _statusLabels = {running:'▶ En proceso', paused:'⏸ Pausada', validating:'🔍 Validación', op_concluded:'⏳ Concluida'};
+      var _ofDetails = _affectedOFs.map(function(aof){
+        var activeOps = (aof.ops||[]).filter(function(o){ return _activeStatuses[o.status]; });
+        return 'OF '+aof.of_sap+(activeOps.length?' ('+activeOps.map(function(o){ return _statusLabels[o.status]||o.status; }).join(', ')+')':'');
+      }).join(' · ');
+      bannerEl.innerHTML = (_hasActiveOp
+        ? '🔒 <strong>Hay operaciones en proceso:</strong> '
+        : '⚠️ <strong>OFs programadas con esta plantilla:</strong> ')
+        + _ofDetails
+        + (_hasActiveOp ? '<br><small>Las operaciones activas están bloqueadas y no pueden eliminarse.</small>' : '');
+      bannerEl.style.display = 'block';
+      bannerEl.style.background = _hasActiveOp ? 'rgba(239,68,68,.1)' : 'rgba(245,158,11,.1)';
+      bannerEl.style.borderColor = _hasActiveOp ? 'rgba(239,68,68,.3)' : 'rgba(245,158,11,.3)';
+    } else {
+      bannerEl.style.display = 'none';
+    }
+  }
+
+  // ── Cargar ops con estado de bloqueo
   document.getElementById('tpl-ops-list').innerHTML = '';
   tpl.ops.forEach(function(op){
     C.tplOpIdx++;
-    addTplOpRow(op.nombre, op.estacion, op.tipo);
+    var _locked = !!(C._tplLockedOps && C._tplLockedOps[op.nombre+'|'+op.estacion]);
+    addTplOpRow(op.nombre, op.estacion, op.tipo, _locked);
   });
   openCModal('modal-tpl');
 }
@@ -10279,10 +10343,86 @@ function saveTplModal(){
   }
   var subarts = getTplSubarts();
   var padre = (document.getElementById('tpl-padre-sel').value||'').trim() || null;
+  // ── Detectar ops eliminadas (comparar con snapshot original)
+  var _deletedOps = [];
+  if(C._tplOriginalOps && C.editingTplArt === art){
+    var _newOpKeys = ops.map(function(o){ return o.nombre+'|'+o.estacion; });
+    C._tplOriginalOps.forEach(function(origOp){
+      var k = origOp.nombre+'|'+origOp.estacion;
+      if(_newOpKeys.indexOf(k) === -1){
+        // Esta op fue eliminada — verificar que no esté activa (doble seguridad)
+        var _isActive = false;
+        var _activeStatuses = {running:1,paused:1,validating:1,op_concluded:1};
+        (DB.activeOFs||[]).filter(function(aof){ return aof.articulo===art; }).forEach(function(aof){
+          if((aof.ops||[]).some(function(op){ return op.nombre===origOp.nombre && op.estacion===origOp.estacion && _activeStatuses[op.status]; }))
+            _isActive = true;
+        });
+        if(!_isActive) _deletedOps.push(origOp);
+      }
+    });
+  }
+  C._tplOriginalOps = null; // limpiar snapshot
+
   DB.templates[art] = {articulo:art, padre:padre, subarts:subarts, ops:ops};
 
   // Save to SharePoint async
   if(typeof ftSaveTemplateToSP === 'function') ftSaveTemplateToSP(art);
+
+  // ── DELETE físico en SP de ops eliminadas (no activas)
+  if(_deletedOps.length > 0){
+    (async function(){
+      try{
+        if(!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        // Cargar ops de SP para encontrar _spId de las eliminadas
+        var _freshRes = await flowGet('FT_Operaciones','',500);
+        var _allSpOps = (_freshRes&&_freshRes.value)||[];
+        for(var _di=0; _di<_deletedOps.length; _di++){
+          var _dOp = _deletedOps[_di];
+          // Buscar en todas las OFs afectadas
+          var _affectedAofs = (DB.activeOFs||[]).filter(function(a){ return a.articulo===art; });
+          for(var _ai=0; _ai<_affectedAofs.length; _ai++){
+            var _aof = _affectedAofs[_ai];
+            // Buscar _spId en SP items por nombre+estacion+OF_SAP
+            var _spItem = _allSpOps.find(function(item){
+              var f=item.fields||item;
+              return String(f.OF_SAP||'')===String(_aof.of_sap) &&
+                     (f.Nombre||f.Title||'')===_dOp.nombre &&
+                     (f.Estacion||'')===_dOp.estacion &&
+                     (f.Status||'pending')==='pending'; // solo eliminar si está pending
+            });
+            if(_spItem && _spItem.id){
+              try{
+                // DELETE del item en FT_Operaciones via Graph API
+                await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+_spItem.id);
+                console.log('🗑 Op eliminada de SP:', _dOp.nombre, 'OF:', _aof.of_sap);
+                // Eliminar de aof.ops en memoria
+                _aof.ops = (_aof.ops||[]).filter(function(op){
+                  return !(op.nombre===_dOp.nombre && op.estacion===_dOp.estacion);
+                });
+                // Eliminar de cola en SP
+                var _qRes = await flowGet('FT_Cola_Estacion','',200);
+                (_qRes&&_qRes.value||[]).forEach(async function(qItem){
+                  var qf=qItem.fields||qItem;
+                  if(qf.Estacion===_dOp.estacion && qf.OF_SAP===_aof.of_sap){
+                    // Verificar que sea este op_id
+                    var _memOp = (_aof.ops||[]).find(function(o){ return o._queueSpId===qItem.id; });
+                    if(!_memOp){
+                      try{ await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+qItem.id); }catch(e){}
+                    }
+                  }
+                });
+              }catch(delErr){ console.warn('Error eliminando op SP:', delErr.message); }
+            }
+          }
+        }
+        if(_deletedOps.length>0){
+          console.log('✅ '+_deletedOps.length+' op(s) eliminada(s) de SP');
+          sqPurge(); sqSyncColaNumbers();
+          if(typeof renderSeg==='function') renderSeg();
+        }
+      }catch(e){ console.warn('Error en DELETE de ops:', e.message); }
+    })();
+  }
   // Auto-register any new operations in FT_Catalogo_Operaciones
   if (!state.isDemoMode && state.token && typeof registerNewOpsInCatalog === 'function') {
     registerNewOpsInCatalog(art, ops);
@@ -11147,35 +11287,51 @@ appConfirmValCal = function(){
     if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
     setTplSubarts([]);
   }
-  function addTplOpRow(nombre,estacion,tipo){
-    C.tplOpIdx++;
-    var idx=C.tplOpIdx;
-    var h="<div class='op-drag-row' id='tpl-op-"+idx+"'>";
-    h+="<span style='color:var(--muted);cursor:grab;'>⠿</span>";
-    h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
-    h+="<div style='flex:2;position:relative;'>";
-    h+="<div style='display:flex;gap:3px;'>";
-    h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;'";
-    h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'>";
-    h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
-    h+="</div>";
-    h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
-    h+="</div>";
-    h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;'><option value=''>Estación...</option>";
-    STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
-    h+="</select>";
-    h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;'>";
-    ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
-    h+="</select>";
-    h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
+  function addTplOpRow(nombre,estacion,tipo,locked){
+  C.tplOpIdx++;
+  var idx=C.tplOpIdx;
+  var _locked=locked===true;
+  var _lockInfo=_locked&&C._tplLockedOps&&C._tplLockedOps[nombre+'|'+estacion];
+  var _stLbl=_lockInfo?({running:'▶ En proceso',paused:'⏸ Pausada',validating:'🔍 Validación',op_concluded:'⏳ Concluida'}[_lockInfo.status]||_lockInfo.status):'';
+  var _rowBg=_locked?'background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);':'';
+  var _dis=_locked?' disabled':'';
+  var _dop=_locked?'opacity:.6;cursor:not-allowed;':'';
+  var h="<div class='op-drag-row' id='tpl-op-"+idx+"' style='"+_rowBg+"'>";
+  h+="<span style='color:var(--muted);cursor:"+(_locked?'not-allowed':'grab')+";'>"+(_locked?'🔒':'⠿')+"</span>";
+  h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
+  h+="<div style='flex:2;position:relative;'>";
+  h+="<div style='display:flex;gap:3px;'>";
+  h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;"+_dop+"'"+_dis;
+  if(!_locked) h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'";
+  h+=">";
+  if(!_locked) h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
+  h+="</div>";
+  if(!_locked) h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
+  if(_locked) h+="<div style='font-size:.6rem;color:#f87171;margin-top:2px;'>"+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+"</div>";
+  h+="</div>";
+  h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;"+_dop+"'"+_dis+"><option value=''>Estación...</option>";
+  STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
+  h+="</select>";
+  h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;"+_dop+"'"+_dis+">";
+  ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
+  h+="</select>";
+  h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
+  if(!_locked){
     h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
     h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
-    h+="</div>";
-    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")'>✕</button>";
-    h+="</div>";
-    document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
-    renumberTplOps();
+  }else{
+    h+="<span style='font-size:.75rem;opacity:.4;' title='Operación activa'>🔒</span>";
   }
+  h+="</div>";
+  if(!_locked){
+    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")' title='Eliminar operación'>✕</button>";
+  }else{
+    h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
+  }
+  h+="</div>";
+  document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
+  renumberTplOps();
+}
   function moveTplOp(idx,dir){
     var list=document.getElementById("tpl-ops-list");
     var rows=Array.from(list.children);
