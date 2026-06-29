@@ -5609,21 +5609,10 @@ async function ftLoadDataFromSP() {
               return;
             }
             if (!t) {
-              // Sin registro en FT_Timers → calcular desde fecha_inicio_real
-              var fromInicio = 0;
-              var fir = op.fecha_inicio_real || op.Fecha_Inicio || '';
-              if (fir) {
-                var firM = fir.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d+):(\d+)\s*(a\.m\.|p\.m\.|am|pm)/i);
-                if (firM) {
-                  var dd=parseInt(firM[1]),mo=parseInt(firM[2])-1,yy=parseInt(firM[3]);
-                  var hh=parseInt(firM[4]),mi=parseInt(firM[5]);
-                  var isPM=firM[6].toLowerCase().replace(/\./g,'').indexOf('pm')>=0;
-                  if(isPM&&hh<12)hh+=12; if(!isPM&&hh===12)hh=0;
-                  fromInicio = Math.max(0, Date.now()-new Date(yy,mo,dd,hh,mi,0,0).getTime());
-                }
-              }
-              var initElapsed = Math.max(fromInicio, (op.mins||0)*60000);
-              DB.timers[key] = { start: Date.now()-initElapsed, elapsed: 0, running: true, _spId: null };
+              // Sin registro en FT_Timers — usar op.mins como base (tiempo hasta última pausa/conclusión)
+              // NO usar fromInicio porque incluiría tiempo de pausas y daría un valor inflado
+              var initElapsed = (op.mins||0)*60000;
+              DB.timers[key] = { start: Date.now(), elapsed: initElapsed, running: true, _spId: null };
               t = DB.timers[key];
             }
             if (t && !t.running && !t._frozenAt) {

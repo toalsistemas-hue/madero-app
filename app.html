@@ -1130,40 +1130,40 @@ tr:last-child td{border-bottom:none;}
     </div>
   </div>
 
-  <div class="app-mo" id="app-modal-finish-2">
+  <div class="app-mo" id="app-modal-finish">
     <div class="app-ms">
       <div class="app-mh"></div><div class="app-mt">✅ Registrar Terminada</div>
-      <div id="app-finish-info-2" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
+      <div id="app-finish-info" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:8px;margin-bottom:8px;font-size:.76rem;"></div>
       <div style="background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.15);border-radius:6px;padding:7px 9px;margin-bottom:9px;font-size:.7rem;color:var(--adim);">
-        Total asignadas: <strong id="app-finish-total-lbl-2" style="color:var(--atext);">—</strong>
+        Total asignadas: <strong id="app-finish-total-lbl" style="color:var(--atext);">—</strong>
       </div>
       <div class="app-qty-grid">
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok-2" type="number" min="0" oninput="appSyncFinishQty('ok','-2')" style="color:var(--agreen);"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def-2" type="number" min="0" oninput="appSyncFinishQty('def','-2')"></div>
-        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat-2" type="number" min="0" oninput="appSyncFinishQty('chat','-2')" style="color:var(--ared);"></div>
-        <div class="app-qi" id="app-finish-rej-wrap-2" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej-2" type="number" min="0" style="color:var(--ared);" readonly></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--agreen);">PIEZAS OK</div><input class="app-qi-inp" id="app-finish-ok" type="number" min="0" oninput="appSyncFinishQty('ok')" style="color:var(--agreen);"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ayellow);">CON DEFECTO</div><input class="app-qi-inp" id="app-finish-def" type="number" min="0" oninput="appSyncFinishQty('def')"></div>
+        <div class="app-qi"><div class="app-qi-lbl" style="color:var(--ared);">CHATARRA</div><input class="app-qi-inp" id="app-finish-chat" type="number" min="0" oninput="appSyncFinishQty('chat')" style="color:var(--ared);"></div>
+        <div class="app-qi" id="app-finish-rej-wrap" style="display:none;"><div class="app-qi-lbl">RECHAZADAS</div><input class="app-qi-inp" id="app-finish-rej" type="number" min="0" style="color:var(--ared);" readonly></div>
       </div>
-      <div id="app-finish-qty-warn-2" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
+      <div id="app-finish-qty-warn" style="display:none;color:var(--ayellow);font-size:.68rem;margin-top:5px;padding:5px 7px;background:rgba(245,158,11,.1);border-radius:5px;"></div>
       <!-- Disposición de piezas con defecto -->
-      <div id="app-finish-def-disp-2" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
+      <div id="app-finish-def-disp" style="display:none;margin-top:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:7px;padding:9px 10px;">
         <div style="font-size:.7rem;font-weight:700;color:var(--ared);margin-bottom:7px;">🔄 Disposición de piezas con defecto</div>
         <div style="display:flex;gap:8px;">
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ayellow);">→ Retrabajo</div>
-            <input class="app-qi-inp" id="app-finish-def-retrabajo-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-retrabajo" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ayellow);width:100%;text-align:center;font-size:.88rem;">
           </div>
           <div style="flex:1;">
             <div class="app-fl" style="color:var(--ared);">→ Chatarra</div>
-            <input class="app-qi-inp" id="app-finish-def-chatarra-2" type="number" min="0" value="0" oninput="appSyncDefDisp('-2')" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
+            <input class="app-qi-inp" id="app-finish-def-chatarra" type="number" min="0" value="0" oninput="appSyncDefDisp()" style="color:var(--ared);width:100%;text-align:center;font-size:.88rem;">
           </div>
         </div>
-        <div id="app-finish-def-disp-warn-2" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
+        <div id="app-finish-def-disp-warn" style="display:none;font-size:.68rem;color:var(--ayellow);margin-top:5px;padding:4px 6px;background:rgba(245,158,11,.1);border-radius:4px;"></div>
       </div>
       <div class="app-fl">Observaciones</div>
-      <input class="app-fi" id="app-finish-obs-2" placeholder="Sin incidencias...">
-      <div id="app-finish-foto-wrap-2"></div>
+      <input class="app-fi" id="app-finish-obs" placeholder="Sin incidencias...">
+      <div id="app-finish-foto-wrap"></div>
       <div class="app-ma">
-        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish-2')">Cancelar</button>
+        <button class="app-mb app-mb-s" onclick="closeAppModal('app-modal-finish')">Cancelar</button>
         <button class="app-mb app-mb-g" onclick="appConfirmFinish()">Registrar Terminada</button>
       </div>
     </div>
