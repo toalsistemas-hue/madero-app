@@ -1495,17 +1495,12 @@ tr:last-child td{border-bottom:none;}
         <div class="coord-modal-title" id="qmgr-title" style="margin:0;">≡ Cola de Estación</div>
         <div id="qmgr-subtitle" style="font-size:.72rem;color:var(--dim);margin-top:2px;"></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select id="qmgr-prio-of-sel" class="form-select-sm" style="font-size:.72rem;max-width:200px;">
-          <option value="">⚡ Fijar OF prioritaria...</option>
-        </select>
-        <button class="btn btn-warn btn-sm" onclick="qmgrPrioritizeSelected()">Fijar Top 5</button>
+      <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-queue-mgr');_refreshStationViews();">✕ Cerrar</button>
       </div>
     </div>
-    <div style="padding:8px 14px;background:rgba(245,158,11,.06);border-bottom:1px solid var(--border);font-size:.71rem;color:var(--dim);flex-shrink:0;">
-      <span style="color:var(--yellow);font-weight:700;">★ Top 5</span> = slots prioritarios (dorado) — protegidos de auto-asignación.
-      Usa <strong>↑ ↓</strong> para reordenar. Las ops en ejecución ▶ no se pueden mover.
+    <div style="padding:8px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border);font-size:.71rem;color:var(--dim);flex-shrink:0;">
+      Usa <strong>↑ ↓</strong> para reordenar la cola. Las operaciones en ejecución ▶ no se pueden mover.
     </div>
     <div id="qmgr-list" style="overflow-y:auto;flex:1;padding:10px 14px;min-height:0;"></div>
   </div>
@@ -6673,7 +6668,9 @@ function sqSyncColaNumbers(){
       if(!aof) return;
       var op=aof.ops.find(function(o){return o.id===item.op_id;});
       if(!op) return;
-      if(op.status==='running'||op.status==='paused'||op.status==='validating'){
+      // Active statuses: no queue number shown
+      if(op.status==='running'||op.status==='paused'||op.status==='validating'||
+         op.status==='op_concluded'||op.status==='done'){
         op.cola=null;
       } else if(op.status==='pending'||op.status==='retrabajo'){
         op.cola=colaIdx++;
@@ -12360,15 +12357,6 @@ function openQueueMgr(estacion){
   _qmgrStation = estacion;
   sqPurge();
   document.getElementById('qmgr-title').textContent = '≡ Cola — '+estacion;
-  // Populate OF selector
-  var sel=document.getElementById('qmgr-prio-of-sel');
-  sel.innerHTML='<option value="">⚡ Fijar OF prioritaria...</option>';
-  var q=sqGetQueue(estacion);
-  var ofsInQueue=[...new Set(q.map(function(x){return x.of_sap;}))];
-  ofsInQueue.forEach(function(sap){
-    var rec=DB.ofs.find(function(o){return o.of_sap===sap;})||{};
-    sel.innerHTML+='<option value="'+sap+'">OF '+sap+' — '+(rec.descripcion||rec.cliente||'')+'</option>';
-  });
   renderQueueMgr();
   openCModal('modal-queue-mgr');
 }
@@ -12379,44 +12367,38 @@ function renderQueueMgr(){
     document.getElementById('qmgr-subtitle').textContent='0 operaciones';
     return;
   }
-  document.getElementById('qmgr-subtitle').textContent=q.length+' operaciones · '+q.filter(function(x){return x.tipo==='prioritaria';}).length+' prioritarias';
+  document.getElementById('qmgr-subtitle').textContent=q.length+' operación'+(q.length===1?'':'es')+' en cola';
   var h='';
   q.forEach(function(item,i){
     var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
-    var isRunning=op.status==='running';
-    var isPrio=item.tipo==='prioritaria';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(46,160,67,.08)':isPrio?'rgba(245,158,11,.06)':'rgba(255,255,255,.02)';
-    var borderCol=isRunning?'rgba(46,160,67,.35)':isPrio?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    var isActive=op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded';
+    var bgCol=op.status==='running'?'rgba(46,160,67,.08)':'rgba(255,255,255,.02)';
+    var borderCol=op.status==='running'?'rgba(46,160,67,.35)':'rgba(255,255,255,.08)';
     h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;margin-bottom:4px;">';
-    // Slot number badge
-    var slotCol=isTop5?'#f59e0b':'var(--dim)';
-    var slotBg=isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)';
-    h+='<div style="min-width:28px;height:28px;background:'+slotBg+';border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
+    // Position badge
+    h+='<div style="min-width:28px;height:28px;background:rgba(255,255,255,.06);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:\'DM Mono\',monospace;font-size:.78rem;font-weight:700;color:var(--dim);">'+(i+1)+'</div>';
     // Op info
     h+='<div style="flex:1;min-width:0;">';
     h+='<div style="font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.65rem;color:var(--dim);">OF '+esc(item.of_sap)+(op.tecnico?' · 👷'+esc(op.tecnico):'')+'</div>';
     h+='</div>';
-    // Status
-    if(isRunning){
-      h+='<span style="font-size:.65rem;color:var(--green);font-weight:700;">▶ En curso</span>';
-    } else if(isPrio){
-      h+='<span style="font-size:.62rem;color:var(--yellow);">★ Prio</span>';
-    }
-    // Move buttons (disabled if running)
+    // Status badge
+    var _stLabel={running:'▶ En curso',paused:'⏸ Pausada',validating:'🔍 Validación',op_concluded:'⏳ Concluida',done:'✅ Terminada',pending:''}[op.status]||'';
+    var _stColor={running:'var(--green)',paused:'var(--yellow)',validating:'#a78bfa',op_concluded:'#f59e0b',done:'var(--dim)',pending:''}[op.status]||'';
+    if(_stLabel) h+='<span style="font-size:.65rem;color:'+_stColor+';font-weight:700;white-space:nowrap;">'+_stLabel+'</span>';
+    // Move buttons — disabled if active (running/paused/validating/op_concluded)
     h+='<div style="display:flex;flex-direction:column;gap:2px;">';
-    if(!isRunning){
+    if(!isActive){
       h+='<button onclick="qmgrMove('+i+',-1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===0?' disabled':'')+'>↑</button>';
       h+='<button onclick="qmgrMove('+i+',1)" style="background:rgba(255,255,255,.07);border:none;border-radius:4px;color:var(--dim);cursor:pointer;padding:2px 6px;font-size:.7rem;"'+(i===q.length-1?' disabled':'')+'>↓</button>';
     } else {
-      h+='<span style="font-size:.6rem;color:var(--muted);">—</span>';
+      h+='<span style="font-size:.6rem;color:var(--muted);" title="No se puede mover mientras está activa">—</span>';
     }
     h+='</div>';
-    // Remove from queue
-    if(!isRunning){
+    // Remove from queue (not if active)
+    if(!isActive){
       h+='<button onclick="qmgrRemove('+i+')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;padding:2px 4px;" title="Quitar de cola">✕</button>';
     }
     h+='</div>';
@@ -12433,11 +12415,9 @@ function qmgrMove(idx, dir){
     return;
   }
   sqMove(_qmgrStation, idx, dir);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
-  // Persist updated cola numbers to SP for all affected OFs
   portalSaveColaToSP(_qmgrStation);
 }
 
@@ -12499,10 +12479,10 @@ async function portalSaveColaToSP(estacion){
 function qmgrRemove(idx){
   var q=sqGetQueue(_qmgrStation);
   q.splice(idx,1);
-  q.forEach(function(item,i){ item.tipo=i<5?'prioritaria':'normal'; });
   sqSyncColaNumbers();
   renderQueueMgr();
   _refreshStationViews();
+  portalSaveColaToSP(_qmgrStation);
 }
 function _refreshStationViews(){
   // Refresh whichever station view is currently visible
@@ -12510,12 +12490,7 @@ function _refreshStationViews(){
   else renderSeg();
   renderApp(); // update cola badges in app
 }
-function qmgrPrioritizeSelected(){
-  var sap=document.getElementById('qmgr-prio-of-sel').value;
-  if(!sap){alert('Selecciona una OF para priorizar.');return;}
-  sqPrioritizeOF(sap);
-  renderQueueMgr();
-}
+// qmgrPrioritizeSelected removed — Top 5 feature eliminated in favor of simple ↑↓ reorder
 
 // -- Conflict modal -----------------------------------------
 var _qConflictStation=null, _qConflictOps=[];
@@ -12574,12 +12549,10 @@ function renderAppQueueList(){
     var op=aof?aof.ops.find(function(o){return o.id===item.op_id;}):null;
     if(!op) return;
     var isRunning=op.status==='running';
-    var isTop5=i<5;
-    var bgCol=isRunning?'rgba(34,197,94,.08)':isTop5?'rgba(245,158,11,.07)':'rgba(255,255,255,.03)';
-    var borderCol=isRunning?'rgba(34,197,94,.3)':isTop5?'rgba(245,158,11,.3)':'rgba(255,255,255,.08)';
+    var bgCol=isRunning?'rgba(34,197,94,.08)':'rgba(255,255,255,.03)';
+    var borderCol=isRunning?'rgba(34,197,94,.3)':'rgba(255,255,255,.08)';
     h+='<div style="display:flex;align-items:center;gap:7px;padding:7px 9px;background:'+bgCol+';border:1px solid '+borderCol+';border-radius:7px;">';
-    var slotCol=isTop5?'var(--ayellow)':'var(--adim)';
-    h+='<div style="min-width:24px;height:24px;background:'+(isTop5?'rgba(245,158,11,.15)':'rgba(255,255,255,.06)')+';border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:'+slotCol+';">'+(isTop5?'★':'')+(i+1)+'</div>';
+    h+='<div style="min-width:24px;height:24px;background:rgba(255,255,255,.06);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:var(--adim);">'+(i+1)+'</div>';
     h+='<div style="flex:1;min-width:0;"><div style="font-size:.74rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(op.nombre)+'</div>';
     h+='<div style="font-size:.62rem;color:var(--adim);">OF '+esc(item.of_sap)+(op.tecnico?' · '+esc(op.tecnico):'')+'</div></div>';
     if(isRunning){
@@ -12606,7 +12579,6 @@ function appQueueMove(idx, dir){
       if(key&&DB.timers[key]){DB.timers[key].elapsed=(DB.timers[key].elapsed||0)+(Date.now()-DB.timers[key].start);DB.timers[key].running=false;}
       conflict.status='paused';conflict.pauseReason='⏸ Pausada por reordenamiento';
       sqMove(_appQueueStation,idx,dir);
-      q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
       sqSyncColaNumbers();
       renderAppQueueList();
       (window.renderApp||renderApp)();
@@ -12614,7 +12586,6 @@ function appQueueMove(idx, dir){
     return;
   }
   sqMove(_appQueueStation, idx, dir);
-  q.forEach(function(item,i2){item.tipo=i2<5?'prioritaria':'normal';});
   sqSyncColaNumbers();
   renderAppQueueList();
 }
