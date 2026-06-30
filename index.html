@@ -3277,15 +3277,18 @@ window.addEventListener('message', async function(e) {
 
     // ── POLL CHECK ───────────────────────────────────────────────
     } else if (action === 'BPM_POLL_CHECK') {
-      var [estR, comR] = await Promise.all([
+      var [estR, comR, minR] = await Promise.all([
         graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
-        graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};})
+        graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}) ,
+        graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};})
       ]);
       var newEstMod = estR.value&&estR.value.length ? estR.value[0].lastModifiedDateTime : '';
       var newComMod = comR.value&&comR.value.length ? comR.value[0].lastModifiedDateTime : '';
+      var newMinMod = minR.value&&minR.value.length ? minR.value[0].lastModifiedDateTime : '';
       reply(null, {
         estatusChanged: newEstMod && newEstMod !== payload.lastEstatusMod,
-        comentariosChanged: newComMod && newComMod !== payload.lastComMod
+        comentariosChanged: newComMod && newComMod !== payload.lastComMod,
+        minutasChanged: newMinMod && newMinMod !== (payload.lastMinutasMod || '')
       });
 
     // ── CREATE ESTATUS ───────────────────────────────────────────
@@ -3402,6 +3405,29 @@ window.addEventListener('message', async function(e) {
         });
         reply(null, 'deleted');
       } catch(ex) { reply(ex.message, null); }
+
+    // ── GET MINUTAS ──────────────────────────────────────────────
+    } else if (action === 'BPM_GET_MINUTAS') {
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields&$top=500&$orderby=fields/Title%20desc');
+      reply(null, {value: res.value||[]});
+
+    // ── CREATE MINUTA ─────────────────────────────────────────────
+    } else if (action === 'BPM_CREATE_MINUTA') {
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Minutas/items', {fields: payload.data});
+      reply(null, {id: res.id});
+
+    // ── UPDATE MINUTA ─────────────────────────────────────────────
+    } else if (action === 'BPM_UPDATE_MINUTA') {
+      await graphPatch('sites/'+sid+'/lists/BPM_Minutas/items/'+payload.spId+'/fields', payload.data);
+      reply(null, 'ok');
+
+    // ── DELETE MINUTA ─────────────────────────────────────────────
+    } else if (action === 'BPM_DELETE_MINUTA') {
+      await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/BPM_Minutas/items/'+payload.spId, {
+        method: 'DELETE',
+        headers: {Authorization: 'Bearer '+state.token}
+      });
+      reply(null, 'deleted');
 
     } else {
       reply('unknown_action_'+action, null);

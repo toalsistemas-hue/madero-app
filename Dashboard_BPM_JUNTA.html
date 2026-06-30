@@ -101,6 +101,81 @@ td:nth-child(2){min-width:280px;line-height:1.45;}
 .sync-badge{font-size:0.72rem;color:#28a745;font-weight:600;}
 #tooltip-box{position:fixed;background:rgba(30,30,30,0.92);color:#fff;padding:10px 14px;border-radius:8px;font-size:0.8rem;pointer-events:none;display:none;z-index:999;line-height:1.7;box-shadow:0 4px 12px rgba(0,0,0,0.25);}
 @media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr);}.charts-row{grid-template-columns:1fr;}}
+/* ── Tab navigation ───────────────────────────────────── */
+.bpm-tabs{display:flex;gap:0;border-bottom:2px solid #d0d7e3;margin-bottom:0;background:white;}
+.bpm-tab{padding:11px 24px;font-size:0.85rem;font-weight:600;color:#666;cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color 0.15s,border-color 0.15s;}
+.bpm-tab:hover{color:#2e6da4;}
+.bpm-tab.active{color:#2e6da4;border-bottom-color:#2e6da4;}
+.bpm-view{display:none;}.bpm-view.active{display:block;}
+/* ── Minutas list ─────────────────────────────────────── */
+.minutas-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;}
+.minutas-title{font-size:1.05rem;font-weight:700;color:#1a3a5c;}
+.btn-nueva-minuta{background:#2e6da4;color:white;border:none;border-radius:8px;padding:9px 18px;font-size:0.84rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.btn-nueva-minuta:hover{background:#1a3a5c;}
+.minutas-filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+.min-search{border:1.5px solid #d0d7e3;border-radius:8px;padding:7px 12px;font-size:0.84rem;min-width:220px;outline:none;color:#1a2e4a;}
+.min-search:focus{border-color:#2e6da4;}
+.min-filter-sel{border:1.5px solid #d0d7e3;border-radius:8px;padding:7px 12px;font-size:0.84rem;color:#1a2e4a;background:white;cursor:pointer;outline:none;}
+.min-filter-sel:focus{border-color:#2e6da4;}
+.minutas-table{width:100%;border-collapse:collapse;font-size:0.83rem;}
+.minutas-table thead th{background:#1a3a5c;color:white;padding:10px 14px;text-align:left;font-size:0.76rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;}
+.minutas-table tbody tr{border-bottom:1px solid #eef0f4;cursor:pointer;transition:background 0.1s;}
+.minutas-table tbody tr:hover{background:#f0f6ff;}
+.minutas-table td{padding:10px 14px;vertical-align:middle;}
+.min-folio{font-weight:700;color:#2e6da4;white-space:nowrap;}
+.min-status{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;white-space:nowrap;}
+.min-status-abierta{background:#d4edda;color:#155724;}
+.min-status-seguimiento{background:#fff3cd;color:#856404;}
+.min-status-cerrada{background:#e2e3e5;color:#383d41;}
+.min-actions{display:flex;gap:5px;}
+.min-btn{background:none;border:1px solid #d0d7e3;border-radius:6px;padding:4px 9px;font-size:0.75rem;cursor:pointer;color:#2e6da4;font-weight:600;}
+.min-btn:hover{background:#e8f0fe;border-color:#2e6da4;}
+.min-btn-del{color:#dc3545;border-color:rgba(220,53,69,0.3);}
+.min-btn-del:hover{background:#f8d7da;border-color:#dc3545;}
+.minutas-empty{text-align:center;padding:40px;color:#aaa;font-size:0.9rem;}
+/* ── Minuta modal ─────────────────────────────────────── */
+.minuta-modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px;}
+.minuta-modal{background:white;border-radius:14px;width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.25);overflow:hidden;}
+.minuta-modal-hdr{padding:16px 22px;background:#1a3a5c;color:white;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.minuta-modal-hdr h2{font-size:1rem;font-weight:700;margin:0;}
+.minuta-modal-hdr-btns{display:flex;gap:8px;}
+.minuta-modal-body{padding:22px;overflow-y:auto;flex:1;}
+.minuta-modal-footer{padding:14px 22px;border-top:1px solid #eef0f4;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0;}
+.min-form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.min-form-row.full{grid-template-columns:1fr;}
+.min-form-group{display:flex;flex-direction:column;gap:5px;}
+.min-form-group label{font-size:0.73rem;font-weight:700;text-transform:uppercase;color:#555;letter-spacing:0.04em;}
+.min-input{border:1.5px solid #d0d7e3;border-radius:8px;padding:8px 11px;font-size:0.84rem;color:#1a2e4a;outline:none;font-family:inherit;width:100%;}
+.min-input:focus{border-color:#2e6da4;box-shadow:0 0 0 2px rgba(46,109,164,0.1);}
+.min-textarea{border:1.5px solid #d0d7e3;border-radius:8px;padding:8px 11px;font-size:0.84rem;color:#1a2e4a;outline:none;font-family:inherit;width:100%;resize:vertical;min-height:70px;}
+.min-textarea:focus{border-color:#2e6da4;box-shadow:0 0 0 2px rgba(46,109,164,0.1);}
+.min-select{border:1.5px solid #d0d7e3;border-radius:8px;padding:8px 11px;font-size:0.84rem;color:#1a2e4a;background:white;cursor:pointer;outline:none;width:100%;}
+.min-select:focus{border-color:#2e6da4;}
+/* Acuerdos table inside modal */
+.acuerdos-section{margin-top:18px;}
+.acuerdos-section h3{font-size:0.8rem;font-weight:700;text-transform:uppercase;color:#1a3a5c;letter-spacing:0.04em;margin-bottom:10px;}
+.acuerdos-table{width:100%;border-collapse:collapse;font-size:0.8rem;margin-bottom:10px;}
+.acuerdos-table th{background:#f0f4f8;color:#1a3a5c;padding:8px 10px;text-align:left;font-size:0.73rem;font-weight:700;text-transform:uppercase;}
+.acuerdos-table td{padding:6px 8px;border-bottom:1px solid #eef0f4;vertical-align:top;}
+.ac-input{border:1px solid #d0d7e3;border-radius:5px;padding:5px 7px;font-size:0.78rem;width:100%;outline:none;font-family:inherit;}
+.ac-input:focus{border-color:#2e6da4;}
+.ac-sel{border:1px solid #d0d7e3;border-radius:5px;padding:5px 7px;font-size:0.78rem;width:100%;background:white;outline:none;}
+.ac-del-btn{background:none;border:none;color:#dc3545;cursor:pointer;font-size:0.9rem;padding:2px 5px;}
+.ac-del-btn:hover{background:#f8d7da;border-radius:4px;}
+.btn-add-acuerdo{background:#e8f0fe;color:#2e6da4;border:1.5px dashed #2e6da4;border-radius:7px;padding:7px 14px;font-size:0.8rem;font-weight:700;cursor:pointer;width:100%;}
+.btn-add-acuerdo:hover{background:#d0e4fb;}
+/* View modal (read-only) */
+.minuta-view-section{margin-bottom:18px;}
+.minuta-view-section h4{font-size:0.73rem;font-weight:700;text-transform:uppercase;color:#2e6da4;letter-spacing:0.04em;margin-bottom:6px;border-bottom:1px solid #e0e8f5;padding-bottom:4px;}
+.minuta-view-val{font-size:0.85rem;color:#1a2e4a;line-height:1.55;white-space:pre-wrap;}
+.acuerdos-view-table{width:100%;border-collapse:collapse;font-size:0.8rem;}
+.acuerdos-view-table th{background:#f0f4f8;padding:7px 10px;text-align:left;font-size:0.72rem;font-weight:700;text-transform:uppercase;color:#1a3a5c;}
+.acuerdos-view-table td{padding:7px 10px;border-bottom:1px solid #eef0f4;vertical-align:top;}
+.ac-status-pendiente{color:#856404;font-weight:700;}
+.ac-status-completado{color:#155724;font-weight:700;}
+.ac-status-cancelado{color:#721c24;font-weight:700;}
+@media(max-width:600px){.min-form-row{grid-template-columns:1fr;}.minuta-modal{max-height:98vh;border-radius:10px;}}
+
 </style>
 </head>
 <body>
@@ -115,7 +190,19 @@ td:nth-child(2){min-width:280px;line-height:1.45;}
     <span class="sync-indicator" id="hdr-sync">⏳ Conectando...</span>
   </div>
 </header>
+
+<!-- Tab navigation -->
+<div style="background:white;border-bottom:2px solid #d0d7e3;padding:0 32px;">
+  <div class="bpm-tabs">
+    <button class="bpm-tab active" id="tab-checklist" onclick="switchTab('checklist')">📋 Checklist BPM</button>
+    <button class="bpm-tab" id="tab-minutas" onclick="switchTab('minutas')">📝 Minutas</button>
+  </div>
+</div>
+
 <div class="container">
+
+<!-- CHECKLIST VIEW -->
+<div class="bpm-view active" id="view-checklist">
   <div class="kpi-row">
     <div class="kpi kpi-total" onclick="filterByStatus('')"><div class="kpi-label">Total Requisitos</div><div class="kpi-num" id="kpi-total">0</div><div class="kpi-pct">Evaluados en el checklist</div></div>
     <div class="kpi kpi-cumple" onclick="filterByStatus('Cumple')"><div class="kpi-label">✔ Cumple</div><div class="kpi-num" id="kpi-cumple">0</div><div class="kpi-pct" id="kpi-cumple-pct"></div><div class="kpi-bar"><div class="kpi-bar-fill" id="bar-cumple"></div></div></div>
@@ -168,7 +255,131 @@ td:nth-child(2){min-width:280px;line-height:1.45;}
       <span class="sync-badge" id="sync-badge">🔄 Cargando datos...</span>
     </div>
   </div>
+</div><!-- end .card (checklist) -->
+
+</div><!-- end view-checklist -->
+
+<!-- MINUTAS VIEW -->
+<div class="bpm-view" id="view-minutas">
+  <div class="card" style="margin-top:0;">
+    <div class="minutas-header">
+      <span class="minutas-title">📝 Minutas de Reunión BPM</span>
+      <button class="btn-nueva-minuta" id="btn-nueva-minuta" onclick="abrirModalMinuta(null)" style="display:none;">
+        + Nueva Minuta
+      </button>
+    </div>
+    <div class="minutas-filters">
+      <input type="text" class="min-search" id="min-search" placeholder="🔍 Buscar por folio, objetivo o participante..." oninput="renderMinutas()">
+      <select class="min-filter-sel" id="min-filter-estatus" onchange="renderMinutas()">
+        <option value="">Todos los estatus</option>
+        <option value="Abierta">🟢 Abierta</option>
+        <option value="En seguimiento">🟡 En seguimiento</option>
+        <option value="Cerrada">⚫ Cerrada</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="minutas-table">
+        <thead>
+          <tr>
+            <th>Folio</th><th>Fecha</th><th>Objetivo</th>
+            <th>Participantes</th><th style="width:80px;text-align:center;">Acuerdos</th>
+            <th style="width:130px;">Estatus</th>
+            <th style="width:100px;">Creada por</th>
+            <th style="width:120px;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="minutas-tbody"></tbody>
+      </table>
+      <div id="minutas-empty" class="minutas-empty" style="display:none;">Sin minutas registradas aún.</div>
+    </div>
+    <div style="padding-top:10px;font-size:0.78rem;color:#888;" id="minutas-count"></div>
+  </div>
+</div><!-- end view-minutas -->
+
+</div><!-- end .container -->
+
+<!-- Minuta form modal -->
+<div class="minuta-modal-bg" id="modal-minuta" style="display:none;" onclick="cerrarModalMinuta(event)">
+  <div class="minuta-modal" onclick="event.stopPropagation()">
+    <div class="minuta-modal-hdr">
+      <h2 id="modal-minuta-title">Nueva Minuta</h2>
+      <div class="minuta-modal-hdr-btns">
+        <button onclick="cerrarModalMinuta()" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:0.85rem;">✕ Cerrar</button>
+      </div>
+    </div>
+    <div class="minuta-modal-body">
+      <input type="hidden" id="min-edit-id" value="">
+      <div class="min-form-row">
+        <div class="min-form-group">
+          <label>Fecha de la reunión *</label>
+          <input type="date" class="min-input" id="min-fecha">
+        </div>
+        <div class="min-form-group">
+          <label>Estatus</label>
+          <select class="min-select" id="min-estatus">
+            <option value="Abierta">🟢 Abierta</option>
+            <option value="En seguimiento">🟡 En seguimiento</option>
+            <option value="Cerrada">⚫ Cerrada</option>
+          </select>
+        </div>
+      </div>
+      <div class="min-form-row full">
+        <div class="min-form-group">
+          <label>Objetivo de la reunión *</label>
+          <input type="text" class="min-input" id="min-objetivo" placeholder="Ej. Revisión de cumplimiento Sección 4 - Producción">
+        </div>
+      </div>
+      <div class="min-form-row full">
+        <div class="min-form-group">
+          <label>Participantes</label>
+          <textarea class="min-textarea" id="min-participantes" rows="2" placeholder="Nombres de los asistentes, uno por línea o separados por comas"></textarea>
+        </div>
+      </div>
+      <div class="min-form-row full">
+        <div class="min-form-group">
+          <label>Contexto / Notas generales</label>
+          <textarea class="min-textarea" id="min-notas" rows="3" placeholder="Observaciones generales, contexto de la reunión, temas discutidos..."></textarea>
+        </div>
+      </div>
+      <div class="acuerdos-section">
+        <h3>📌 Acuerdos y compromisos</h3>
+        <table class="acuerdos-table" id="acuerdos-edit-table">
+          <thead>
+            <tr>
+              <th style="width:32px;">#</th>
+              <th>Acuerdo / Compromiso</th>
+              <th style="width:150px;">Responsable</th>
+              <th style="width:130px;">Fecha límite</th>
+              <th style="width:120px;">Estatus</th>
+              <th style="width:36px;"></th>
+            </tr>
+          </thead>
+          <tbody id="acuerdos-edit-tbody"></tbody>
+        </table>
+        <button class="btn-add-acuerdo" onclick="agregarFilaAcuerdo()">+ Agregar acuerdo</button>
+      </div>
+    </div>
+    <div class="minuta-modal-footer">
+      <button onclick="cerrarModalMinuta()" style="border:1px solid #d0d7e3;background:white;color:#555;border-radius:8px;padding:9px 20px;cursor:pointer;font-size:0.84rem;font-weight:600;">Cancelar</button>
+      <button onclick="guardarMinuta()" id="btn-guardar-minuta" style="background:#2e6da4;color:white;border:none;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:0.84rem;font-weight:700;">💾 Guardar</button>
+    </div>
+  </div>
 </div>
+
+<!-- Minuta detail view modal -->
+<div class="minuta-modal-bg" id="modal-minuta-view" style="display:none;" onclick="cerrarViewMinuta(event)">
+  <div class="minuta-modal" onclick="event.stopPropagation()">
+    <div class="minuta-modal-hdr">
+      <h2 id="modal-view-title">Minuta</h2>
+      <div class="minuta-modal-hdr-btns">
+        <button id="btn-view-edit" onclick="editarDesdeView()" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:0.85rem;display:none;">✏ Editar</button>
+        <button onclick="cerrarViewMinuta()" style="background:rgba(255,255,255,.15);border:none;color:white;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:0.85rem;">✕ Cerrar</button>
+      </div>
+    </div>
+    <div class="minuta-modal-body" id="modal-view-body"></div>
+  </div>
+</div>
+
 <div class="preview-overlay" id="preview-overlay" style="display:none" onclick="closePreview(event)">
   <div class="preview-box" onclick="event.stopPropagation()">
     <div class="preview-header">
@@ -386,6 +597,10 @@ function startPolling() {
       });
       if (check && (check.estatusChanged || check.comentariosChanged)) {
         await loadAllData();
+      }
+      // Check minutas changes if on minutas tab
+      if (check && check.minutasChanged && _minutasLoaded) {
+        await loadMinutas();
       }
     } catch(e) {}
   }, POLL_INTERVAL);
@@ -786,6 +1001,354 @@ function exportarCSV() {
   var blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
   var url = URL.createObjectURL(blob),a = document.createElement('a');
   a.href=url; a.download='BPM_Dashboard.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ══════════════════════════════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.bpm-tab').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('.bpm-view').forEach(function(v){ v.classList.remove('active'); });
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('view-' + tab).classList.add('active');
+  if (tab === 'minutas') {
+    // Show Nueva Minuta button only for completo
+    var btn = document.getElementById('btn-nueva-minuta');
+    if (btn) btn.style.display = _userAccess === 'completo' ? 'flex' : 'none';
+    renderMinutas();
+    if (!_minutasLoaded && !_isDemoMode) loadMinutas();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MINUTAS DATA
+// ══════════════════════════════════════════════════════════════════
+var minutasList = [];         // array of minuta objects
+var _minutasLoaded = false;
+var _viewingMinutaId = null;  // ID of minuta currently in detail view
+
+async function loadMinutas() {
+  try {
+    var res = await spCall('BPM_GET_MINUTAS', {});
+    minutasList = [];
+    if (res && res.value) {
+      res.value.forEach(function(i) {
+        var f = i.fields || i;
+        var acuerdos = [];
+        try { acuerdos = JSON.parse(f.Acuerdos || '[]'); } catch(e) {}
+        minutasList.push({
+          spId: i.id,
+          folio: f.Title || '',
+          fecha: f.Fecha || '',
+          objetivo: f.Objetivo || '',
+          participantes: f.Participantes || '',
+          notas: f.Notas || '',
+          acuerdos: acuerdos,
+          estatus: f.Estatus || 'Abierta',
+          creadaPor: f.CreadaPor || '',
+          fechaCreacion: f.FechaCreacion || f.Created || ''
+        });
+      });
+      // Sort newest first
+      minutasList.sort(function(a,b){ return b.folio.localeCompare(a.folio); });
+    }
+    _minutasLoaded = true;
+    renderMinutas();
+  } catch(e) {
+    console.warn('[Minutas] loadMinutas error:', e.message);
+  }
+}
+
+function renderMinutas() {
+  var search = (document.getElementById('min-search') ? document.getElementById('min-search').value : '').toLowerCase().trim();
+  var filterEst = document.getElementById('min-filter-estatus') ? document.getElementById('min-filter-estatus').value : '';
+  var filtered = minutasList.filter(function(m) {
+    if (filterEst && m.estatus !== filterEst) return false;
+    if (search) {
+      var hay = (m.folio + ' ' + m.objetivo + ' ' + m.participantes + ' ' + m.creadaPor).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  var tbody = document.getElementById('minutas-tbody');
+  var empty = document.getElementById('minutas-empty');
+  var countEl = document.getElementById('minutas-count');
+  if (!tbody) return;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = 'block';
+    if (countEl) countEl.textContent = minutasList.length ? 'Sin resultados para los filtros.' : '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (countEl) countEl.textContent = 'Mostrando ' + filtered.length + ' de ' + minutasList.length + ' minuta(s)';
+
+  var estatusMap2 = {
+    'Abierta':       '<span class="min-status min-status-abierta">🟢 Abierta</span>',
+    'En seguimiento':'<span class="min-status min-status-seguimiento">🟡 En seguimiento</span>',
+    'Cerrada':       '<span class="min-status min-status-cerrada">⚫ Cerrada</span>'
+  };
+
+  tbody.innerHTML = filtered.map(function(m) {
+    var acPendientes = m.acuerdos.filter(function(a){ return a.estatus === 'Pendiente'; }).length;
+    var acTotal = m.acuerdos.length;
+    var acBadge = acTotal
+      ? '<span title="' + acPendientes + ' pendiente(s)" style="font-size:0.75rem;">' +
+        acTotal + ' (' + acPendientes + ' ⏳)</span>'
+      : '<span style="color:#bbb;font-size:0.75rem;">—</span>';
+    var fechaFmt = m.fecha ? fmtDate(m.fecha) : '—';
+    var canEdit = _userAccess === 'completo';
+    var editBtn = canEdit
+      ? '<button class="min-btn" onclick="event.stopPropagation();abrirModalMinuta(' + JSON.stringify(m.spId) + ')" title="Editar">✏</button>'
+      : '';
+    var delBtn = canEdit
+      ? '<button class="min-btn min-btn-del" onclick="event.stopPropagation();eliminarMinuta(' + JSON.stringify(m.spId) + ',' + JSON.stringify(m.folio) + ')" title="Eliminar">🗑</button>'
+      : '';
+    return '<tr onclick="verMinuta(' + JSON.stringify(m.spId) + ')" title="Ver detalle">' +
+      '<td class="min-folio">' + escHtml(m.folio) + '</td>' +
+      '<td style="white-space:nowrap;">' + fechaFmt + '</td>' +
+      '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(m.objetivo) + '">' + escHtml(m.objetivo) + '</td>' +
+      '<td style="font-size:0.78rem;color:#555;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(m.participantes) + '">' + escHtml(m.participantes||'—') + '</td>' +
+      '<td style="text-align:center;">' + acBadge + '</td>' +
+      '<td>' + (estatusMap2[m.estatus] || escHtml(m.estatus)) + '</td>' +
+      '<td style="font-size:0.78rem;color:#555;">' + escHtml(m.creadaPor) + '</td>' +
+      '<td><div class="min-actions">' +
+        '<button class="min-btn" onclick="event.stopPropagation();verMinuta(' + JSON.stringify(m.spId) + ')" title="Ver">👁</button>' +
+        editBtn + delBtn +
+      '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  try {
+    // Handle date-only strings (YYYY-MM-DD) without timezone shift
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      var parts = iso.split('-');
+      return parts[2] + '/' + parts[1] + '/' + parts[0].slice(2);
+    }
+    var d = new Date(iso);
+    return d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
+  } catch(e) { return iso; }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MINUTA FORM MODAL
+// ══════════════════════════════════════════════════════════════════
+var _acuerdosEdit = []; // working copy of acuerdos while editing
+
+function abrirModalMinuta(spId) {
+  var m = spId ? minutasList.find(function(x){ return x.spId === spId; }) : null;
+  document.getElementById('modal-minuta-title').textContent = m ? 'Editar Minuta — ' + m.folio : 'Nueva Minuta';
+  document.getElementById('min-edit-id').value = spId || '';
+  document.getElementById('min-fecha').value = m ? (m.fecha ? m.fecha.substring(0,10) : '') : new Date().toISOString().substring(0,10);
+  document.getElementById('min-objetivo').value = m ? (m.objetivo || '') : '';
+  document.getElementById('min-participantes').value = m ? (m.participantes || '') : '';
+  document.getElementById('min-notas').value = m ? (m.notas || '') : '';
+  document.getElementById('min-estatus').value = m ? (m.estatus || 'Abierta') : 'Abierta';
+  _acuerdosEdit = m ? JSON.parse(JSON.stringify(m.acuerdos || [])) : [];
+  renderAcuerdosEdit();
+  document.getElementById('modal-minuta').style.display = 'flex';
+  document.getElementById('btn-guardar-minuta').disabled = false;
+}
+
+function cerrarModalMinuta(e) {
+  if (e && e.target !== document.getElementById('modal-minuta')) return;
+  document.getElementById('modal-minuta').style.display = 'none';
+}
+
+function renderAcuerdosEdit() {
+  var tbody = document.getElementById('acuerdos-edit-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = _acuerdosEdit.map(function(ac, i) {
+    var statOpts = ['Pendiente','En proceso','Completado','Cancelado'].map(function(s) {
+      return '<option value="' + s + '"' + (ac.estatus===s?' selected':'') + '>' + s + '</option>';
+    }).join('');
+    return '<tr>' +
+      '<td style="color:#2e6da4;font-weight:700;text-align:center;">' + (i+1) + '</td>' +
+      '<td><input class="ac-input" value="' + escHtml(ac.desc||'') + '" placeholder="Descripción del acuerdo" ' +
+        'oninput="_acuerdosEdit[' + i + '].desc=this.value"></td>' +
+      '<td><input class="ac-input" value="' + escHtml(ac.resp||'') + '" placeholder="Nombre responsable" ' +
+        'oninput="_acuerdosEdit[' + i + '].resp=this.value"></td>' +
+      '<td><input type="date" class="ac-input" value="' + (ac.fecha||'') + '" ' +
+        'oninput="_acuerdosEdit[' + i + '].fecha=this.value"></td>' +
+      '<td><select class="ac-sel" onchange="_acuerdosEdit[' + i + '].estatus=this.value">' + statOpts + '</select></td>' +
+      '<td><button class="ac-del-btn" onclick="eliminarFilaAcuerdo(' + i + ')" title="Eliminar fila">✕</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+function agregarFilaAcuerdo() {
+  _acuerdosEdit.push({desc:'', resp:'', fecha:'', estatus:'Pendiente'});
+  renderAcuerdosEdit();
+  // Focus last row desc input
+  var inputs = document.querySelectorAll('#acuerdos-edit-tbody .ac-input');
+  if (inputs.length) inputs[inputs.length - (inputs.length % 4 || 4)].focus();
+}
+
+function eliminarFilaAcuerdo(idx) {
+  _acuerdosEdit.splice(idx, 1);
+  renderAcuerdosEdit();
+}
+
+async function guardarMinuta() {
+  var fecha = document.getElementById('min-fecha').value.trim();
+  var objetivo = document.getElementById('min-objetivo').value.trim();
+  if (!fecha || !objetivo) { showToast('Fecha y objetivo son requeridos', 'err'); return; }
+
+  var btn = document.getElementById('btn-guardar-minuta');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  // Sync acuerdos from DOM inputs (they update _acuerdosEdit live via oninput,
+  // but let's read DOM for safety)
+  var rows = document.querySelectorAll('#acuerdos-edit-tbody tr');
+  var acuerdos = [];
+  rows.forEach(function(row) {
+    var inputs = row.querySelectorAll('.ac-input');
+    var sel = row.querySelector('.ac-sel');
+    if (inputs.length >= 3) {
+      var desc = inputs[0].value.trim();
+      if (desc) acuerdos.push({
+        desc: desc,
+        resp: inputs[1].value.trim(),
+        fecha: inputs[2].value,
+        estatus: sel ? sel.value : 'Pendiente'
+      });
+    }
+  });
+
+  var editId = document.getElementById('min-edit-id').value;
+  var payload = {
+    Fecha: fecha,
+    Objetivo: objetivo,
+    Participantes: document.getElementById('min-participantes').value.trim(),
+    Notas: document.getElementById('min-notas').value.trim(),
+    Acuerdos: JSON.stringify(acuerdos),
+    Estatus: document.getElementById('min-estatus').value,
+    CreadaPor: _userName,
+    FechaCreacion: editId ? undefined : new Date().toISOString()
+  };
+
+  try {
+    if (editId) {
+      // Update existing
+      await spCall('BPM_UPDATE_MINUTA', {spId: editId, data: payload});
+      var existing = minutasList.find(function(m){ return m.spId === editId; });
+      if (existing) {
+        existing.fecha = payload.Fecha;
+        existing.objetivo = payload.Objetivo;
+        existing.participantes = payload.Participantes;
+        existing.notas = payload.Notas;
+        existing.acuerdos = acuerdos;
+        existing.estatus = payload.Estatus;
+      }
+      showToast('✔ Minuta actualizada', 'ok');
+    } else {
+      // Create new — generate folio
+      var nextNum = minutasList.length + 1;
+      payload.Title = 'MIN-' + String(nextNum).padStart(3,'0');
+      var res = await spCall('BPM_CREATE_MINUTA', {data: payload});
+      minutasList.unshift({
+        spId: res.id,
+        folio: payload.Title,
+        fecha: payload.Fecha,
+        objetivo: payload.Objetivo,
+        participantes: payload.Participantes,
+        notas: payload.Notas,
+        acuerdos: acuerdos,
+        estatus: payload.Estatus,
+        creadaPor: _userName,
+        fechaCreacion: payload.FechaCreacion
+      });
+      showToast('✔ Minuta creada: ' + payload.Title, 'ok');
+    }
+    cerrarModalMinuta();
+    renderMinutas();
+  } catch(e) {
+    showToast('Error al guardar minuta', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Guardar';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MINUTA DETAIL VIEW
+// ══════════════════════════════════════════════════════════════════
+function verMinuta(spId) {
+  var m = minutasList.find(function(x){ return x.spId === spId; });
+  if (!m) return;
+  _viewingMinutaId = spId;
+  document.getElementById('modal-view-title').textContent = m.folio + ' — ' + fmtDate(m.fecha);
+
+  // Show edit button only for completo
+  var editBtn = document.getElementById('btn-view-edit');
+  if (editBtn) editBtn.style.display = _userAccess === 'completo' ? 'inline-block' : 'none';
+
+  var estatusColor = m.estatus==='Abierta'?'#155724':m.estatus==='En seguimiento'?'#856404':'#383d41';
+  var estatusBg = m.estatus==='Abierta'?'#d4edda':m.estatus==='En seguimiento'?'#fff3cd':'#e2e3e5';
+
+  var acuerdosHtml = '';
+  if (m.acuerdos && m.acuerdos.length) {
+    var statColors = {Pendiente:'ac-status-pendiente','En proceso':'ac-status-pendiente',Completado:'ac-status-completado',Cancelado:'ac-status-cancelado'};
+    acuerdosHtml = '<table class="acuerdos-view-table">' +
+      '<thead><tr><th>#</th><th>Acuerdo</th><th>Responsable</th><th>Fecha límite</th><th>Estatus</th></tr></thead><tbody>' +
+      m.acuerdos.map(function(ac, i) {
+        var cls = statColors[ac.estatus] || '';
+        return '<tr>' +
+          '<td style="color:#2e6da4;font-weight:700;">' + (i+1) + '</td>' +
+          '<td>' + escHtml(ac.desc||'') + '</td>' +
+          '<td style="color:#555;">' + escHtml(ac.resp||'—') + '</td>' +
+          '<td style="white-space:nowrap;">' + (ac.fecha ? fmtDate(ac.fecha) : '—') + '</td>' +
+          '<td class="' + cls + '">' + escHtml(ac.estatus||'') + '</td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  } else {
+    acuerdosHtml = '<p style="color:#aaa;font-size:0.83rem;font-style:italic;">Sin acuerdos registrados.</p>';
+  }
+
+  document.getElementById('modal-view-body').innerHTML =
+    '<div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">' +
+      '<span style="background:' + estatusBg + ';color:' + estatusColor + ';border-radius:20px;padding:4px 14px;font-size:0.78rem;font-weight:700;">' + escHtml(m.estatus) + '</span>' +
+      '<span style="font-size:0.78rem;color:#888;">Creada por ' + escHtml(m.creadaPor) + ' · ' + fmtTime(m.fechaCreacion) + '</span>' +
+    '</div>' +
+    '<div class="minuta-view-section"><h4>📅 Fecha de reunión</h4><div class="minuta-view-val">' + fmtDate(m.fecha) + '</div></div>' +
+    '<div class="minuta-view-section"><h4>🎯 Objetivo</h4><div class="minuta-view-val">' + escHtml(m.objetivo) + '</div></div>' +
+    (m.participantes ? '<div class="minuta-view-section"><h4>👥 Participantes</h4><div class="minuta-view-val">' + escHtml(m.participantes) + '</div></div>' : '') +
+    (m.notas ? '<div class="minuta-view-section"><h4>📋 Contexto / Notas</h4><div class="minuta-view-val">' + escHtml(m.notas) + '</div></div>' : '') +
+    '<div class="minuta-view-section"><h4>📌 Acuerdos y compromisos</h4>' + acuerdosHtml + '</div>';
+
+  document.getElementById('modal-minuta-view').style.display = 'flex';
+}
+
+function cerrarViewMinuta(e) {
+  if (e && e.target !== document.getElementById('modal-minuta-view')) return;
+  document.getElementById('modal-minuta-view').style.display = 'none';
+  _viewingMinutaId = null;
+}
+
+function editarDesdeView() {
+  if (!_viewingMinutaId) return;
+  document.getElementById('modal-minuta-view').style.display = 'none';
+  abrirModalMinuta(_viewingMinutaId);
+}
+
+async function eliminarMinuta(spId, folio) {
+  if (!confirm('¿Eliminar la minuta ' + folio + '? Esta acción no se puede deshacer.')) return;
+  try {
+    await spCall('BPM_DELETE_MINUTA', {spId: spId});
+    minutasList = minutasList.filter(function(m){ return m.spId !== spId; });
+    renderMinutas();
+    showToast('Minuta ' + folio + ' eliminada', 'ok');
+  } catch(e) {
+    showToast('Error al eliminar minuta', 'err');
+  }
 }
 
 applyFilters();
