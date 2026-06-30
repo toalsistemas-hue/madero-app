@@ -1036,7 +1036,13 @@ async function loadMinutas() {
       res.value.forEach(function(i) {
         var f = i.fields || i;
         var acuerdos = [];
-        try { acuerdos = JSON.parse(f.Acuerdos || '[]'); } catch(e) {}
+        try {
+          var rawAc = f.Acuerdos || f.acuerdos || '';
+          // SP sometimes truncates multi-line fields — attempt parse, fallback to []
+          if (rawAc && rawAc.trim().startsWith('[')) {
+            acuerdos = JSON.parse(rawAc);
+          }
+        } catch(e) { acuerdos = []; }
         minutasList.push({
           spId: i.id,
           folio: f.Title || '',

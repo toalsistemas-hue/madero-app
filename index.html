@@ -3408,8 +3408,19 @@ window.addEventListener('message', async function(e) {
 
     // ── GET MINUTAS ──────────────────────────────────────────────
     } else if (action === 'BPM_GET_MINUTAS') {
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields&$top=500&$orderby=fields/Title%20desc');
-      reply(null, {value: res.value||[]});
+      // Use $select on expanded fields to get full multi-line text without SP truncation
+      var selectFields = 'Title,Fecha,Objetivo,Participantes,Notas,Acuerdos,Estatus,CreadaPor,FechaCreacion';
+      var res = await graphGet(
+        'sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields($select='+selectFields+')&$top=500'
+      );
+      // Sort client-side: newest folio first
+      var items = res.value || [];
+      items.sort(function(a,b){
+        var fa = (a.fields&&a.fields.Title)||'';
+        var fb = (b.fields&&b.fields.Title)||'';
+        return fb.localeCompare(fa);
+      });
+      reply(null, {value: items});
 
     // ── CREATE MINUTA ─────────────────────────────────────────────
     } else if (action === 'BPM_CREATE_MINUTA') {
