@@ -3286,9 +3286,11 @@ window.addEventListener('message', async function(e) {
 
     // ── POLL CHECK ───────────────────────────────────────────────
     } else if (action === 'BPM_POLL_CHECK') {
-      var [estR, comR, minR, docCountR] = await Promise.all([
+      var [estR, comCountR, minR, docCountR] = await Promise.all([
         graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
-        graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}) ,
+        // Fetch ALL comment ids+timestamps (not just $top=1) so we can detect deletions
+        // via count change, not just creations via newest-timestamp change.
+        graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=2000').catch(function(){return {value:[]};}),
         graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
         // Count total files across all punto_XXX subfolders — more reliable than folder
         // lastModifiedDateTime, which SP does not always bubble up from nested children.
@@ -3316,14 +3318,21 @@ window.addEventListener('message', async function(e) {
         })()
       ]);
       var newEstMod = estR.value&&estR.value.length ? estR.value[0].lastModifiedDateTime : '';
-      var newComMod = comR.value&&comR.value.length ? comR.value[0].lastModifiedDateTime : '';
+      var comItems = comCountR.value || [];
+      var newComCount = comItems.length;
+      var newComLatest = comItems.reduce(function(mx,i){ return i.lastModifiedDateTime>mx?i.lastModifiedDateTime:mx; }, '');
+      var prevComCount = parseInt(payload.lastComCount != null ? payload.lastComCount : -1);
       var newMinMod = minR.value&&minR.value.length ? minR.value[0].lastModifiedDateTime : '';
       var newDocCount = docCountR ? docCountR.count : 0;
       var newDocLatest = docCountR ? docCountR.latest : '';
       var prevDocCount = parseInt(payload.lastDocsCount || -1);
       reply(null, {
         estatusChanged: newEstMod && newEstMod !== payload.lastEstatusMod,
-        comentariosChanged: newComMod && newComMod !== payload.lastComMod,
+        // Changed if count differs (covers deletes) OR newest timestamp differs (covers creates/edits)
+        comentariosChanged: (prevComCount >= 0 && newComCount !== prevComCount) ||
+                            (newComLatest && newComLatest !== (payload.lastComMod || '')),
+        comCount: newComCount,
+        comLatest: newComLatest,
         minutasChanged: newMinMod && newMinMod !== (payload.lastMinutasMod || ''),
         docsChanged: (prevDocCount >= 0 && newDocCount !== prevDocCount) ||
                      (newDocLatest && newDocLatest !== (payload.lastDocsLatest || '')),

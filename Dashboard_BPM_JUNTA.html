@@ -416,6 +416,7 @@ let documentosMap = {};
 
 let _lastEstatusMod = '';
 let _lastComMod = '';
+let _lastComCount = -1;    // total de comentarios (detecta eliminaciones que no cambian el más reciente)
 let _lastDocsCount = -1;   // total de archivos en BPM_Documentos (todas las subcarpetas)
 let _lastDocsLatest = '';  // timestamp del archivo más reciente
 let _pollTimer = null;
@@ -564,6 +565,7 @@ async function loadAllData() {
     });
     _lastEstatusMod = estRes && estRes._lastMod ? estRes._lastMod : '';
     _lastComMod = comRes && comRes._lastMod ? comRes._lastMod : '';
+    _lastComCount = comentariosList.length;
     document.getElementById('hdr-sync').textContent = '✅ ' + fmtTime(new Date().toISOString());
     document.getElementById('sync-badge').textContent = '✅ Tiempo real · ' + fmtTime(new Date().toISOString());
   } catch(e) {
@@ -614,6 +616,7 @@ function startPolling() {
       var check = await spCall('BPM_POLL_CHECK', {
         lastEstatusMod: _lastEstatusMod,
         lastComMod: _lastComMod,
+        lastComCount: _lastComCount,
         lastDocsCount: _lastDocsCount,
         lastDocsLatest: _lastDocsLatest
       });
@@ -630,6 +633,8 @@ function startPolling() {
       }
       // Always sync the baseline so subsequent polls compare against latest known state
       if (check) {
+        if (typeof check.comCount === 'number') _lastComCount = check.comCount;
+        if (check.comLatest) _lastComMod = check.comLatest;
         if (typeof check.docsCount === 'number') _lastDocsCount = check.docsCount;
         if (check.docsLatest) _lastDocsLatest = check.docsLatest;
       }
@@ -711,6 +716,9 @@ async function enviarComentario(puntoID) {
       fecha: payload.FechaComentario,
       spId: res && res.id ? res.id : null
     });
+    // Sync local baseline so this user's own next poll doesn't re-trigger a reload
+    _lastComCount = comentariosList.length;
+    _lastComMod = payload.FechaComentario;
     inp.value = '';
     inp.style.height = 'auto';
     var hiloEl = document.getElementById('hilo-' + puntoID);
@@ -729,6 +737,8 @@ async function eliminarComentario(spId, puntoID) {
   try {
     await spCall('BPM_DELETE_COMENTARIO', {spId: spId});
     comentariosList = comentariosList.filter(function(c){ return c.spId !== spId; });
+    // Sync local baseline so this user's own next poll doesn't re-trigger a reload
+    _lastComCount = comentariosList.length;
     var hiloEl = document.getElementById('hilo-' + puntoID);
     if (hiloEl) hiloEl.innerHTML = renderHiloMensajes(puntoID);
     showToast('Comentario eliminado', 'ok');
