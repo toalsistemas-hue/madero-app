@@ -759,10 +759,10 @@ function renderHiloMensajes(puntoID) {
 function renderDocCell(puntoID) {
   var docs = documentosMap[puntoID] || [];
   var html = '<div class="doc-list">';
-  docs.forEach(function(doc, docIdx) {
-    // Store doc data in a temporary map keyed by index to avoid quoting issues
-    if (!window._docCellMap) window._docCellMap = {};
-    var cellKey = 'doc_' + puntoID + '_' + docIdx;
+  if (!window._docCellMap) window._docCellMap = {};
+  docs.forEach(function(doc) {
+    // Key by the document's own stable SP item id (never reused, never stale)
+    var cellKey = 'doc_' + doc.id;
     window._docCellMap[cellKey] = {
       previewUrl: doc.previewUrl||'',
       downloadUrl: doc.downloadUrl||'',
@@ -828,6 +828,8 @@ async function eliminarDoc(docId, puntoID) {
     await spCall('BPM_DELETE_DOC', {docId: docId});
     if (documentosMap[puntoID])
       documentosMap[puntoID] = documentosMap[puntoID].filter(function(d){ return d.id !== docId; });
+    // Remove stale entry from the click-handler lookup map
+    if (window._docCellMap) delete window._docCellMap['doc_' + docId];
     var cell = document.querySelector('[data-doc-cell="' + puntoID + '"]');
     if (cell) cell.innerHTML = renderDocCell(puntoID);
     showToast('Documento eliminado', 'ok');
@@ -980,6 +982,9 @@ function updateKPIsAndCharts() {
 function applyFilters() {
   const f = getFiltered();
   updateKPIsAndCharts();
+  // Reset doc cell map on every full render to avoid stale entries
+  // from a previous render leaking into the current click handler
+  window._docCellMap = {};
   const tbody = document.getElementById('table-body');
   tbody.innerHTML = '';
   document.getElementById('no-results').style.display = f.length ? 'none' : 'block';
@@ -1051,11 +1056,20 @@ function applyFilters() {
       }
       // Document actions (preview / delete)
       var docBtn = e.target.closest('.doc-action');
-      if (docBtn && window._docCellMap) {
-        var d = window._docCellMap[docBtn.dataset.key];
-        if (d) {
-          if (docBtn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
-          else if (docBtn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
+      console.log('[BPM-DEBUG] click target:', e.target.tagName, '| closest .doc-action:', !!docBtn, '| docCellMap exists:', !!window._docCellMap);
+      if (docBtn) {
+        console.log('[BPM-DEBUG] docBtn key:', docBtn.dataset.key, '| action:', docBtn.dataset.action);
+        if (window._docCellMap) {
+          var d = window._docCellMap[docBtn.dataset.key];
+          console.log('[BPM-DEBUG] map entry found:', !!d, d);
+          if (d) {
+            if (docBtn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
+            else if (docBtn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
+          } else {
+            console.warn('[BPM-DEBUG] No entry in _docCellMap for key:', docBtn.dataset.key, '| Available keys:', Object.keys(window._docCellMap));
+          }
+        } else {
+          console.warn('[BPM-DEBUG] window._docCellMap is undefined/null at click time');
         }
       }
     });
