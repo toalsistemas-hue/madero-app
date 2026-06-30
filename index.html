@@ -3265,8 +3265,17 @@ window.addEventListener('message', async function(e) {
 
     // ── GET ESTATUS ──────────────────────────────────────────────
     if (action === 'BPM_GET_ESTATUS') {
-      // Top-level $orderby is valid; use $select on fields to avoid SP field truncation
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields($select=Title,PuntoID,Estatus,ModificadoPor,FechaModif)&$top=200&$orderby=lastModifiedDateTime%20desc');
+      // Fetch without $select first to discover actual SP internal field names
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields&$top=200');
+      if (res.value && res.value.length) {
+        console.log('[BPM_Estatus] SP field names (from existing item):', Object.keys(res.value[0].fields||{}).join(', '));
+      } else {
+        // List is empty — inspect schema to get internal column names
+        try {
+          var schemaRes = await graphGet('sites/'+sid+'/lists/BPM_Estatus/columns');
+          console.log('[BPM_Estatus] Column schema:', (schemaRes.value||[]).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
+        } catch(se) { console.warn('[BPM_Estatus] schema error:', se.message); }
+      }
       var lastMod = res.value && res.value.length ? (res.value[0].lastModifiedDateTime||'') : '';
       reply(null, {value: res.value||[], _lastMod: lastMod});
 
@@ -3301,13 +3310,23 @@ window.addEventListener('message', async function(e) {
 
     // ── CREATE ESTATUS ───────────────────────────────────────────
     } else if (action === 'BPM_CREATE_ESTATUS') {
-      var res = await graphPost('sites/'+sid+'/lists/BPM_Estatus/items', {fields: payload.data});
-      reply(null, {id: res.id});
+      try {
+        var res = await graphPost('sites/'+sid+'/lists/BPM_Estatus/items', {fields: payload.data});
+        reply(null, {id: res.id});
+      } catch(ex) {
+        console.error('[BPM_CREATE_ESTATUS] Error:', ex.message, 'Payload:', JSON.stringify(payload.data));
+        throw ex;
+      }
 
     // ── UPDATE ESTATUS ───────────────────────────────────────────
     } else if (action === 'BPM_UPDATE_ESTATUS') {
-      await graphPatch('sites/'+sid+'/lists/BPM_Estatus/items/'+payload.spId+'/fields', payload.data);
-      reply(null, 'ok');
+      try {
+        await graphPatch('sites/'+sid+'/lists/BPM_Estatus/items/'+payload.spId+'/fields', payload.data);
+        reply(null, 'ok');
+      } catch(ex) {
+        console.error('[BPM_UPDATE_ESTATUS] Error:', ex.message, 'Payload:', JSON.stringify(payload.data));
+        throw ex;
+      }
 
     // ── CREATE COMENTARIO ────────────────────────────────────────
     } else if (action === 'BPM_CREATE_COMENTARIO') {
