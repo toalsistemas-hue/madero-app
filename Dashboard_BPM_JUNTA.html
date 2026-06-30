@@ -711,7 +711,10 @@ function renderHiloMensajes(puntoID) {
   if (!msgs.length) return '<div style="font-size:0.74rem;color:#bbb;font-style:italic;padding:2px 0;">Sin comentarios</div>';
   return msgs.map(function(c) {
     var canDel = (_userAccess === 'completo' || c.autor === _userName) && c.spId;
-    var delBtn = canDel ? '<button class="hilo-del" onclick="eliminarComentario(' + JSON.stringify(c.spId) + ',' + puntoID + ')" title="Eliminar">✕</button>' : '';
+    // Use data-* attributes to avoid quoting issues with SP item IDs in onclick
+    var delBtn = canDel
+      ? '<button class="hilo-del" data-com-id="' + escHtml(String(c.spId)) + '" data-punto-id="' + puntoID + '" title="Eliminar">✕</button>'
+      : '';
     return '<div class="hilo-msg">' + delBtn +
       '<span class="hilo-author">' + escHtml(c.autor) + '</span>' +
       '<span class="hilo-time">' + fmtTime(c.fecha) + '</span>' +
@@ -725,14 +728,23 @@ function renderHiloMensajes(puntoID) {
 function renderDocCell(puntoID) {
   var docs = documentosMap[puntoID] || [];
   var html = '<div class="doc-list">';
-  docs.forEach(function(doc) {
+  docs.forEach(function(doc, docIdx) {
+    // Store doc data in a temporary map keyed by index to avoid quoting issues
+    if (!window._docCellMap) window._docCellMap = {};
+    var cellKey = 'doc_' + puntoID + '_' + docIdx;
+    window._docCellMap[cellKey] = {
+      previewUrl: doc.previewUrl||'',
+      downloadUrl: doc.downloadUrl||'',
+      name: doc.name,
+      id: doc.id,
+      puntoID: puntoID
+    };
     html += '<div class="doc-item">' +
       '<span class="doc-name" title="' + escHtml(doc.name) + '">' + escHtml(doc.name) + '</span>' +
-      '<button class="doc-btn" onclick="previewDoc(' + JSON.stringify(doc.previewUrl||'') + ',' +
-        JSON.stringify(doc.downloadUrl||'') + ',' + JSON.stringify(doc.name) + ')" title="Vista previa">👁</button>' +
+      '<button class="doc-btn doc-action" data-action="preview" data-key="' + cellKey + '" title="Vista previa">👁</button>' +
       '<a class="doc-btn" href="' + escHtml(doc.downloadUrl||'#') + '" target="_blank" title="Descargar">⬇</a>' +
       (_userAccess === 'completo'
-        ? '<button class="doc-btn doc-btn-del" onclick="eliminarDoc(' + JSON.stringify(doc.id) + ',' + puntoID + ')" title="Eliminar">🗑</button>'
+        ? '<button class="doc-btn doc-btn-del doc-action" data-action="del" data-key="' + cellKey + '" title="Eliminar">🗑</button>'
         : '') +
       '</div>';
   });
@@ -972,13 +984,32 @@ function applyFilters() {
     tbody.appendChild(tr);
   });
   document.getElementById('table-count').textContent = 'Mostrando ' + f.length + ' de ' + RAW.length + ' requisitos';
-  // Keydown handler via delegation (avoids quote escaping in inline HTML)
+  // Keydown handler for hilo textarea
   document.getElementById('table-body').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey && e.target && e.target.classList.contains('hilo-input')) {
       e.preventDefault();
       var pid = parseInt(e.target.dataset.punto);
       if (pid) enviarComentario(pid);
     }
+  }, {once: true});
+
+  // Click delegation for hilo delete buttons
+  document.getElementById('table-body').addEventListener('click', function(e) {
+    var btn = e.target.closest('.hilo-del');
+    if (!btn) return;
+    var comId = btn.dataset.comId;
+    var puntoId = parseInt(btn.dataset.puntoId);
+    if (comId && puntoId) eliminarComentario(comId, puntoId);
+  }, {once: true});
+
+  // Click delegation for document action buttons
+  document.getElementById('table-body').addEventListener('click', function(e) {
+    var btn = e.target.closest('.doc-action');
+    if (!btn || !window._docCellMap) return;
+    var d = window._docCellMap[btn.dataset.key];
+    if (!d) return;
+    if (btn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
+    else if (btn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
   }, {once: true});
 }
 
@@ -1098,6 +1129,7 @@ function renderMinutas() {
     'Cerrada':       '<span class="min-status min-status-cerrada">⚫ Cerrada</span>'
   };
 
+  // Build rows using data-* attributes to avoid quote-escaping issues with spId in onclick
   tbody.innerHTML = filtered.map(function(m) {
     var acPendientes = m.acuerdos.filter(function(a){ return a.estatus === 'Pendiente'; }).length;
     var acTotal = m.acuerdos.length;
@@ -1108,12 +1140,12 @@ function renderMinutas() {
     var fechaFmt = m.fecha ? fmtDate(m.fecha) : '—';
     var canEdit = _userAccess === 'completo';
     var editBtn = canEdit
-      ? '<button class="min-btn" onclick="event.stopPropagation();abrirModalMinuta(' + JSON.stringify(m.spId) + ')" title="Editar">✏</button>'
+      ? '<button class="min-btn min-action" data-action="edit" data-id="' + escHtml(m.spId) + '" title="Editar">✏</button>'
       : '';
     var delBtn = canEdit
-      ? '<button class="min-btn min-btn-del" onclick="event.stopPropagation();eliminarMinuta(' + JSON.stringify(m.spId) + ',' + JSON.stringify(m.folio) + ')" title="Eliminar">🗑</button>'
+      ? '<button class="min-btn min-btn-del min-action" data-action="del" data-id="' + escHtml(m.spId) + '" data-folio="' + escHtml(m.folio) + '" title="Eliminar">🗑</button>'
       : '';
-    return '<tr onclick="verMinuta(' + JSON.stringify(m.spId) + ')" title="Ver detalle">' +
+    return '<tr class="min-row" data-id="' + escHtml(m.spId) + '" style="cursor:pointer;" title="Ver detalle">' +
       '<td class="min-folio">' + escHtml(m.folio) + '</td>' +
       '<td style="white-space:nowrap;">' + fechaFmt + '</td>' +
       '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(m.objetivo) + '">' + escHtml(m.objetivo) + '</td>' +
@@ -1122,11 +1154,29 @@ function renderMinutas() {
       '<td>' + (estatusMap2[m.estatus] || escHtml(m.estatus)) + '</td>' +
       '<td style="font-size:0.78rem;color:#555;">' + escHtml(m.creadaPor) + '</td>' +
       '<td><div class="min-actions">' +
-        '<button class="min-btn" onclick="event.stopPropagation();verMinuta(' + JSON.stringify(m.spId) + ')" title="Ver">👁</button>' +
+        '<button class="min-btn min-action" data-action="ver" data-id="' + escHtml(m.spId) + '" title="Ver">👁</button>' +
         editBtn + delBtn +
       '</div></td>' +
       '</tr>';
   }).join('');
+
+  // Event delegation — single listener handles all row/button clicks
+  tbody.onclick = function(e) {
+    // Find the action button or the row
+    var btn = e.target.closest('.min-action');
+    if (btn) {
+      e.stopPropagation();
+      var id = btn.dataset.id;
+      var action = btn.dataset.action;
+      if (action === 'ver')  verMinuta(id);
+      else if (action === 'edit') abrirModalMinuta(id);
+      else if (action === 'del')  eliminarMinuta(id, btn.dataset.folio);
+      return;
+    }
+    // Click on row → view
+    var row = e.target.closest('.min-row');
+    if (row) verMinuta(row.dataset.id);
+  };
 }
 
 function fmtDate(iso) {
