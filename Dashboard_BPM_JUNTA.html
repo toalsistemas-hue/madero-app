@@ -507,6 +507,17 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Map UI estatus values ↔ SP stored values
+// SP Choice field uses plain text (no special chars)
+function estatusToSP(val) {
+  if (val === '☐ N/A') return 'N/A';
+  return val; // 'Cumple' and 'No cumple' are identical
+}
+function estatusFromSP(val) {
+  if (val === 'N/A') return '☐ N/A';
+  return val || '☐ N/A';
+}
+
 // ══════════════════════════════════════════════════════════════════
 // CARGA DE DATOS
 // ══════════════════════════════════════════════════════════════════
@@ -524,7 +535,7 @@ async function loadAllData() {
         var f = i.fields || i;
         var pid = parseInt(f.PuntoID || 0);
         if (pid) estatusMap[pid] = {
-          estatus: f.Estatus || '☐ N/A',
+          estatus: estatusFromSP(f.Estatus || 'N/A'),
           modificadoPor: f.ModificadoPor || '',
           fechaModif: f.FechaModif || f.Modified || '',
           spId: i.id
@@ -616,7 +627,7 @@ async function cambiarEstatus(puntoID, nuevoEstatus, selectEl) {
     var existing = estatusMap[puntoID];
     var payload = {
       PuntoID: puntoID,
-      Estatus: nuevoEstatus,
+      Estatus: estatusToSP(nuevoEstatus),  // map ☐ N/A → N/A for SP Choice field
       ModificadoPor: _userName,
       FechaModif: new Date().toISOString(),
       Title: 'punto_' + String(puntoID).padStart(3,'0')
