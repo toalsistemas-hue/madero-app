@@ -1025,33 +1025,41 @@ function applyFilters() {
     tbody.appendChild(tr);
   });
   document.getElementById('table-count').textContent = 'Mostrando ' + f.length + ' de ' + RAW.length + ' requisitos';
-  // Keydown handler for hilo textarea
-  document.getElementById('table-body').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey && e.target && e.target.classList.contains('hilo-input')) {
-      e.preventDefault();
-      var pid = parseInt(e.target.dataset.punto);
-      if (pid) enviarComentario(pid);
-    }
-  }, {once: true});
+  // Event delegation setup — attached ONCE per table-body element, not per render.
+  // Using {once:true} previously caused listeners to self-remove after the first
+  // click/keydown, leaving subsequent re-renders (e.g. from polling) with no handlers.
+  var _tbody = document.getElementById('table-body');
+  if (_tbody && !_tbody._bpmDelegationBound) {
+    _tbody._bpmDelegationBound = true;
 
-  // Click delegation for hilo delete buttons
-  document.getElementById('table-body').addEventListener('click', function(e) {
-    var btn = e.target.closest('.hilo-del');
-    if (!btn) return;
-    var comId = btn.dataset.comId;
-    var puntoId = parseInt(btn.dataset.puntoId);
-    if (comId && puntoId) eliminarComentario(comId, puntoId);
-  }, {once: true});
+    _tbody.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey && e.target && e.target.classList.contains('hilo-input')) {
+        e.preventDefault();
+        var pid = parseInt(e.target.dataset.punto);
+        if (pid) enviarComentario(pid);
+      }
+    });
 
-  // Click delegation for document action buttons
-  document.getElementById('table-body').addEventListener('click', function(e) {
-    var btn = e.target.closest('.doc-action');
-    if (!btn || !window._docCellMap) return;
-    var d = window._docCellMap[btn.dataset.key];
-    if (!d) return;
-    if (btn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
-    else if (btn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
-  }, {once: true});
+    _tbody.addEventListener('click', function(e) {
+      // Hilo delete
+      var delBtn = e.target.closest('.hilo-del');
+      if (delBtn) {
+        var comId = delBtn.dataset.comId;
+        var puntoId = parseInt(delBtn.dataset.puntoId);
+        if (comId && puntoId) eliminarComentario(comId, puntoId);
+        return;
+      }
+      // Document actions (preview / delete)
+      var docBtn = e.target.closest('.doc-action');
+      if (docBtn && window._docCellMap) {
+        var d = window._docCellMap[docBtn.dataset.key];
+        if (d) {
+          if (docBtn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
+          else if (docBtn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
+        }
+      }
+    });
+  }
 }
 
 function filterByStatus(s) { document.getElementById('f-estatus').value=s; applyFilters(); }
