@@ -761,13 +761,12 @@ function renderDocCell(puntoID) {
       '</div>';
   });
   html += '</div>';
-  if (_userAccess === 'completo') {
-    html += '<label class="doc-upload-btn" id="doc-lbl-' + puntoID + '">' +
-      '<input type="file" class="doc-upload-input" id="doc-inp-' + puntoID + '" multiple ' +
-      'accept=".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.png,.jpg,.jpeg,.gif,.webp" ' +
-      'onchange="subirDocumento(' + puntoID + ',this)">' +
-      '📎 Adjuntar</label>';
-  }
+  // Subir documentos habilitado para TODOS los usuarios (completo y lectura)
+  html += '<label class="doc-upload-btn" id="doc-lbl-' + puntoID + '">' +
+    '<input type="file" class="doc-upload-input" id="doc-inp-' + puntoID + '" multiple ' +
+    'accept=".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.png,.jpg,.jpeg,.gif,.webp" ' +
+    'onchange="subirDocumento(' + puntoID + ',this)">' +
+    '📎 Adjuntar</label>';
   return html;
 }
 
@@ -984,7 +983,8 @@ function applyFilters() {
     }
     var areas = getAreas(d.area).join(' / ') || '—';
     var inputRow = '';
-    if (_userAccess === 'completo') {
+    // Comentarios habilitados para TODOS los usuarios (completo y lectura)
+    {
       inputRow = '<div class="hilo-input-row">' +
         '<textarea class="hilo-input" id="com-inp-' + d.id + '" rows="1" placeholder="Agregar comentario..." ' +
         'data-punto="' + d.id + '" ' +
