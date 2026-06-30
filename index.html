@@ -3286,18 +3286,32 @@ window.addEventListener('message', async function(e) {
 
     // ── POLL CHECK ───────────────────────────────────────────────
     } else if (action === 'BPM_POLL_CHECK') {
-      var [estR, comR, minR] = await Promise.all([
+      var [estR, comR, minR, docR] = await Promise.all([
         graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
         graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}) ,
-        graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};})
+        graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
+        // Track the BPM_Documentos folder's lastModifiedDateTime (changes on any file add/delete inside)
+        (async function(){
+          try {
+            var drivesRes2 = await graphGet('sites/'+sid+'/drives');
+            var drive2 = (drivesRes2.value||[]).find(function(d){
+              return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'||d.name==='Documentos';
+            });
+            if (!drive2) return {lastModifiedDateTime:''};
+            var folderInfo = await graphGet('drives/'+drive2.id+'/root:/BPM_Documentos');
+            return {lastModifiedDateTime: folderInfo.lastModifiedDateTime || ''};
+          } catch(e) { return {lastModifiedDateTime:''}; }
+        })()
       ]);
       var newEstMod = estR.value&&estR.value.length ? estR.value[0].lastModifiedDateTime : '';
       var newComMod = comR.value&&comR.value.length ? comR.value[0].lastModifiedDateTime : '';
       var newMinMod = minR.value&&minR.value.length ? minR.value[0].lastModifiedDateTime : '';
+      var newDocMod = docR && docR.lastModifiedDateTime ? docR.lastModifiedDateTime : '';
       reply(null, {
         estatusChanged: newEstMod && newEstMod !== payload.lastEstatusMod,
         comentariosChanged: newComMod && newComMod !== payload.lastComMod,
-        minutasChanged: newMinMod && newMinMod !== (payload.lastMinutasMod || '')
+        minutasChanged: newMinMod && newMinMod !== (payload.lastMinutasMod || ''),
+        docsChanged: newDocMod && newDocMod !== (payload.lastDocsMod || '')
       });
 
     // ── CREATE ESTATUS ───────────────────────────────────────────
@@ -3434,21 +3448,32 @@ window.addEventListener('message', async function(e) {
     } else if (action === 'BPM_DELETE_DOC') {
       try {
         var drivesRes = await graphGet('sites/'+sid+'/drives');
-        console.log('[BPM_UPLOAD] Available drives:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
         var drive = (drivesRes.value||[]).find(function(d){
           return d.name==='BPM_Documentos' || d.name==='Documents' ||
                  d.name==='Documentos compartidos' || d.name==='Documentos';
         });
-        if (!drive) {
-          console.error('[BPM_UPLOAD] No drive found. Available:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
-          reply('drive_not_found', null);
+        if (!drive) { reply('drive_not_found', null); return; }
+        // DELETE with retry on transient errors (503/504)
+        var delRes, attempts = 0;
+        while (attempts < 3) {
+          delRes = await fetch('https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+payload.docId, {
+            method: 'DELETE',
+            headers: {Authorization: 'Bearer '+state.token}
+          });
+          if (delRes.ok || delRes.status === 404) break; // 404 = already deleted, treat as success
+          attempts++;
+          if (attempts < 3 && (delRes.status === 503 || delRes.status === 504)) {
+            await new Promise(function(r){ setTimeout(r, 800 * attempts); });
+            continue;
+          }
+          break;
+        }
+        if (!delRes.ok && delRes.status !== 404) {
+          var errBody = await delRes.text().catch(function(){ return ''; });
+          console.error('[BPM_DELETE_DOC] Failed after retries:', delRes.status, errBody.slice(0,200));
+          reply('delete_failed_'+delRes.status, null);
           return;
         }
-        console.log('[BPM_UPLOAD] Using drive:', drive.name, 'id:', drive.id);
-        await fetch('https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+payload.docId, {
-          method: 'DELETE',
-          headers: {Authorization: 'Bearer '+state.token}
-        });
         reply(null, 'deleted');
       } catch(ex) { reply(ex.message, null); }
 

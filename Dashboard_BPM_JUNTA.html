@@ -416,6 +416,7 @@ let documentosMap = {};
 
 let _lastEstatusMod = '';
 let _lastComMod = '';
+let _lastDocsMod = '';
 let _pollTimer = null;
 const POLL_INTERVAL = 30000;
 
@@ -605,7 +606,8 @@ function startPolling() {
     try {
       var check = await spCall('BPM_POLL_CHECK', {
         lastEstatusMod: _lastEstatusMod,
-        lastComMod: _lastComMod
+        lastComMod: _lastComMod,
+        lastDocsMod: _lastDocsMod
       });
       if (check && (check.estatusChanged || check.comentariosChanged)) {
         await loadAllData();
@@ -613,6 +615,10 @@ function startPolling() {
       // Check minutas changes if on minutas tab
       if (check && check.minutasChanged && _minutasLoaded) {
         await loadMinutas();
+      }
+      // Check document changes (upload/delete by any user) — refresh doc cells
+      if (check && check.docsChanged) {
+        await loadDocumentos();
       }
     } catch(e) {}
   }, POLL_INTERVAL);
