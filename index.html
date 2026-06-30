@@ -3273,12 +3273,8 @@ window.addEventListener('message', async function(e) {
     // ── GET COMENTARIOS ──────────────────────────────────────────
     } else if (action === 'BPM_GET_COMENTARIOS') {
       // $orderby=fields/* not supported in Graph SP — sort client-side
-      // Log schema on first load to detect internal field name encoding
-      try {
-        var schemaC = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/columns');
-        console.log('[BPM_Comentarios] Column schema:', (schemaC.value||[]).filter(function(c){ return !c.readOnly && !c.hidden; }).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
-      } catch(se) {}
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields&$top=2000');
+      // BPM_Comentarios field names confirmed: PuntoID (no encoding)
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields($select=Title,PuntoID,Comentario,AutorNombre,FechaComentario)&$top=2000');
       var items = res.value || [];
       items.sort(function(a,b){
         var fa = (a.fields&&a.fields.FechaComentario)||a.createdDateTime||'';
@@ -3321,9 +3317,8 @@ window.addEventListener('message', async function(e) {
 
     // ── CREATE COMENTARIO ────────────────────────────────────────
     } else if (action === 'BPM_CREATE_COMENTARIO') {
-      var cFields = Object.assign({}, payload.data);
-      if ('PuntoID' in cFields) { cFields['PuntoID_x2014_'] = cFields.PuntoID; delete cFields.PuntoID; }
-      var res = await graphPost('sites/'+sid+'/lists/BPM_Comentarios/items', {fields: cFields});
+      // BPM_Comentarios uses plain 'PuntoID' (no SP name encoding — confirmed via schema)
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Comentarios/items', {fields: payload.data});
       reply(null, {id: res.id});
 
     // ── DELETE COMENTARIO ────────────────────────────────────────
@@ -3428,8 +3423,11 @@ window.addEventListener('message', async function(e) {
 
     // ── GET MINUTAS ──────────────────────────────────────────────
     } else if (action === 'BPM_GET_MINUTAS') {
-      // Use $select on expanded fields to get full multi-line text without SP truncation
-      // Note: BPM_Minutas does NOT have a PuntoID field — no remapping needed
+      // Log schema once to detect any SP internal name encoding
+      try {
+        var schemaM = await graphGet('sites/'+sid+'/lists/BPM_Minutas/columns');
+        console.log('[BPM_Minutas] Column schema:', (schemaM.value||[]).filter(function(c){ return !c.readOnly && !c.hidden; }).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
+      } catch(se) {}
       var selectFields = 'Title,Fecha,Objetivo,Participantes,Notas,Acuerdos,Estatus,CreadaPor,FechaCreacion';
       var res = await graphGet(
         'sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields($select='+selectFields+')&$top=500'
