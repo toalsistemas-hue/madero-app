@@ -3349,13 +3349,16 @@ window.addEventListener('message', async function(e) {
           var children = await graphGet('drives/'+drive.id+'/items/'+folder.id+'/children').catch(function(){return {value:[]};});
           (children.value||[]).forEach(function(f) {
             if (!f.folder) {
+              var fExt = (f.name||'').split('.').pop().toLowerCase();
+              var fIsImg = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(fExt) >= 0;
               allFiles.push({
                 id: f.id,
                 puntoID: puntoID,
                 name: f.name,
                 size: f.size,
                 downloadUrl: f['@microsoft.graph.downloadUrl'] || '',
-                previewUrl: ''
+                // Use webUrl for Office files (opens Office Online), downloadUrl for images
+                previewUrl: fIsImg ? (f['@microsoft.graph.downloadUrl']||'') : (f.webUrl||'')
               });
             }
           });
@@ -3408,18 +3411,15 @@ window.addEventListener('message', async function(e) {
           return;
         }
         var uploadedItem = await uploadRes.json();
-        // Get preview URL
-        var previewUrl = '';
-        try {
-          var prevRes = await fetch(
-            'https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+uploadedItem.id+'/preview',
-            {method:'POST', headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'}, body:'{}'}
-          );
-          if (prevRes.ok) {
-            var prevData = await prevRes.json();
-            previewUrl = prevData.getUrl || '';
-          }
-        } catch(ex) {}
+        // Use webUrl for preview — opens Office Online / SharePoint viewer
+        // webUrl is always available and works for all Office formats
+        var previewUrl = uploadedItem.webUrl || '';
+        // For images, use downloadUrl directly
+        var ext = (uploadedItem.name||'').split('.').pop().toLowerCase();
+        if (['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0) {
+          previewUrl = uploadedItem['@microsoft.graph.downloadUrl'] || previewUrl;
+        }
+        console.log('[BPM_UPLOAD] previewUrl:', previewUrl ? 'OK' : 'empty', '| webUrl:', uploadedItem.webUrl);
         reply(null, {
           id: uploadedItem.id,
           puntoID: payload.puntoID,

@@ -819,9 +819,19 @@ async function eliminarDoc(docId, puntoID) {
 function previewDoc(previewUrl, downloadUrl, name) {
   var url = previewUrl || downloadUrl;
   if (!url) { showToast('No hay URL de vista previa', 'err'); return; }
-  document.getElementById('preview-title').textContent = name;
-  document.getElementById('preview-iframe').src = url;
-  document.getElementById('preview-overlay').style.display = 'flex';
+  var ext = (name||'').split('.').pop().toLowerCase();
+  var isImage = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0;
+  var isPdf   = ext === 'pdf';
+  // Images and PDFs can render in iframe; Office docs open in new tab (X-Frame restrictions)
+  if (isImage || isPdf) {
+    document.getElementById('preview-title').textContent = name;
+    document.getElementById('preview-iframe').src = url;
+    document.getElementById('preview-overlay').style.display = 'flex';
+  } else {
+    // Office files (xlsx, docx, pptx, etc.) — open SharePoint/Office Online in new tab
+    window.open(url, '_blank');
+    showToast('Abriendo ' + name + ' en una nueva pestaña...', 'ok');
+  }
 }
 function closePreview(e) {
   if (e && e.target !== document.getElementById('preview-overlay')) return;
