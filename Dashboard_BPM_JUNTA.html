@@ -842,10 +842,20 @@ function previewDoc(previewUrl, downloadUrl, name) {
   var ext = (name||'').split('.').pop().toLowerCase();
   var isImage = ['jpg','jpeg','png','gif','webp','bmp'].indexOf(ext) >= 0;
   var isPdf   = ext === 'pdf';
-  // Images and PDFs can render in iframe; Office docs open in new tab (X-Frame restrictions)
+  // Images and PDFs render via the direct Graph downloadUrl (no SharePoint CSP
+  // frame-ancestors restriction on that endpoint). Office docs use webUrl which
+  // IS blocked by SP's CSP from being embedded in our domain, so those open
+  // in a new tab instead.
   if (isImage || isPdf) {
     document.getElementById('preview-title').textContent = name;
-    document.getElementById('preview-iframe').src = url;
+    var iframeEl = document.getElementById('preview-iframe');
+    // Fallback: if the iframe fails to load (blocked, network, etc.) offer a new-tab link
+    iframeEl.onerror = function() {
+      showToast('No se pudo previsualizar — abriendo en nueva pestaña', 'err');
+      window.open(downloadUrl || url, '_blank');
+      closePreview();
+    };
+    iframeEl.src = url;
     document.getElementById('preview-overlay').style.display = 'flex';
   } else {
     // Office files (xlsx, docx, pptx, etc.) — open SharePoint/Office Online in new tab
@@ -1056,20 +1066,11 @@ function applyFilters() {
       }
       // Document actions (preview / delete)
       var docBtn = e.target.closest('.doc-action');
-      console.log('[BPM-DEBUG] click target:', e.target.tagName, '| closest .doc-action:', !!docBtn, '| docCellMap exists:', !!window._docCellMap);
-      if (docBtn) {
-        console.log('[BPM-DEBUG] docBtn key:', docBtn.dataset.key, '| action:', docBtn.dataset.action);
-        if (window._docCellMap) {
-          var d = window._docCellMap[docBtn.dataset.key];
-          console.log('[BPM-DEBUG] map entry found:', !!d, d);
-          if (d) {
-            if (docBtn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
-            else if (docBtn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
-          } else {
-            console.warn('[BPM-DEBUG] No entry in _docCellMap for key:', docBtn.dataset.key, '| Available keys:', Object.keys(window._docCellMap));
-          }
-        } else {
-          console.warn('[BPM-DEBUG] window._docCellMap is undefined/null at click time');
+      if (docBtn && window._docCellMap) {
+        var d = window._docCellMap[docBtn.dataset.key];
+        if (d) {
+          if (docBtn.dataset.action === 'preview') previewDoc(d.previewUrl, d.downloadUrl, d.name);
+          else if (docBtn.dataset.action === 'del') eliminarDoc(d.id, d.puntoID);
         }
       }
     });
