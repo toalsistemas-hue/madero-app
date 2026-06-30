@@ -3286,32 +3286,49 @@ window.addEventListener('message', async function(e) {
 
     // ── POLL CHECK ───────────────────────────────────────────────
     } else if (action === 'BPM_POLL_CHECK') {
-      var [estR, comR, minR, docR] = await Promise.all([
+      var [estR, comR, minR, docCountR] = await Promise.all([
         graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
         graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}) ,
         graphGet('sites/'+sid+'/lists/BPM_Minutas/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc').catch(function(){return {value:[]};}),
-        // Track the BPM_Documentos folder's lastModifiedDateTime (changes on any file add/delete inside)
+        // Count total files across all punto_XXX subfolders — more reliable than folder
+        // lastModifiedDateTime, which SP does not always bubble up from nested children.
         (async function(){
           try {
             var drivesRes2 = await graphGet('sites/'+sid+'/drives');
             var drive2 = (drivesRes2.value||[]).find(function(d){
               return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'||d.name==='Documentos';
             });
-            if (!drive2) return {lastModifiedDateTime:''};
-            var folderInfo = await graphGet('drives/'+drive2.id+'/root:/BPM_Documentos');
-            return {lastModifiedDateTime: folderInfo.lastModifiedDateTime || ''};
-          } catch(e) { return {lastModifiedDateTime:''}; }
+            if (!drive2) return {count:0, latest:''};
+            var rootItems = await graphGet('drives/'+drive2.id+'/root:/BPM_Documentos:/children');
+            var folders = (rootItems.value||[]).filter(function(i){ return i.folder; });
+            var total = 0, latestMod = '';
+            await Promise.all(folders.map(async function(folder){
+              var children = await graphGet('drives/'+drive2.id+'/items/'+folder.id+'/children').catch(function(){return {value:[]};});
+              (children.value||[]).forEach(function(f){
+                if (!f.folder) {
+                  total++;
+                  if (f.lastModifiedDateTime > latestMod) latestMod = f.lastModifiedDateTime;
+                }
+              });
+            }));
+            return {count: total, latest: latestMod};
+          } catch(e) { return {count:0, latest:''}; }
         })()
       ]);
       var newEstMod = estR.value&&estR.value.length ? estR.value[0].lastModifiedDateTime : '';
       var newComMod = comR.value&&comR.value.length ? comR.value[0].lastModifiedDateTime : '';
       var newMinMod = minR.value&&minR.value.length ? minR.value[0].lastModifiedDateTime : '';
-      var newDocMod = docR && docR.lastModifiedDateTime ? docR.lastModifiedDateTime : '';
+      var newDocCount = docCountR ? docCountR.count : 0;
+      var newDocLatest = docCountR ? docCountR.latest : '';
+      var prevDocCount = parseInt(payload.lastDocsCount || -1);
       reply(null, {
         estatusChanged: newEstMod && newEstMod !== payload.lastEstatusMod,
         comentariosChanged: newComMod && newComMod !== payload.lastComMod,
         minutasChanged: newMinMod && newMinMod !== (payload.lastMinutasMod || ''),
-        docsChanged: newDocMod && newDocMod !== (payload.lastDocsMod || '')
+        docsChanged: (prevDocCount >= 0 && newDocCount !== prevDocCount) ||
+                     (newDocLatest && newDocLatest !== (payload.lastDocsLatest || '')),
+        docsCount: newDocCount,
+        docsLatest: newDocLatest
       });
 
     // ── CREATE ESTATUS ───────────────────────────────────────────
@@ -3371,8 +3388,8 @@ window.addEventListener('message', async function(e) {
                 name: f.name,
                 size: f.size,
                 downloadUrl: f['@microsoft.graph.downloadUrl'] || '',
-                // Use webUrl for Office files (opens Office Online), downloadUrl for images
-                previewUrl: fIsImg ? (f['@microsoft.graph.downloadUrl']||'') : (f.webUrl||'')
+                previewUrl: fIsImg ? (f['@microsoft.graph.downloadUrl']||'') : (f.webUrl||''),
+                lastModified: f.lastModifiedDateTime || ''
               });
             }
           });

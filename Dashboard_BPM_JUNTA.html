@@ -416,7 +416,8 @@ let documentosMap = {};
 
 let _lastEstatusMod = '';
 let _lastComMod = '';
-let _lastDocsMod = '';
+let _lastDocsCount = -1;   // total de archivos en BPM_Documentos (todas las subcarpetas)
+let _lastDocsLatest = '';  // timestamp del archivo más reciente
 let _pollTimer = null;
 const POLL_INTERVAL = 30000;
 
@@ -577,12 +578,18 @@ async function loadDocumentos() {
   try {
     var res = await spCall('BPM_LIST_DOCS', {});
     documentosMap = {};
+    var total = 0, latest = '';
     if (res && res.files) {
       res.files.forEach(function(f) {
         if (!documentosMap[f.puntoID]) documentosMap[f.puntoID] = [];
         documentosMap[f.puntoID].push(f);
+        total++;
+        if (f.lastModified && f.lastModified > latest) latest = f.lastModified;
       });
     }
+    // Sync baseline so the next poll compares against the current known state
+    _lastDocsCount = total;
+    if (latest) _lastDocsLatest = latest;
     document.querySelectorAll('[data-doc-cell]').forEach(function(el) {
       var pid = parseInt(el.dataset.docCell);
       el.innerHTML = renderDocCell(pid);
@@ -607,7 +614,8 @@ function startPolling() {
       var check = await spCall('BPM_POLL_CHECK', {
         lastEstatusMod: _lastEstatusMod,
         lastComMod: _lastComMod,
-        lastDocsMod: _lastDocsMod
+        lastDocsCount: _lastDocsCount,
+        lastDocsLatest: _lastDocsLatest
       });
       if (check && (check.estatusChanged || check.comentariosChanged)) {
         await loadAllData();
@@ -619,6 +627,11 @@ function startPolling() {
       // Check document changes (upload/delete by any user) — refresh doc cells
       if (check && check.docsChanged) {
         await loadDocumentos();
+      }
+      // Always sync the baseline so subsequent polls compare against latest known state
+      if (check) {
+        if (typeof check.docsCount === 'number') _lastDocsCount = check.docsCount;
+        if (check.docsLatest) _lastDocsLatest = check.docsLatest;
       }
     } catch(e) {}
   }, POLL_INTERVAL);
