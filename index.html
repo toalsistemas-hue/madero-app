@@ -3265,15 +3265,23 @@ window.addEventListener('message', async function(e) {
 
     // ── GET ESTATUS ──────────────────────────────────────────────
     if (action === 'BPM_GET_ESTATUS') {
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields&$top=200&$orderby=lastModifiedDateTime%20desc');
+      // Top-level $orderby is valid; use $select on fields to avoid SP field truncation
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields($select=Title,PuntoID,Estatus,ModificadoPor,FechaModif)&$top=200&$orderby=lastModifiedDateTime%20desc');
       var lastMod = res.value && res.value.length ? (res.value[0].lastModifiedDateTime||'') : '';
       reply(null, {value: res.value||[], _lastMod: lastMod});
 
     // ── GET COMENTARIOS ──────────────────────────────────────────
     } else if (action === 'BPM_GET_COMENTARIOS') {
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields&$top=2000&$orderby=fields/FechaComentario%20asc');
-      var lastMod = res.value && res.value.length ? (res.value[res.value.length-1].lastModifiedDateTime||'') : '';
-      reply(null, {value: res.value||[], _lastMod: lastMod});
+      // $orderby=fields/* not supported in Graph SP — sort client-side
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields($select=Title,PuntoID,Comentario,AutorNombre,FechaComentario)&$top=2000');
+      var items = res.value || [];
+      items.sort(function(a,b){
+        var fa = (a.fields&&a.fields.FechaComentario)||a.createdDateTime||'';
+        var fb = (b.fields&&b.fields.FechaComentario)||b.createdDateTime||'';
+        return fa < fb ? -1 : fa > fb ? 1 : 0;
+      });
+      var lastMod = items.length ? (items[items.length-1].lastModifiedDateTime||'') : '';
+      reply(null, {value: items, _lastMod: lastMod});
 
     // ── POLL CHECK ───────────────────────────────────────────────
     } else if (action === 'BPM_POLL_CHECK') {
