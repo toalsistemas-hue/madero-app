@@ -3333,7 +3333,10 @@ window.addEventListener('message', async function(e) {
     } else if (action === 'BPM_LIST_DOCS') {
       try {
         var drivesRes = await graphGet('sites/'+sid+'/drives');
-        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
+        var drive = (drivesRes.value||[]).find(function(d){
+          return d.name==='BPM_Documentos'||d.name==='Documents'||
+                 d.name==='Documentos compartidos'||d.name==='Documentos';
+        });
         if (!drive) { reply(null, {files:[]}); return; }
         // List all folders under BPM_Documentos root
         var rootItems = await graphGet('drives/'+drive.id+'/root:/BPM_Documentos:/children').catch(function(){return {value:[]};});
@@ -3364,17 +3367,31 @@ window.addEventListener('message', async function(e) {
     } else if (action === 'BPM_UPLOAD_DOC') {
       try {
         var drivesRes = await graphGet('sites/'+sid+'/drives');
-        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
-        if (!drive) { reply('drive_not_found', null); return; }
+        console.log('[BPM_UPLOAD] Available drives:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
+        var drive = (drivesRes.value||[]).find(function(d){
+          return d.name==='BPM_Documentos' || d.name==='Documents' ||
+                 d.name==='Documentos compartidos' || d.name==='Documentos';
+        });
+        if (!drive) {
+          console.error('[BPM_UPLOAD] No drive found. Available:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
+          reply('drive_not_found', null);
+          return;
+        }
+        console.log('[BPM_UPLOAD] Using drive:', drive.name, 'id:', drive.id);
         var folderName = 'punto_' + String(payload.puntoID).padStart(3,'0');
-        var fileName = payload.fileName.replace(/[^\w.\-_() ]/g,'_');
-        var uploadPath = 'BPM_Documentos/'+folderName+'/'+fileName;
+        // Sanitize filename: keep alphanumeric, dots, dashes, underscores, spaces, accented chars
+        var fileName = payload.fileName.replace(/[<>:"/\\|?*]/g,'_');
+        // Build path — encode each segment separately (NOT the slashes)
+        var uploadPath = encodeURIComponent('BPM_Documentos') + '/' +
+                         encodeURIComponent(folderName) + '/' +
+                         encodeURIComponent(fileName);
+        console.log('[BPM_UPLOAD] drive:', drive.name, '| path:', uploadPath);
         // Convert base64 to binary
         var binary = atob(payload.fileBase64);
         var bytes = new Uint8Array(binary.length);
         for (var i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
         var uploadRes = await fetch(
-          'https://graph.microsoft.com/v1.0/drives/'+drive.id+'/root:/'+encodeURIComponent(uploadPath)+':/content',
+          'https://graph.microsoft.com/v1.0/drives/'+drive.id+'/root:/'+uploadPath+':/content',
           {
             method: 'PUT',
             headers: {
@@ -3384,7 +3401,12 @@ window.addEventListener('message', async function(e) {
             body: bytes
           }
         );
-        if (!uploadRes.ok) { reply('upload_failed_'+uploadRes.status, null); return; }
+        if (!uploadRes.ok) {
+          var errBody = await uploadRes.text().catch(function(){ return ''; });
+          console.error('[BPM_UPLOAD] PUT failed', uploadRes.status, errBody.slice(0,300));
+          reply('upload_failed_'+uploadRes.status+'_'+errBody.slice(0,100), null);
+          return;
+        }
         var uploadedItem = await uploadRes.json();
         // Get preview URL
         var previewUrl = '';
@@ -3412,8 +3434,17 @@ window.addEventListener('message', async function(e) {
     } else if (action === 'BPM_DELETE_DOC') {
       try {
         var drivesRes = await graphGet('sites/'+sid+'/drives');
-        var drive = (drivesRes.value||[]).find(function(d){ return d.name==='BPM_Documentos'||d.name==='Documents'||d.name==='Documentos compartidos'; });
-        if (!drive) { reply('drive_not_found', null); return; }
+        console.log('[BPM_UPLOAD] Available drives:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
+        var drive = (drivesRes.value||[]).find(function(d){
+          return d.name==='BPM_Documentos' || d.name==='Documents' ||
+                 d.name==='Documentos compartidos' || d.name==='Documentos';
+        });
+        if (!drive) {
+          console.error('[BPM_UPLOAD] No drive found. Available:', (drivesRes.value||[]).map(function(d){ return d.name; }).join(', '));
+          reply('drive_not_found', null);
+          return;
+        }
+        console.log('[BPM_UPLOAD] Using drive:', drive.name, 'id:', drive.id);
         await fetch('https://graph.microsoft.com/v1.0/drives/'+drive.id+'/items/'+payload.docId, {
           method: 'DELETE',
           headers: {Authorization: 'Bearer '+state.token}
