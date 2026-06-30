@@ -533,7 +533,8 @@ async function loadAllData() {
     if (estRes && estRes.value) {
       estRes.value.forEach(function(i) {
         var f = i.fields || i;
-        var pid = parseInt(f.PuntoID || 0);
+        // SP internal field name is PuntoID_x2014_ (em dash encoding)
+        var pid = parseInt(f['PuntoID_x2014_'] || f.PuntoID || 0);
         if (pid) estatusMap[pid] = {
           estatus: estatusFromSP(f.Estatus || 'N/A'),
           modificadoPor: f.ModificadoPor || '',
@@ -546,7 +547,7 @@ async function loadAllData() {
     if (comRes && comRes.value) {
       comRes.value.forEach(function(i) {
         var f = i.fields || i;
-        var pid = parseInt(f.PuntoID || 0);
+        var pid = parseInt(f['PuntoID_x2014_'] || f.PuntoID || 0);
         if (pid) comentariosList.push({
           puntoID: pid,
           texto: f.Comentario || '',

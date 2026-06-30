@@ -3266,23 +3266,14 @@ window.addEventListener('message', async function(e) {
     // ── GET ESTATUS ──────────────────────────────────────────────
     if (action === 'BPM_GET_ESTATUS') {
       // Fetch without $select first to discover actual SP internal field names
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields&$top=200');
-      if (res.value && res.value.length) {
-        console.log('[BPM_Estatus] SP field names (from existing item):', Object.keys(res.value[0].fields||{}).join(', '));
-      } else {
-        // List is empty — inspect schema to get internal column names
-        try {
-          var schemaRes = await graphGet('sites/'+sid+'/lists/BPM_Estatus/columns');
-          console.log('[BPM_Estatus] Column schema:', (schemaRes.value||[]).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
-        } catch(se) { console.warn('[BPM_Estatus] schema error:', se.message); }
-      }
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Estatus/items?$expand=fields($select=Title,PuntoID_x2014_,Estatus,ModificadoPor,FechaModif)&$top=200');
       var lastMod = res.value && res.value.length ? (res.value[0].lastModifiedDateTime||'') : '';
       reply(null, {value: res.value||[], _lastMod: lastMod});
 
     // ── GET COMENTARIOS ──────────────────────────────────────────
     } else if (action === 'BPM_GET_COMENTARIOS') {
       // $orderby=fields/* not supported in Graph SP — sort client-side
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields($select=Title,PuntoID,Comentario,AutorNombre,FechaComentario)&$top=2000');
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields($select=Title,PuntoID_x2014_,Comentario,AutorNombre,FechaComentario)&$top=2000');
       var items = res.value || [];
       items.sort(function(a,b){
         var fa = (a.fields&&a.fields.FechaComentario)||a.createdDateTime||'';
@@ -3310,27 +3301,24 @@ window.addEventListener('message', async function(e) {
 
     // ── CREATE ESTATUS ───────────────────────────────────────────
     } else if (action === 'BPM_CREATE_ESTATUS') {
-      try {
-        var res = await graphPost('sites/'+sid+'/lists/BPM_Estatus/items', {fields: payload.data});
-        reply(null, {id: res.id});
-      } catch(ex) {
-        console.error('[BPM_CREATE_ESTATUS] Error:', ex.message, 'Payload:', JSON.stringify(payload.data));
-        throw ex;
-      }
+      // Remap PuntoID → PuntoID_x2014_ (SP internal name encoding)
+      var eFields = Object.assign({}, payload.data);
+      if ('PuntoID' in eFields) { eFields['PuntoID_x2014_'] = eFields.PuntoID; delete eFields.PuntoID; }
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Estatus/items', {fields: eFields});
+      reply(null, {id: res.id});
 
     // ── UPDATE ESTATUS ───────────────────────────────────────────
     } else if (action === 'BPM_UPDATE_ESTATUS') {
-      try {
-        await graphPatch('sites/'+sid+'/lists/BPM_Estatus/items/'+payload.spId+'/fields', payload.data);
-        reply(null, 'ok');
-      } catch(ex) {
-        console.error('[BPM_UPDATE_ESTATUS] Error:', ex.message, 'Payload:', JSON.stringify(payload.data));
-        throw ex;
-      }
+      var uFields = Object.assign({}, payload.data);
+      if ('PuntoID' in uFields) { uFields['PuntoID_x2014_'] = uFields.PuntoID; delete uFields.PuntoID; }
+      await graphPatch('sites/'+sid+'/lists/BPM_Estatus/items/'+payload.spId+'/fields', uFields);
+      reply(null, 'ok');
 
     // ── CREATE COMENTARIO ────────────────────────────────────────
     } else if (action === 'BPM_CREATE_COMENTARIO') {
-      var res = await graphPost('sites/'+sid+'/lists/BPM_Comentarios/items', {fields: payload.data});
+      var cFields = Object.assign({}, payload.data);
+      if ('PuntoID' in cFields) { cFields['PuntoID_x2014_'] = cFields.PuntoID; delete cFields.PuntoID; }
+      var res = await graphPost('sites/'+sid+'/lists/BPM_Comentarios/items', {fields: cFields});
       reply(null, {id: res.id});
 
     // ── DELETE COMENTARIO ────────────────────────────────────────
@@ -3436,6 +3424,7 @@ window.addEventListener('message', async function(e) {
     // ── GET MINUTAS ──────────────────────────────────────────────
     } else if (action === 'BPM_GET_MINUTAS') {
       // Use $select on expanded fields to get full multi-line text without SP truncation
+      // Note: BPM_Minutas does NOT have a PuntoID field — no remapping needed
       var selectFields = 'Title,Fecha,Objetivo,Participantes,Notas,Acuerdos,Estatus,CreadaPor,FechaCreacion';
       var res = await graphGet(
         'sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields($select='+selectFields+')&$top=500'
