@@ -3273,7 +3273,12 @@ window.addEventListener('message', async function(e) {
     // ── GET COMENTARIOS ──────────────────────────────────────────
     } else if (action === 'BPM_GET_COMENTARIOS') {
       // $orderby=fields/* not supported in Graph SP — sort client-side
-      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields($select=Title,PuntoID_x2014_,Comentario,AutorNombre,FechaComentario)&$top=2000');
+      // Log schema on first load to detect internal field name encoding
+      try {
+        var schemaC = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/columns');
+        console.log('[BPM_Comentarios] Column schema:', (schemaC.value||[]).filter(function(c){ return !c.readOnly && !c.hidden; }).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
+      } catch(se) {}
+      var res = await graphGet('sites/'+sid+'/lists/BPM_Comentarios/items?$expand=fields&$top=2000');
       var items = res.value || [];
       items.sort(function(a,b){
         var fa = (a.fields&&a.fields.FechaComentario)||a.createdDateTime||'';
