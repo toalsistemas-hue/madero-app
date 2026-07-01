@@ -3509,11 +3509,7 @@ window.addEventListener('message', async function(e) {
 
     // ── GET MINUTAS ──────────────────────────────────────────────
     } else if (action === 'BPM_GET_MINUTAS') {
-      // Log schema once to detect any SP internal name encoding
-      try {
-        var schemaM = await graphGet('sites/'+sid+'/lists/BPM_Minutas/columns');
-        console.log('[BPM_Minutas] Column schema:', (schemaM.value||[]).filter(function(c){ return !c.readOnly && !c.hidden; }).map(function(c){ return c.name+'('+c.displayName+')'; }).join(', '));
-      } catch(se) {}
+      // BPM_Minutas field names confirmed: all use plain names (no SP encoding quirks)
       var selectFields = 'Title,Fecha,Objetivo,Participantes,Notas,Acuerdos,Estatus,CreadaPor,FechaCreacion';
       var res = await graphGet(
         'sites/'+sid+'/lists/BPM_Minutas/items?$expand=fields($select='+selectFields+')&$top=500'
