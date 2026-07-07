@@ -2479,6 +2479,11 @@ async function getToken(forceRefresh) {
 
 async function graphGet(endpoint, retry) {
   const token = await getToken();
+  // Guard: if siteId is undefined in endpoint, re-fetch it before proceeding
+  if (endpoint && endpoint.includes('/sites/undefined/')) {
+    try { cachedSiteId = null; FT_SITE_ID = await getSiteId(); } catch(e) {}
+    endpoint = endpoint.replace('/sites/undefined/', '/sites/'+(FT_SITE_ID||'')+'/');
+  }
   const url   = endpoint.startsWith('https') ? endpoint : `https://graph.microsoft.com/v1.0/${endpoint}`;
   const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
 
@@ -5820,7 +5825,15 @@ async function ftLoadDataFromSP() {
       // Si el Flow no devuelve Fecha_Entrega/Cantidad, leerlas directo con Graph
       if(!flowTieneFecha && FT_SITE_ID){
         try{
-          var gRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title,Fecha_Entrega,Cantidad)&$top=2000');
+          // Fetch without $select on fields — avoids 404 if Fecha_Entrega/Cantidad
+          // columns don't exist yet in the SP list
+          var gRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title,Fecha_Entrega,Cantidad)&$top=2000').catch(async function(e404){
+            // Fallback: if $select fails (columns don't exist), fetch without $select
+            console.warn('[DB.ofs] $select falló, reintentando sin filtro de campos:', e404.message);
+            return graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields&$top=2000&$select=id,fields/Title,fields/Fecha_Entrega,fields/Cantidad').catch(function(){
+              return {value:[]};
+            });
+          });
           var extraMap = {};
           (gRes.value||[]).forEach(function(i){
             var sap = i.fields.Title||'';
@@ -6393,6 +6406,8 @@ async function ftLoadDataFromSP() {
       if (!state.token || !FT_SITE_ID) return;
       if (window._confirmProgRunning) return; // Don't poll during programming confirmation
       try {
+        // Re-validate FT_SITE_ID if it may have changed after network event
+        if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e) { return; } }
         var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
         var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
         if (!window._coordLastOpsMod && latestMod) {
@@ -9582,7 +9597,20 @@ function confirmProgMain() {
     setTimeout(async function(){
       window._confirmProgRunning = true;
       try {
-        if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
+        // Always re-validate FT_SITE_ID at start of confirm to survive network changes
+        try {
+          if (!FT_SITE_ID || !cachedSiteId) {
+            cachedSiteId = null;
+            FT_SITE_ID = await getSiteId();
+          }
+          // Quick validation: verify siteId is still reachable
+          var _siteCheck = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$select=id&$top=1').catch(function(){return null;});
+          if (!_siteCheck) {
+            console.warn('[Confirm] siteId stale, re-fetching...');
+            cachedSiteId = null;
+            FT_SITE_ID = await getSiteId();
+          }
+        } catch(e) { console.warn('[Confirm] getSiteId error:', e.message); }
         // ── Snapshot ops before any async work ─────────────────────────────
         var _opsSnapshot = {};
         nuevasOfs.forEach(function(sap){
