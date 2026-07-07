@@ -4959,6 +4959,9 @@ async function ftSaveTemplateToSP(art) {
     if (!window._ftTplCols) {
       window._ftTplCols = ['Title','Articulo_Key','Nombre_Articulo','Operaciones_JSON',
         'Padre_Articulo','Subarts_JSON','Sub_Articulos','Ultima_Modificacion','Modificado_Por'];
+      // FT_Plantillas_Operaciones extended columns (added for per-op defaults):
+      // Tecnico (single line), Ayudantes_JSON (multi-line), Cantidad (single line)
+      // These are stored inside Operaciones_JSON so no extra SP field needed here.
     }
     var tplCols = window._ftTplCols;
     var fields = { Title: art }; // Title es el InternalName de Articulo_Key
@@ -6129,10 +6132,18 @@ async function ftLoadDataFromSP() {
         var tpl = DB.templates[aof.articulo];
         if (tpl && tpl.ops && tpl.ops.length) {
           aof.ops = tpl.ops.map(function(op, i){
+            // Parse ayudantes from template: stored as comma-sep string in JSON
+            var _tplAyu = [];
+            if (op.ayudantes) {
+              _tplAyu = String(op.ayudantes).split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+            }
             return {
               id: 'op_'+aof.of_sap+'_'+i,
               nombre: op.nombre, estacion: op.estacion, tipo: op.tipo||'Secuencial',
-              tecnico: '', ayudantes: [], qty_total: 10,
+              // Apply template defaults for tecnico, ayudantes, qty_total
+              tecnico:   op.tecnico  || '',
+              ayudantes: _tplAyu,
+              qty_total: op.cantidad ? parseInt(op.cantidad) : 10,
               qty_ok: 0, qty_def: 0, qty_rej: 0,
               status: 'pending', inicio: null, fin: null, mins: 0,
               isTemplate: true, pauseReason: null, valcalNote: null,
@@ -6936,9 +6947,11 @@ function initActiveOFs() {
   DB.activeOFs = [];
   DB.ofs.filter(function(o){return o.programadoHoy;}).forEach(function(of) {
     var tpl = DB.templates[of.articulo];
-    var ops = tpl ? tpl.ops.map(function(op,i) {
+    var ops = tpl ? tpl.ops.map(function(op,i){
+      var _tAyu2=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return {id:"op_"+of.of_sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo,
-        tecnico:"",qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,
+        tecnico:op.tecnico||"",ayudantes:_tAyu2,qty_total:op.cantidad?parseInt(op.cantidad):10,
+        qty_ok:0,qty_def:0,qty_rej:0,
         status:"pending",inicio:null,fin:null,mins:0,
         isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
     }) : [];
@@ -7778,7 +7791,7 @@ function onTplArtChange(){
   if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
   setTplSubarts([]);
 }
-function addTplOpRow(nombre,estacion,tipo,locked){
+function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   C.tplOpIdx++;
   var idx=C.tplOpIdx;
   var _locked=locked===true;
@@ -7819,6 +7832,13 @@ function addTplOpRow(nombre,estacion,tipo,locked){
   }else{
     h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
   }
+  // Extra fields row: Técnico, Ayudantes, Cantidad (optional, template defaults)
+  h+="<div style='display:flex;gap:6px;margin-top:5px;padding:0 2px;flex-wrap:wrap;align-items:center;'>";
+  h+="<span style='font-size:.64rem;color:var(--dim);white-space:nowrap;min-width:50px;'>Defaults:</span>";
+  h+="<input class='form-input-sm' id='top-tec-"+idx+"' placeholder='👷 Técnico' value='"+(tecnico||"")+"' "+_dis+" style='flex:1;min-width:100px;font-size:.72rem;' title='Técnico asignado por defecto'>";
+  h+="<input class='form-input-sm' id='top-ayu-"+idx+"' placeholder='👥 Ayudantes (coma-sep)' value='"+(ayudantes||"")+"' "+_dis+" style='flex:2;min-width:120px;font-size:.72rem;' title='Ayudantes separados por coma'>";
+  h+="<input class='form-input-sm' id='top-qty-"+idx+"' type='number' min='1' placeholder='📦 Cant' value='"+(cantidad||"")+"' "+_dis+" style='width:65px;font-size:.72rem;' title='Cantidad por defecto'>";
+  h+="</div>";
   h+="</div>";
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
@@ -9222,8 +9242,8 @@ function confirmProgMain() {
         var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
         var ops = tpl ? tpl.ops.map(function(op,i){
           return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
-            tipo:op.tipo||'Secuencial', tecnico:'', ayudantes:[],
-            qty_total:10, qty_ok:0, qty_def:0, qty_rej:0,
+            tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
+            qty_total:op.cantidad?parseInt(op.cantidad):10, qty_ok:0, qty_def:0, qty_rej:0,
             status:'pending', inicio:null, fin:null, mins:0,
             isTemplate:true, pauseReason:null, valcalNote:null,
             needsCal:false, calResult:null, calComment:null};
@@ -9744,8 +9764,10 @@ function openOFOpsModal(sap) {
       if (!aof) {
         // Create the activeOF entry on-the-fly
         var ops = tpl.ops.map(function(op,i){
+          var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:'',ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
         });
@@ -9758,8 +9780,10 @@ function openOFOpsModal(sap) {
       } else {
         // aof exists but ops is empty — inject from template
         aof.ops = tpl.ops.map(function(op,i){
+          var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:'',ayudantes:[],qty_total:10,qty_ok:0,qty_def:0,qty_rej:0,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
         });
@@ -10718,7 +10742,8 @@ function openEditTpl(art){
   tpl.ops.forEach(function(op){
     C.tplOpIdx++;
     var _locked = !!(C._tplLockedOps && C._tplLockedOps[op.nombre+'|'+op.estacion]);
-    addTplOpRow(op.nombre, op.estacion, op.tipo, _locked);
+    addTplOpRow(op.nombre, op.estacion, op.tipo, _locked,
+      op.tecnico || '', op.ayudantes || '', op.cantidad || null);
   });
   openCModal('modal-tpl');
 }
@@ -10736,9 +10761,18 @@ function saveTplModal(){
     var id = rows[i].id.replace('tpl-op-','');
     var nameEl = document.getElementById('top-n-'+id);
     if(!nameEl || !nameEl.value.trim()) continue;
+    var _tecEl  = document.getElementById('top-tec-'+id);
+    var _ayuEl  = document.getElementById('top-ayu-'+id);
+    var _qtyEl  = document.getElementById('top-qty-'+id);
+    var _tecVal = _tecEl  ? _tecEl.value.trim()  : '';
+    var _ayuVal = _ayuEl  ? _ayuEl.value.trim()  : '';
+    var _qtyVal = _qtyEl  ? (parseInt(_qtyEl.value)||null) : null;
     ops.push({id:'t_'+art+'_'+i, nombre:nameEl.value.trim(),
       estacion:document.getElementById('top-s-'+id).value,
-      tipo:document.getElementById('top-t-'+id).value});
+      tipo:document.getElementById('top-t-'+id).value,
+      tecnico:   _tecVal  || '',
+      ayudantes: _ayuVal  || '',
+      cantidad:  _qtyVal  || null});
   }
   var subarts = getTplSubarts();
   var padre = (document.getElementById('tpl-padre-sel').value||'').trim() || null;
@@ -11686,7 +11720,7 @@ appConfirmValCal = function(){
     if(padreInp){ padreInp.value=""; padreInp.placeholder="Sin padre"; }
     setTplSubarts([]);
   }
-  function addTplOpRow(nombre,estacion,tipo,locked){
+  function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   C.tplOpIdx++;
   var idx=C.tplOpIdx;
   var _locked=locked===true;
@@ -11727,6 +11761,13 @@ appConfirmValCal = function(){
   }else{
     h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
   }
+  // Extra fields row: Técnico, Ayudantes, Cantidad (optional, template defaults)
+  h+="<div style='display:flex;gap:6px;margin-top:5px;padding:0 2px;flex-wrap:wrap;align-items:center;'>";
+  h+="<span style='font-size:.64rem;color:var(--dim);white-space:nowrap;min-width:50px;'>Defaults:</span>";
+  h+="<input class='form-input-sm' id='top-tec-"+idx+"' placeholder='👷 Técnico' value='"+(tecnico||"")+"' "+_dis+" style='flex:1;min-width:100px;font-size:.72rem;' title='Técnico asignado por defecto'>";
+  h+="<input class='form-input-sm' id='top-ayu-"+idx+"' placeholder='👥 Ayudantes (coma-sep)' value='"+(ayudantes||"")+"' "+_dis+" style='flex:2;min-width:120px;font-size:.72rem;' title='Ayudantes separados por coma'>";
+  h+="<input class='form-input-sm' id='top-qty-"+idx+"' type='number' min='1' placeholder='📦 Cant' value='"+(cantidad||"")+"' "+_dis+" style='width:65px;font-size:.72rem;' title='Cantidad por defecto'>";
+  h+="</div>";
   h+="</div>";
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
