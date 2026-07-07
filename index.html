@@ -4841,6 +4841,30 @@ async function ftConfirmExcelLoad() {
       if (!ofSap) continue;
       if (loadingEl) loadingEl.innerHTML = '<div style="padding:16px;text-align:center;font-size:.82rem;color:var(--dim);">⏳ Guardando OF ' + ofSap + ' (' + (idx+1) + ' de ' + _ftPendingExcel.length + ')...</div>';
       const fields = { Title: ofSap };
+      // ── Parse optional Cantidad ─────────────────────────────────────────
+      var _rawCant = row.Cantidad || row.cantidad || row['Cantidad'] || '';
+      var _cantVal = _rawCant !== '' ? (parseInt(String(_rawCant).replace(/[^0-9]/g,'')) || null) : null;
+
+      // ── Parse optional Fecha_Entrega — Excel serial, DD/MM/YYYY, or YYYY-MM-DD ──
+      var _rawFecha = String(row.Fecha_Entrega || row.fecha_entrega || row['Fecha_Entrega'] || row['Fecha Entrega'] || '').trim();
+      var _fechaISO = '';
+      if (_rawFecha) {
+        if (/^\d{4,6}$/.test(_rawFecha)) {
+          // Excel date serial number
+          try {
+            var _d = XLSX.SSF.parse_date_code(parseInt(_rawFecha));
+            if (_d) _fechaISO = _d.y + '-' + String(_d.m).padStart(2,'0') + '-' + String(_d.d).padStart(2,'0');
+          } catch(e) {}
+        } else if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(_rawFecha)) {
+          // DD/MM/YYYY or DD-MM-YYYY
+          var _p = _rawFecha.split(/[\/\-]/);
+          _fechaISO = _p[2] + '-' + _p[1].padStart(2,'0') + '-' + _p[0].padStart(2,'0');
+        } else if (/^\d{4}-\d{2}-\d{2}/.test(_rawFecha)) {
+          // Already YYYY-MM-DD
+          _fechaISO = _rawFecha.substring(0, 10);
+        }
+      }
+
       const optFields = {
         Numero_Articulo: String(row.Numero_Articulo || row.numero_articulo || row['Numero Articulo'] || ''),
         Descripcion_Articulo: String(row.Descripcion_Articulo || row.descripcion_articulo || row['Descripcion Articulo'] || ''),
@@ -4851,6 +4875,9 @@ async function ftConfirmExcelLoad() {
         Sub_Articulos: String(row.Sub_Articulos || row.sub_articulos || row['Sub Articulos'] || ''),
         Status: 'Sin programar', Programado_Hoy: false,
       };
+      // Only include Cantidad and Fecha_Entrega when they have values (avoids SP errors)
+      if (_cantVal)  optFields.Cantidad      = _cantVal;
+      if (_fechaISO) optFields.Fecha_Entrega = _fechaISO + 'T00:00:00Z';
       Object.assign(fields, optFields);
       try {
         const isNew = !existMap[ofSap];
@@ -4863,7 +4890,7 @@ async function ftConfirmExcelLoad() {
           itemId = createRes && createRes.id ? createRes.id : null;
           created++;
         } else {
-          const ACTUALIZAR = ['Numero_Articulo','Descripcion_Articulo','Pedido','Cliente','Rotacion','Sub_Articulos'];
+          const ACTUALIZAR = ['Numero_Articulo','Descripcion_Articulo','Pedido','Cliente','Rotacion','Sub_Articulos','Cantidad','Fecha_Entrega'];
           const updateFields = {};
           for (const key of ACTUALIZAR) { const val = optFields[key]; if (val !== '' && val !== null && val !== undefined) updateFields[key] = val; }
           if (Object.keys(updateFields).length > 0) await spEscribirConReintento('FT_OrdenesFabricacion', updateFields, itemId, ofSap);
