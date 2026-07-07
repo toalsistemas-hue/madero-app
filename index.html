@@ -7798,51 +7798,171 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   var _lockInfo=_locked&&C._tplLockedOps&&C._tplLockedOps[nombre+'|'+estacion];
   var _stLbl=_lockInfo?({running:'▶ En proceso',paused:'⏸ Pausada',validating:'🔍 Validación',op_concluded:'⏳ Concluida'}[_lockInfo.status]||_lockInfo.status):'';
   var _rowBg=_locked?'background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);':'';
+  var _borBg=_locked?'border-color:rgba(239,68,68,.2);':'';
   var _dis=_locked?' disabled':'';
   var _dop=_locked?'opacity:.6;cursor:not-allowed;':'';
-  var h="<div class='op-drag-row' id='tpl-op-"+idx+"' style='"+_rowBg+"'>";
-  h+="<span style='color:var(--muted);cursor:"+(_locked?'not-allowed':'grab')+";'>"+(_locked?'🔒':'⠿')+"</span>";
-  h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
-  h+="<div style='flex:2;position:relative;'>";
-  h+="<div style='display:flex;gap:3px;'>";
-  h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;"+_dop+"'"+_dis;
-  if(!_locked) h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'";
-  h+=">";
-  if(!_locked) h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
-  h+="</div>";
-  if(!_locked) h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
-  if(_locked) h+="<div style='font-size:.6rem;color:#f87171;margin-top:2px;'>"+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+"</div>";
-  h+="</div>";
-  h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;"+_dop+"'"+_dis+"><option value=''>Estación...</option>";
-  STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
-  h+="</select>";
-  h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;"+_dop+"'"+_dis+">";
-  ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
-  h+="</select>";
-  h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
+
+  // ── Build technician options for Técnico select ───────────────────────────
+  var _tecOpts='<option value="">— Sin técnico —</option>';
+  (_ftTecnicosCache||window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
+    var n=t.Nombre||t.Title||'';
+    _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
+  });
+
+  // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
+  var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
+
+  // ── Row 1: main fields (uses op-drag-row flex layout) ────────────────────
+  h+='<div class="op-drag-row" style="border:none;margin:0;border-radius:0;">';
+  h+='<span style="color:var(--muted);cursor:'+(_locked?'not-allowed':'grab')+';">'+(_locked?'🔒':'⠿')+'</span>';
+  h+='<span style="color:var(--muted);font-size:.68rem;font-family:\'DM Mono\',monospace;min-width:18px;text-align:center;">'+idx+'</span>';
+  // Nombre
+  h+='<div style="flex:2;min-width:0;position:relative;">';
+  h+='<div style="display:flex;gap:3px;">';
+  h+='<input class="form-input-sm" placeholder="Nombre de la operación" id="top-n-'+idx+'" autocomplete="off" value="'+(nombre||'')+'" style="flex:1;min-width:0;'+_dop+'"'+_dis;
+  if(!_locked) h+=' oninput="onOpNameInput('+idx+',this.value)" onblur="setTimeout(function(){closeTplOpDd('+idx+');},200)"';
+  h+='>';
+  if(!_locked) h+='<button onclick="openOpPickerForTpl('+idx+')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;flex-shrink:0;" title="Ver catálogo">🔎</button>';
+  h+='</div>';
+  if(!_locked) h+='<div id="top-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;"></div>';
+  if(_locked) h+='<div style="font-size:.6rem;color:#f87171;margin-top:2px;">'+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+'</div>';
+  h+='</div>';
+  // Estación
+  h+='<select class="form-select-sm" id="top-s-'+idx+'" style="flex:1.4;min-width:0;'+_dop+'"'+_dis+'><option value="">Estación...</option>';
+  STATIONS.forEach(function(s){h+='<option'+(s===estacion?' selected':'')+'>'+s+'</option>';});
+  h+='</select>';
+  // Tipo
+  h+='<select class="form-select-sm" id="top-t-'+idx+'" style="flex:0.9;min-width:0;'+_dop+'"'+_dis+'>';
+  ['secuencial','simultanea','retorno'].forEach(function(t){h+='<option value="'+t+'"'+(t===tipo?' selected':'')+'>'+(t.charAt(0).toUpperCase()+t.slice(1))+'</option>';});
+  h+='</select>';
+  // Arrows + delete
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">';
   if(!_locked){
-    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
-    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
+    h+='<button style="width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;" onclick="moveTplOp('+idx+',-1)">↑</button>';
+    h+='<button style="width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;" onclick="moveTplOp('+idx+',1)">↓</button>';
   }else{
-    h+="<span style='font-size:.75rem;opacity:.4;' title='Operación activa'>🔒</span>";
+    h+='<span style="font-size:.75rem;opacity:.4;" title="Operación activa">🔒</span>';
   }
-  h+="</div>";
+  h+='</div>';
   if(!_locked){
-    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")' title='Eliminar operación'>✕</button>";
+    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp(\"'+idx+'\")" title="Eliminar operación">✕</button>';
   }else{
-    h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
+    h+='<span style="font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;flex-shrink:0;" title="No se puede eliminar: operación activa en producción">✕</span>';
   }
-  // Extra fields row: Técnico, Ayudantes, Cantidad (optional, template defaults)
-  h+="<div style='display:flex;gap:6px;margin-top:5px;padding:0 2px;flex-wrap:wrap;align-items:center;'>";
-  h+="<span style='font-size:.64rem;color:var(--dim);white-space:nowrap;min-width:50px;'>Defaults:</span>";
-  h+="<input class='form-input-sm' id='top-tec-"+idx+"' placeholder='👷 Técnico' value='"+(tecnico||"")+"' "+_dis+" style='flex:1;min-width:100px;font-size:.72rem;' title='Técnico asignado por defecto'>";
-  h+="<input class='form-input-sm' id='top-ayu-"+idx+"' placeholder='👥 Ayudantes (coma-sep)' value='"+(ayudantes||"")+"' "+_dis+" style='flex:2;min-width:120px;font-size:.72rem;' title='Ayudantes separados por coma'>";
-  h+="<input class='form-input-sm' id='top-qty-"+idx+"' type='number' min='1' placeholder='📦 Cant' value='"+(cantidad||"")+"' "+_dis+" style='width:65px;font-size:.72rem;' title='Cantidad por defecto'>";
-  h+="</div>";
-  h+="</div>";
+  h+='</div>'; // end op-drag-row
+
+  // ── Row 2: Defaults (full width below Row 1) ──────────────────────────────
+  h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 10px 8px 10px;border-top:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.025);flex-wrap:wrap;">';
+  h+='<span style="font-size:.67rem;color:var(--dim);font-weight:700;min-width:56px;padding-top:6px;flex-shrink:0;">Defaults:</span>';
+
+  // Técnico — dropdown from FT_Tecnicos
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+=_tecOpts;
+  h+='</select>';
+  h+='</div>';
+
+  // Ayudantes — multi-chip with FT_Tecnicos autocomplete
+  var _ayuArr=(ayudantes&&String(ayudantes).trim())?String(ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex:2;min-width:160px;position:relative;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👥 Ayudantes</label>';
+  h+='<div id="top-ayu-chips-'+idx+'" style="display:flex;flex-wrap:wrap;gap:3px;min-height:30px;max-height:80px;overflow-y:auto;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px 7px;align-items:center;cursor:text;">';
+  _ayuArr.forEach(function(a){
+    h+='<span style="background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.25);color:var(--accent-l,#58a6ff);border-radius:4px;padding:1px 5px 1px 7px;font-size:.69rem;display:inline-flex;align-items:center;gap:3px;">'+a;
+    if(!_locked) h+='<button type="button" onclick="tplRemoveAyudante('+idx+',this)" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:.62rem;padding:0 1px;line-height:1;">✕</button>';
+    h+='</span>';
+  });
+  if(!_locked){
+    h+='<input type="text" id="top-ayu-inp-'+idx+'" placeholder="Agregar ayudante..." autocomplete="off" style="background:transparent;border:none;outline:none;color:var(--text);font-size:.75rem;flex:1;min-width:100px;cursor:text;"';
+    h+=' oninput="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
+  }
+  h+='</div>';
+  h+='<div id="top-ayu-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:100%;left:0;margin-top:2px;"></div>';
+  h+='<input type="hidden" id="top-ayu-'+idx+'" value="'+(ayudantes||'')+'">'; // hidden stores CSV
+  h+='</div>';
+
+  // Cantidad
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">📦 Cantidad</label>';
+  h+='<input class="form-input-sm" id="top-qty-'+idx+'" type="number" min="1" placeholder="Pzas" value="'+(cantidad||'')+'" '+_dis+' style="width:72px;font-size:.75rem;" title="Cantidad por defecto">';
+  h+='</div>';
+
+  h+='</div>'; // end defaults row
+  h+='</div>'; // end outer wrapper
+
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
 }
+
+// ── Ayudantes multi-chip helpers for template op rows ────────────────────────
+function tplAyuInput(idx, val) {
+  var dd = document.getElementById('top-ayu-dd-'+idx);
+  if (!dd) return;
+  var q = (val||'').trim().toLowerCase();
+  var tecList = (window._ftTecnicosCache||[]).filter(function(t){ return t.Activo; });
+  var hidden = document.getElementById('top-ayu-'+idx);
+  var selected = hidden && hidden.value
+    ? hidden.value.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+  var filtered = tecList.filter(function(t){
+    var n = t.Nombre||t.Title||'';
+    return n && (!q || n.toLowerCase().indexOf(q) >= 0) && selected.indexOf(n) < 0;
+  });
+  if (!filtered.length || !q) { dd.style.display='none'; return; }
+  dd.innerHTML = filtered.map(function(t){
+    var n = t.Nombre||t.Title||'';
+    return '<div style="padding:7px 12px;cursor:pointer;font-size:.78rem;border-bottom:1px solid rgba(255,255,255,.04);" ' +
+      'data-tplayuidx="'+idx+'" data-nombre="'+n.replace(/"/g,'&quot;')+'" ' +
+      'onmousedown="event.preventDefault();var _el=this;tplAyuSelect(parseInt(_el.dataset.tplayuidx),_el.dataset.nombre);">' +
+      '<strong>'+n+'</strong>'+(t.Puesto?'<span style="color:var(--dim);font-size:.7rem;margin-left:8px;">'+t.Puesto+'</span>':'')+
+      '</div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+function tplAyuKeydown(idx, e) {
+  if (e.key==='Enter' || e.key===',') {
+    e.preventDefault();
+    var inp = document.getElementById('top-ayu-inp-'+idx);
+    if (inp && inp.value.trim()) tplAyuSelect(idx, inp.value.trim());
+  }
+}
+function tplAyuSelect(idx, nombre) {
+  var hidden = document.getElementById('top-ayu-'+idx);
+  var inp    = document.getElementById('top-ayu-inp-'+idx);
+  var chips  = document.getElementById('top-ayu-chips-'+idx);
+  var dd     = document.getElementById('top-ayu-dd-'+idx);
+  if (!hidden || !chips) return;
+  var current = hidden.value ? hidden.value.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+  if (current.indexOf(nombre) >= 0) { if(inp) inp.value=''; if(dd) dd.style.display='none'; return; }
+  current.push(nombre);
+  hidden.value = current.join(',');
+  // Insert chip before the text input
+  var chip = document.createElement('span');
+  chip.style.cssText = 'background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.25);color:var(--accent-l,#58a6ff);border-radius:4px;padding:1px 5px 1px 7px;font-size:.69rem;display:inline-flex;align-items:center;gap:3px;';
+  chip.innerHTML = nombre + '<button type="button" onclick="tplRemoveAyudante('+idx+',this)" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:.62rem;padding:0 1px;line-height:1;">✕</button>';
+  var inputEl = document.getElementById('top-ayu-inp-'+idx);
+  if (inputEl) chips.insertBefore(chip, inputEl); else chips.appendChild(chip);
+  if (inp) inp.value = '';
+  if (dd)  dd.style.display = 'none';
+}
+function tplRemoveAyudante(idx, btn) {
+  var hidden = document.getElementById('top-ayu-'+idx);
+  if (!hidden) return;
+  var chip = btn.parentElement;
+  // Extract name: first text node of the chip
+  var name = '';
+  chip.childNodes.forEach(function(n){ if(n.nodeType===3 && n.textContent.trim()) name=n.textContent.trim(); });
+  if (!name) name = chip.textContent.replace('✕','').trim();
+  var current = hidden.value ? hidden.value.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+  hidden.value = current.filter(function(n){return n!==name;}).join(',');
+  chip.remove();
+}
+function closeTplAyuDd(idx) {
+  var dd = document.getElementById('top-ayu-dd-'+idx);
+  if (dd) dd.style.display = 'none';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function moveTplOp(idx,dir){
   var list=document.getElementById("tpl-ops-list");
   var rows=Array.from(list.children);
@@ -11727,48 +11847,99 @@ appConfirmValCal = function(){
   var _lockInfo=_locked&&C._tplLockedOps&&C._tplLockedOps[nombre+'|'+estacion];
   var _stLbl=_lockInfo?({running:'▶ En proceso',paused:'⏸ Pausada',validating:'🔍 Validación',op_concluded:'⏳ Concluida'}[_lockInfo.status]||_lockInfo.status):'';
   var _rowBg=_locked?'background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2);':'';
+  var _borBg=_locked?'border-color:rgba(239,68,68,.2);':'';
   var _dis=_locked?' disabled':'';
   var _dop=_locked?'opacity:.6;cursor:not-allowed;':'';
-  var h="<div class='op-drag-row' id='tpl-op-"+idx+"' style='"+_rowBg+"'>";
-  h+="<span style='color:var(--muted);cursor:"+(_locked?'not-allowed':'grab')+";'>"+(_locked?'🔒':'⠿')+"</span>";
-  h+="<span style='color:var(--muted);font-size:.68rem;font-family:\"DM Mono\",monospace;min-width:18px;text-align:center;'>"+idx+"</span>";
-  h+="<div style='flex:2;position:relative;'>";
-  h+="<div style='display:flex;gap:3px;'>";
-  h+="<input class='form-input-sm' placeholder='Nombre de la operación' id='top-n-"+idx+"' autocomplete='off' value='"+(nombre||"")+"' style='flex:1;"+_dop+"'"+_dis;
-  if(!_locked) h+=" oninput='onOpNameInput("+idx+",this.value)' onblur='setTimeout(function(){closeTplOpDd("+idx+");},200)'";
-  h+=">";
-  if(!_locked) h+="<button onclick='openOpPickerForTpl("+idx+")' style='background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;' title='Ver catálogo'>🔎</button>";
-  h+="</div>";
-  if(!_locked) h+="<div id='top-dd-"+idx+"' style='display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;'></div>";
-  if(_locked) h+="<div style='font-size:.6rem;color:#f87171;margin-top:2px;'>"+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+"</div>";
-  h+="</div>";
-  h+="<select class='form-select-sm' id='top-s-"+idx+"' style='flex:1.5;"+_dop+"'"+_dis+"><option value=''>Estación...</option>";
-  STATIONS.forEach(function(s){h+="<option"+(s===estacion?" selected":"")+">"+s+"</option>";});
-  h+="</select>";
-  h+="<select class='form-select-sm' id='top-t-"+idx+"' style='flex:1;"+_dop+"'"+_dis+">";
-  ["secuencial","simultanea","retorno"].forEach(function(t){h+="<option value='"+t+"'"+(t===tipo?" selected":"")+">"+t.charAt(0).toUpperCase()+t.slice(1)+"</option>";});
-  h+="</select>";
-  h+="<div style='display:flex;flex-direction:column;gap:2px;'>";
+
+  // ── Build technician options for Técnico select ───────────────────────────
+  var _tecOpts='<option value="">— Sin técnico —</option>';
+  (_ftTecnicosCache||window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
+    var n=t.Nombre||t.Title||'';
+    _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
+  });
+
+  // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
+  var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
+
+  // ── Row 1: main fields (uses op-drag-row flex layout) ────────────────────
+  h+='<div class="op-drag-row" style="border:none;margin:0;border-radius:0;">';
+  h+='<span style="color:var(--muted);cursor:'+(_locked?'not-allowed':'grab')+';">'+(_locked?'🔒':'⠿')+'</span>';
+  h+='<span style="color:var(--muted);font-size:.68rem;font-family:\'DM Mono\',monospace;min-width:18px;text-align:center;">'+idx+'</span>';
+  // Nombre
+  h+='<div style="flex:2;min-width:0;position:relative;">';
+  h+='<div style="display:flex;gap:3px;">';
+  h+='<input class="form-input-sm" placeholder="Nombre de la operación" id="top-n-'+idx+'" autocomplete="off" value="'+(nombre||'')+'" style="flex:1;min-width:0;'+_dop+'"'+_dis;
+  if(!_locked) h+=' oninput="onOpNameInput('+idx+',this.value)" onblur="setTimeout(function(){closeTplOpDd('+idx+');},200)"';
+  h+='>';
+  if(!_locked) h+='<button onclick="openOpPickerForTpl('+idx+')" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 7px;font-size:.7rem;cursor:pointer;flex-shrink:0;" title="Ver catálogo">🔎</button>';
+  h+='</div>';
+  if(!_locked) h+='<div id="top-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:calc(100% + 2px);left:0;"></div>';
+  if(_locked) h+='<div style="font-size:.6rem;color:#f87171;margin-top:2px;">'+_stLbl+(_lockInfo&&_lockInfo.of_sap?' · OF '+_lockInfo.of_sap:'')+'</div>';
+  h+='</div>';
+  // Estación
+  h+='<select class="form-select-sm" id="top-s-'+idx+'" style="flex:1.4;min-width:0;'+_dop+'"'+_dis+'><option value="">Estación...</option>';
+  STATIONS.forEach(function(s){h+='<option'+(s===estacion?' selected':'')+'>'+s+'</option>';});
+  h+='</select>';
+  // Tipo
+  h+='<select class="form-select-sm" id="top-t-'+idx+'" style="flex:0.9;min-width:0;'+_dop+'"'+_dis+'>';
+  ['secuencial','simultanea','retorno'].forEach(function(t){h+='<option value="'+t+'"'+(t===tipo?' selected':'')+'>'+(t.charAt(0).toUpperCase()+t.slice(1))+'</option>';});
+  h+='</select>';
+  // Arrows + delete
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">';
   if(!_locked){
-    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",-1)'>↑</button>";
-    h+="<button style='width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;' onclick='moveTplOp("+idx+",1)'>↓</button>";
+    h+='<button style="width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;" onclick="moveTplOp('+idx+',-1)">↑</button>';
+    h+='<button style="width:18px;height:16px;background:var(--hover);border:none;color:var(--dim);border-radius:3px;cursor:pointer;font-size:.6rem;" onclick="moveTplOp('+idx+',1)">↓</button>';
   }else{
-    h+="<span style='font-size:.75rem;opacity:.4;' title='Operación activa'>🔒</span>";
+    h+='<span style="font-size:.75rem;opacity:.4;" title="Operación activa">🔒</span>';
   }
-  h+="</div>";
+  h+='</div>';
   if(!_locked){
-    h+="<button class='btn-sm-danger' onclick='removeTplOp(\""+idx+"\")' title='Eliminar operación'>✕</button>";
+    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp(\"'+idx+'\")" title="Eliminar operación">✕</button>';
   }else{
-    h+="<span style='font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;' title='No se puede eliminar: operación activa en producción'>✕</span>";
+    h+='<span style="font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;flex-shrink:0;" title="No se puede eliminar: operación activa en producción">✕</span>';
   }
-  // Extra fields row: Técnico, Ayudantes, Cantidad (optional, template defaults)
-  h+="<div style='display:flex;gap:6px;margin-top:5px;padding:0 2px;flex-wrap:wrap;align-items:center;'>";
-  h+="<span style='font-size:.64rem;color:var(--dim);white-space:nowrap;min-width:50px;'>Defaults:</span>";
-  h+="<input class='form-input-sm' id='top-tec-"+idx+"' placeholder='👷 Técnico' value='"+(tecnico||"")+"' "+_dis+" style='flex:1;min-width:100px;font-size:.72rem;' title='Técnico asignado por defecto'>";
-  h+="<input class='form-input-sm' id='top-ayu-"+idx+"' placeholder='👥 Ayudantes (coma-sep)' value='"+(ayudantes||"")+"' "+_dis+" style='flex:2;min-width:120px;font-size:.72rem;' title='Ayudantes separados por coma'>";
-  h+="<input class='form-input-sm' id='top-qty-"+idx+"' type='number' min='1' placeholder='📦 Cant' value='"+(cantidad||"")+"' "+_dis+" style='width:65px;font-size:.72rem;' title='Cantidad por defecto'>";
-  h+="</div>";
-  h+="</div>";
+  h+='</div>'; // end op-drag-row
+
+  // ── Row 2: Defaults (full width below Row 1) ──────────────────────────────
+  h+='<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 10px 8px 10px;border-top:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.025);flex-wrap:wrap;">';
+  h+='<span style="font-size:.67rem;color:var(--dim);font-weight:700;min-width:56px;padding-top:6px;flex-shrink:0;">Defaults:</span>';
+
+  // Técnico — dropdown from FT_Tecnicos
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+=_tecOpts;
+  h+='</select>';
+  h+='</div>';
+
+  // Ayudantes — multi-chip with FT_Tecnicos autocomplete
+  var _ayuArr=(ayudantes&&String(ayudantes).trim())?String(ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex:2;min-width:160px;position:relative;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👥 Ayudantes</label>';
+  h+='<div id="top-ayu-chips-'+idx+'" style="display:flex;flex-wrap:wrap;gap:3px;min-height:30px;max-height:80px;overflow-y:auto;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px 7px;align-items:center;cursor:text;">';
+  _ayuArr.forEach(function(a){
+    h+='<span style="background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.25);color:var(--accent-l,#58a6ff);border-radius:4px;padding:1px 5px 1px 7px;font-size:.69rem;display:inline-flex;align-items:center;gap:3px;">'+a;
+    if(!_locked) h+='<button type="button" onclick="tplRemoveAyudante('+idx+',this)" style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:.62rem;padding:0 1px;line-height:1;">✕</button>';
+    h+='</span>';
+  });
+  if(!_locked){
+    h+='<input type="text" id="top-ayu-inp-'+idx+'" placeholder="Agregar ayudante..." autocomplete="off" style="background:transparent;border:none;outline:none;color:var(--text);font-size:.75rem;flex:1;min-width:100px;cursor:text;"';
+    h+=' oninput="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
+  }
+  h+='</div>';
+  h+='<div id="top-ayu-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:100%;left:0;margin-top:2px;"></div>';
+  h+='<input type="hidden" id="top-ayu-'+idx+'" value="'+(ayudantes||'')+'">'; // hidden stores CSV
+  h+='</div>';
+
+  // Cantidad
+  h+='<div style="display:flex;flex-direction:column;gap:2px;flex-shrink:0;">';
+  h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">📦 Cantidad</label>';
+  h+='<input class="form-input-sm" id="top-qty-'+idx+'" type="number" min="1" placeholder="Pzas" value="'+(cantidad||'')+'" '+_dis+' style="width:72px;font-size:.75rem;" title="Cantidad por defecto">';
+  h+='</div>';
+
+  h+='</div>'; // end defaults row
+  h+='</div>'; // end outer wrapper
+
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
 }
