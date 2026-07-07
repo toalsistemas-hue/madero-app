@@ -4906,12 +4906,12 @@ window.ftDiagnosticColumnNames = ftDiagnosticColumnNames;
 
 // -- SP Persistence: Save Programado_Hoy + Status -------------------------
 async function ftSaveProgramacionToSP() {
+  // Used for standalone saves (e.g. prioridad changes outside confirmProgMain).
+  // confirmProgMain now runs Step 3 inline using Graph API directly.
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
-  // Note: modal managed by confirmProgMain
   try {
-    // Use Graph API directly (no Flow consumption) to fetch OF SP IDs
     const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
     const itemMap = {};
     (res.value||[]).forEach(i => { itemMap[i.fields.Title||''] = i.id; });
@@ -4920,15 +4920,23 @@ async function ftSaveProgramacionToSP() {
       if (!spId) continue;
       const newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
       var fieldsToSave = { Programado_Hoy: of_.programadoHoy === true, Status: newStatus };
-      if(of_.fecha_entrega) fieldsToSave.Fecha_Entrega = of_.fecha_entrega;
-      if(of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
-      // Guardar fecha de programación solo cuando se programa por primera vez
-      if(of_.programadoHoy && !of_.fecha_programacion){
+      // Normalize Fecha_Entrega to full ISO8601 with Z for SP DateTime field
+      if (of_.fecha_entrega) {
+        fieldsToSave.Fecha_Entrega = of_.fecha_entrega.includes('T')
+          ? of_.fecha_entrega
+          : of_.fecha_entrega + 'T00:00:00Z';
+      }
+      if (of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
+      if (of_.programadoHoy && !of_.fecha_programacion) {
         of_.fecha_programacion = new Date().toISOString().split('T')[0];
         fieldsToSave.Fecha_Programacion = of_.fecha_programacion + 'T00:00:00Z';
       }
-      await spEscribir('FT_OrdenesFabricacion', fieldsToSave, spId)
-        .catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
+      // Use Graph API directly (no Flow throttling)
+      await fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields', {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer '+state.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(fieldsToSave)
+      }).catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
     }
     console.log('✅ Programación guardada en SharePoint');
   } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
@@ -9525,243 +9533,215 @@ function confirmProgMain() {
   // -- Persist Programado_Hoy + Prioridad to SharePoint ------------
   // Show modal before ALL SP work — keep it open until cola saves complete
   showLoadingModal('Guardando programación', 'Guardando estado en SharePoint...\nPor favor espera.');
-  ftSaveProgramacionToSP(); // fire-and-forget: updates Programado_Hoy/Status fields
+  // NOTE: ftSaveProgramacionToSP() is now called AFTER Step 1+2 inside the async block
+  // to avoid concurrent Flow throttling. See below.
   // -- Save new OFs ops to FT_Operaciones + FT_Cola_Estacion --
   if (!state.isDemoMode && state.token && nuevasOfs.length > 0) {
-    // Capture the sorted order snapshot for use inside the async block
     var _colaSnapForSP = {};
     nuevasOfs.forEach(function(sap){ _colaSnapForSP[sap] = _colaOrderSnapshot[sap] || 999; });
     setTimeout(async function(){
-      window._confirmProgRunning = true; // Pause coord poll during SP saves
+      window._confirmProgRunning = true;
       try {
         if (!FT_SITE_ID) FT_SITE_ID = await getSiteId();
-        // Snapshot ops BEFORE any async work — protects against poll overwriting DB.activeOFs
+        // ── Snapshot ops before any async work ─────────────────────────────
         var _opsSnapshot = {};
         nuevasOfs.forEach(function(sap){
-          var _aofSnap = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
-          if (_aofSnap && _aofSnap.ops) _opsSnapshot[sap] = _aofSnap.ops.slice();
+          var _aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
+          if (_aof && _aof.ops) _opsSnapshot[sap] = _aof.ops.slice();
         });
-        // Update modal message — already shown by confirmProgMain before this runs
-        showLoadingModal('Guardando programación', 'Registrando operaciones en cola...\nPor favor espera, no cierres esta ventana.');
-        // Step 1: save ops to FT_Operaciones — load existing ops ONCE as cache
-        showLoadingModal('Guardando programación', 'Paso 1/2: Registrando operaciones...\nPor favor espera, no cierres esta ventana.');
+
+        // ══ STEP 1: Save ops to FT_Operaciones (via Flow) ══════════════════
+        showLoadingModal('Guardando programación','Paso 1/3: Registrando operaciones...\nNo cierres esta ventana.');
         var _existingOpsMap = {};
         try {
-          var _opsRes = await flowGet('FT_Operaciones', '', 5000);
+          var _opsRes = await flowGet('FT_Operaciones','',5000);
           (_opsRes.value||[]).forEach(function(item){
-            var f = item.fields || {};
-            var key = (f.OF_SAP||'') + '__' + (f.Op_ID||'');
-            if (key !== '__') _existingOpsMap[key] = { id: item.id };
+            var f=item.fields||{};
+            var key=(f.OF_SAP||'')+'__'+(f.Op_ID||'');
+            if(key!=='__') _existingOpsMap[key]={id:item.id};
           });
-          console.log('  Ops en SP:', Object.keys(_existingOpsMap).length);
-        } catch(e){ console.warn('  Error cargando ops:', e.message); }
+        } catch(e){ console.warn('Error cargando ops existentes:',e.message); }
 
-        for (var ni = 0; ni < nuevasOfs.length; ni++) {
-          var sap = nuevasOfs[ni];
-          // Use snapshot to avoid poll overwriting ops mid-process
-          var aofNew = { ops: _opsSnapshot[sap] || [] };
-          if (!aofNew.ops.length) { console.warn('  OF', sap, 'sin ops en snapshot — saltando'); continue; }
-          console.log('  OF', sap, '→', aofNew.ops.length, 'ops (Cola orden:', _colaSnapForSP[sap], ')');
-          for (var oi = 0; oi < aofNew.ops.length; oi++) {
-            var _opToSave = aofNew.ops[oi];
-            // Set _spId from cache to avoid per-op flowGet inside ftSaveOpToSP
-            var _opKey = sap + '__' + _opToSave.id;
-            if (_existingOpsMap[_opKey] && !_opToSave._spId) _opToSave._spId = _existingOpsMap[_opKey].id;
-            // Retry up to 3 times
-            var _opSaved = false;
-            for (var _opRetry = 0; _opRetry < 3 && !_opSaved; _opRetry++) {
-              try {
-                if (_opRetry > 0) await new Promise(function(r){ setTimeout(r, 1000); });
-                await ftSaveOpToSP(sap, _opToSave.id);
-                _opSaved = true;
-              } catch(opErr){ console.warn('  Op error (intento '+(_opRetry+1)+'):', _opToSave.id, opErr.message); }
-            }
-            if (!_opSaved) console.warn('  ❌ Op NO guardada:', _opToSave.id);
-            if (oi < aofNew.ops.length - 1) await new Promise(function(r){ setTimeout(r, 300); });
-          }
-          if (ni < nuevasOfs.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
-        }
-                // Cooldown between Step 1 and Step 2 — let Flow recover before more writes
-        console.log('  Esperando que el Flow se recupere antes de asignar cola...');
-        await new Promise(function(r){ setTimeout(r, 3000); });
-        showLoadingModal('Guardando programación', 'Paso 2/2: Asignando posiciones de cola...\nPor favor espera, no cierres esta ventana.');
-        // Step 2: 3-pass global queue assignment
-        // Include ALL active OFs (new + existing) to compute positions correctly
-        // Order: existing OFs first (keep their relative order from SP), then new OFs by cola order
-        var _existingActiveSaps = DB.activeOFs
-          .filter(function(a){ return nuevasOfs.indexOf(a.of_sap) < 0 && a.ops && a.ops.length > 0; })
-          .map(function(a){ return a.of_sap; });
+        // Process OFs in batches of 3 (parallelism without overwhelming the Flow)
         var _newSapsSorted = nuevasOfs.slice().sort(function(a,b){
-          return (_colaSnapForSP[a]||999) - (_colaSnapForSP[b]||999);
+          return (_colaSnapForSP[a]||999)-(_colaSnapForSP[b]||999);
         });
-        // All OFs ordered: existing first (preserve their queue), then new ones by supervisor order
-        var _allSapsOrdered = _existingActiveSaps.concat(_newSapsSorted);
-        // Fetch existing cola records to know which ops already have records (for UPSERT)
-        // NO DELETE calls — they cause 502s and exhaust the Flow. Instead we UPSERT.
-        var _existingColaRaw = null;
-        try {
-          // Use Graph directly for FT_Cola_Estacion (no Flow throttling)
-          var _colaGraphRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
-          _existingColaRaw = _colaGraphRes ? {value: (_colaGraphRes.value||[]).map(function(i){ return {id:String(i.id), fields: i.fields||{}}; })} : null;
-        } catch(cleanErr){ console.warn('Error leyendo cola existente:', cleanErr.message); }
-        // Build map Op_ID -> record, detect and delete duplicates
+
+        async function saveOfsOps(sapList) {
+          for (var ni=0; ni<sapList.length; ni++) {
+            var sap=sapList[ni];
+            var opsToSave=_opsSnapshot[sap]||[];
+            if (!opsToSave.length){ console.warn('  OF',sap,'sin ops'); continue; }
+            console.log('  OF',sap,'→',opsToSave.length,'ops');
+            for (var oi=0; oi<opsToSave.length; oi++) {
+              var op=opsToSave[oi];
+              var _opKey=sap+'__'+op.id;
+              if (_existingOpsMap[_opKey] && !op._spId) op._spId=_existingOpsMap[_opKey].id;
+              var _saved=false;
+              for (var _r=0; _r<3 && !_saved; _r++) {
+                if(_r>0) await new Promise(function(r){setTimeout(r,2000*_r);}); // exponential backoff
+                try { await ftSaveOpToSP(sap,op.id); _saved=true; }
+                catch(e){ console.warn('  Op error ('+(_r+1)+'):',op.id,e.message); }
+              }
+              if(!_saved) console.warn('  ❌ Op NO guardada:',op.id);
+              if(oi<opsToSave.length-1) await new Promise(function(r){setTimeout(r,200);});
+            }
+            if(ni<sapList.length-1) await new Promise(function(r){setTimeout(r,400);});
+          }
+        }
+
+        // Run in batches of 3 OFs concurrently
+        var BATCH=3;
+        for (var bi=0; bi<_newSapsSorted.length; bi+=BATCH) {
+          var batch=_newSapsSorted.slice(bi,bi+BATCH);
+          await Promise.all(batch.map(function(s){ return saveOfsOps([s]); }));
+        }
+
+        // ══ STEP 2: Save FT_Cola_Estacion via Graph API (NO Flow) ══════════
+        // Graph API directo: Sites.ReadWrite.All scope confirmed — eliminates
+        // Flow throttling entirely. No delays needed between writes.
+        showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
+
+        // Fetch existing cola records via Graph API
+        var _colaRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
         var _existingColaMap = {};
-        var _duplicatesToDelete = [];
-        (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
-          var f = item.fields || {};
-          var opId = f.Op_ID || '';
+        var _dups = [];
+        ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
+          var f=item.fields||{};
+          var opId=f.Op_ID||'';
           if (!opId) return;
           if (!_existingColaMap[opId]) {
-            _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
+            _existingColaMap[opId]={spId:String(item.id),pos:parseInt(f.Posicion||0)||0};
           } else {
-            // Duplicate: keep lowest spId (oldest), delete the other
-            var existId = parseInt(_existingColaMap[opId].spId)||0;
-            var thisId  = parseInt(item.id)||0;
-            if (thisId < existId) {
-              _duplicatesToDelete.push(existId);
-              _existingColaMap[opId] = { spId: item.id, pos: parseInt(f.Posicion||0)||0 };
-            } else {
-              _duplicatesToDelete.push(thisId);
-            }
+            var keep=parseInt(_existingColaMap[opId].spId)<parseInt(item.id)?_existingColaMap[opId].spId:String(item.id);
+            var del =parseInt(_existingColaMap[opId].spId)<parseInt(item.id)?String(item.id):_existingColaMap[opId].spId;
+            _existingColaMap[opId]={spId:keep,pos:_existingColaMap[opId].pos};
+            _dups.push(del);
           }
         });
-        if (_duplicatesToDelete.length > 0) {
-          console.log('[Cola] Eliminando', _duplicatesToDelete.length, 'duplicados...');
-          for (var _di=0; _di<_duplicatesToDelete.length; _di++) {
-            try { await spEscribir('FT_Cola_Estacion', {_delete:true}, _duplicatesToDelete[_di]);
-              console.log('  Duplicado eliminado:', _duplicatesToDelete[_di]);
-            } catch(de){ console.warn('  Error dup:', de.message); }
-            if (_di < _duplicatesToDelete.length-1) await new Promise(function(r){setTimeout(r,500);});
-          }
+        // Delete duplicates via Graph API (fast, no throttling)
+        if (_dups.length>0) {
+          console.log('[Cola] Eliminando',_dups.length,'duplicados...');
+          await Promise.all(_dups.map(function(spId){
+            return fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+spId,
+              {method:'DELETE',headers:{Authorization:'Bearer '+state.token}}).catch(function(){});
+          }));
         }
-        // Step 2: compute _globalMax from actual SP records (including Activo:false)
-        // Read directly from raw SP data — _existingColaRaw has Estacion/Title directly
-        var _globalMax = {};
-        var _nuevasOfsSet = {};
-        nuevasOfs.forEach(function(s){ _nuevasOfsSet[s] = true; });
-        (_existingColaRaw && _existingColaRaw.value ? _existingColaRaw.value : []).forEach(function(item){
-          var f = item.fields || {};
-          var ofSap = String(f.OF_SAP || '');
-          if (_nuevasOfsSet[ofSap]) return; // skip — belongs to new batch
-          var est = f.Estacion || f.Title || '';
-          var pos = parseInt(f.Posicion || 0) || 0;
-          if (est && pos > 0) _globalMax[est] = Math.max(_globalMax[est]||0, pos);
+        // Compute global max positions (excluding new OFs batch)
+        var _nuevasSet={};
+        _newSapsSorted.forEach(function(s){_nuevasSet[s]=true;});
+        var _globalMax={};
+        ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
+          var f=item.fields||{};
+          var ofSap=String(f.OF_SAP||'');
+          if (_nuevasSet[ofSap]) return;
+          var est=f.Estacion||f.Title||'';
+          var pos=parseInt(f.Posicion||0)||0;
+          if(est&&pos>0) _globalMax[est]=Math.max(_globalMax[est]||0,pos);
         });
-        console.log('[Programación] Max posiciones existentes por estación:', JSON.stringify(_globalMax));
-        showLoadingModal('Guardando programación', 'Paso 2/2: Asignando posiciones de cola...\nPor favor espera, no cierres esta ventana.');
-        // Assign positions using snapshot (not DB.activeOFs which may be stale from poll)
-        _newSapsSorted.forEach(function(sap) {
-          var _snapOps = _opsSnapshot[sap] || [];
-          _snapOps.forEach(function(op){
-            if (!op.estacion) return;
-            _globalMax[op.estacion] = (_globalMax[op.estacion]||0) + 1;
-            op._colaPos = _globalMax[op.estacion];
+        console.log('[Cola] Max existentes:',JSON.stringify(_globalMax));
+        // Assign positions to new ops
+        _newSapsSorted.forEach(function(sap){
+          (_opsSnapshot[sap]||[]).forEach(function(op){
+            if(!op.estacion) return;
+            _globalMax[op.estacion]=(_globalMax[op.estacion]||0)+1;
+            op._colaPos=_globalMax[op.estacion];
           });
-          // Mirror _colaPos back to DB.activeOFs for display
-          var aof = DB.activeOFs.find(function(a){ return a.of_sap===sap; });
-          if (aof) _snapOps.forEach(function(snapOp){
-            var liveOp = aof.ops.find(function(o){return o.id===snapOp.id;});
-            if (liveOp) liveOp._colaPos = snapOp._colaPos;
+          var aof=DB.activeOFs.find(function(a){return a.of_sap===sap;});
+          if(aof)(_opsSnapshot[sap]||[]).forEach(function(snap){
+            var live=aof.ops.find(function(o){return o.id===snap.id;});
+            if(live) live._colaPos=snap._colaPos;
           });
         });
-        // Save queue records for new OFs only — with live progress and final verification
-        var _failedCola = [];
-        var _totalOpsToSave = 0;
-        _newSapsSorted.forEach(function(s){ var a=DB.activeOFs.find(function(x){return x.of_sap===s;}); if(a) _totalOpsToSave+=a.ops.length; });
-        var _savedCount = 0;
-        for (var gi = 0; gi < _newSapsSorted.length; gi++) {
-          var gSap = _newSapsSorted[gi];
-          var gAof = { ops: _opsSnapshot[gSap] || [] };
-          if (!gAof.ops.length) {
-            if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 400); });
-            continue;
-          }
-          for (var oi3 = 0; oi3 < gAof.ops.length; oi3++) {
-            var gOp = gAof.ops[oi3];
-            if (!gOp.estacion || !gOp._colaPos || gOp._colaPos <= 0) continue;
-            _savedCount++;
-            showLoadingModal('Guardando programación',
-              'Paso 2/2: Cola ' + _savedCount + '/' + _totalOpsToSave + '\n' +
-              'OF ' + gSap + ' \u00b7 ' + gOp.estacion + ' pos=' + gOp._colaPos + '\nNo cierres esta ventana.');
-            var _saved = false;
-            var _existingColaEntry = _existingColaMap[gOp.id];
-            for (var _retry = 0; _retry < 3 && !_saved; _retry++) {
-              if (_retry > 0) await new Promise(function(r){ setTimeout(r, 800); });
-              try {
-                var gRes;
-                if (_existingColaEntry && _existingColaEntry.spId) {
-                  gRes = await spEscribir('FT_Cola_Estacion', { Posicion: gOp._colaPos, Activo: false }, parseInt(_existingColaEntry.spId));
-                  gRes = gRes || { resultado: 'ok' };
-                } else {
-                  gRes = await spEscribir('FT_Cola_Estacion', {
-                    Title: gOp.estacion, OF_SAP: gSap, Op_ID: gOp.id,
-                    Posicion: gOp._colaPos, Tipo_Cola: 'normal', Activo: false,
-                  }, null);
-                }
-                var _success = gRes && (gRes.id || gRes.resultado === 'ok');
-                if (_success) {
-                  if (gRes.id) gOp._queueSpId = gRes.id;
-                  _saved = true;
-                  console.log('  ✅ Cola guardada:', gOp.id, 'pos='+gOp._colaPos, 'OF:'+gSap+' orden:'+(_colaSnapForSP[gSap]||'?')+' intento:'+(_retry+1));
-                } else {
-                  console.warn('  ⚠️ Cola vacioa:', gOp.id, 'intento '+(_retry+1), JSON.stringify(gRes));
-                }
-              } catch(e3){
-                console.warn('  ❌ Cola error (intento '+(_retry+1)+'):', gOp.id, e3.message);
-              }
+        // Write all cola records in parallel (Graph API — no throttling)
+        var _colaWrites = [];
+        _newSapsSorted.forEach(function(sap){
+          (_opsSnapshot[sap]||[]).forEach(function(op){
+            if(!op.estacion||!op._colaPos||op._colaPos<=0) return;
+            var existing=_existingColaMap[op.id];
+            var url='https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items';
+            var method='POST';
+            var body={fields:{Title:op.estacion,OF_SAP:sap,Op_ID:op.id,Posicion:op._colaPos,Tipo_Cola:'normal',Activo:false}};
+            if(existing&&existing.spId){
+              url+='/'+existing.spId+'/fields';
+              method='PATCH';
+              body={Posicion:op._colaPos,Activo:false};
             }
-            if (!_saved) _failedCola.push({sap: gSap, op: gOp});
-            await new Promise(function(r){ setTimeout(r, 400); });
-          }
-          if (gi < _newSapsSorted.length - 1) await new Promise(function(r){ setTimeout(r, 600); });
+            _colaWrites.push({url:url,method:method,body:body,op:op,sap:sap});
+          });
+        });
+        var _COLA_BATCH=10; // Graph API handles parallel well; use batches of 10
+        var _failedCola=[];
+        for(var cb=0;cb<_colaWrites.length;cb+=_COLA_BATCH){
+          var cbatch=_colaWrites.slice(cb,cb+_COLA_BATCH);
+          var batchResults=await Promise.all(cbatch.map(async function(w){
+            for(var _cr=0;_cr<3;_cr++){
+              try{
+                var res=await fetch(w.url,{
+                  method:w.method,
+                  headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},
+                  body:JSON.stringify(w.body)
+                });
+                if(res.ok){
+                  var rd=await res.json().catch(function(){return {};});
+                  if(rd.id) w.op._queueSpId=rd.id;
+                  console.log('  ✅ Cola:',w.op.id,'pos='+w.op._colaPos);
+                  return true;
+                }
+                if(res.status===429||res.status===503){
+                  var retry=parseInt(res.headers.get('Retry-After')||'2');
+                  await new Promise(function(r){setTimeout(r,(retry+1)*1000);});
+                }
+              }catch(e){console.warn('  ❌ Cola error:',w.op.id,e.message);}
+            }
+            _failedCola.push(w);
+            return false;
+          }));
+          showLoadingModal('Guardando programación',
+            'Paso 2/3: Cola '+(cb+cbatch.length)+'/'+_colaWrites.length+'\nNo cierres esta ventana.');
         }
-        // Final verification: re-read SP to confirm all records saved
-        showLoadingModal('Guardando programación', 'Verificando registros en SharePoint...\nCasi listo.');
-        await new Promise(function(r){ setTimeout(r, 1500); });
+        if(_failedCola.length>0) console.warn('⚠️ Cola fallida:',_failedCola.length,'ops');
+
+        // ══ STEP 3: Save Programado_Hoy / Status / Fecha_Entrega / Cantidad ══
+        // Runs LAST after Flow has had time to recover. Uses Graph API directly
+        // (same token scope), bypassing the Flow entirely.
+        showLoadingModal('Guardando programación','Paso 3/3: Actualizando estado de OFs...\nCasi listo.');
         try {
-          var _colaVfy = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
-          var _verifyRes = _colaVfy ? {value: (_colaVfy.value||[]).map(function(i){ return {id:String(i.id), fields: i.fields||{}}; })} : {value:[]};
-          var _verifyMap = {};
-          (_verifyRes.value||[]).forEach(function(item){ var f=item.fields||{}; if(f.Op_ID) _verifyMap[f.Op_ID]=true; });
-          var _stillMissing = [];
-          nuevasOfs.forEach(function(sap){
-            var _snapOpsV = _opsSnapshot[sap] || [];
-            _snapOpsV.forEach(function(op){
-              if (op.estacion && op._colaPos > 0 && !_verifyMap[op.id]) _stillMissing.push({sap:sap, op:op});
-            });
-          });
-          var _verifyCount = Object.keys(_verifyMap).length;
-          console.log('[Cola] Verificacion SP: ' + _verifyCount + ' registros totales, ' + _stillMissing.length + ' faltantes');
-          if (_stillMissing.length > 0) {
-            showLoadingModal('Guardando programacion', 'Completando ' + _stillMissing.length + ' registros faltantes...');
-            for (var _vi=0; _vi<_stillMissing.length; _vi++) {
-              var _vm = _stillMissing[_vi];
-              await new Promise(function(r){setTimeout(r, 600);});
-              try {
-                await spEscribir('FT_Cola_Estacion', {
-                  Title: _vm.op.estacion, OF_SAP: _vm.sap, Op_ID: _vm.op.id,
-                  Posicion: _vm.op._colaPos, Tipo_Cola: 'normal', Activo: false,
-                }, null);
-                console.log('[Cola] Recuperado:', _vm.op.id, 'pos='+_vm.op._colaPos);
-              } catch(ve){ console.warn('[Cola] Error recuperando:', _vm.op.id, ve.message); }
+          var _ofRes=await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
+          var _ofMap={};
+          (_ofRes.value||[]).forEach(function(i){_ofMap[i.fields.Title||'']=i.id;});
+          var _ofWrites=DB.ofs.map(function(of_){
+            var spId=_ofMap[of_.of_sap];
+            if(!spId) return Promise.resolve();
+            var newStatus=of_.programadoHoy?'En Fabricacion':'Sin programar';
+            var fields={Programado_Hoy:of_.programadoHoy===true,Status:newStatus};
+            // Normalize Fecha_Entrega to ISO8601 with Z
+            if(of_.fecha_entrega){
+              fields.Fecha_Entrega=of_.fecha_entrega.includes('T')
+                ?of_.fecha_entrega
+                :of_.fecha_entrega+'T00:00:00Z';
             }
-          }
-        } catch(verErr){ console.warn('[Cola] Error verificacion:', verErr.message); }
-        if (_failedCola.length > 0) {
-          console.warn('⚠️ Cola no guardada para', _failedCola.length, 'ops:', _failedCola.map(function(x){ return x.op.id; }).join(', '));
-          // Show warning to coordinator
-          var toastW = document.getElementById('toast-coord');
-          if (toastW) {
-            toastW.textContent = '⚠️ ' + _failedCola.length + ' op(s) sin guardar en cola — se repararán automáticamente';
-            toastW.style.opacity='1'; toastW.style.transform='translateY(0)';
-            setTimeout(function(){ toastW.style.opacity='0'; toastW.style.transform='translateY(10px)'; }, 5000);
-          }
-        }
-        hideLoadingModal();
-        window._confirmProgRunning = false; // Re-enable coord poll
-        // Resort DB_STATION_QUEUE by _colaPos now that all positions are assigned
-        Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st) {
-          window.DB_STATION_QUEUE[st].sort(function(a, b) {
+            if(of_.cantidad) fields.Cantidad=of_.cantidad;
+            if(of_.programadoHoy&&!of_.fecha_programacion){
+              of_.fecha_programacion=new Date().toISOString().split('T')[0];
+              fields.Fecha_Programacion=of_.fecha_programacion+'T00:00:00Z';
+            }
+            return fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields',{
+              method:'PATCH',
+              headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},
+              body:JSON.stringify(fields)
+            }).then(function(r){
+              if(!r.ok) console.warn('  ❌ OF update failed:',of_.of_sap,r.status);
+              else console.log('  ✅ OF actualizada:',of_.of_sap);
+            }).catch(function(e){console.warn('  ❌ OF error:',of_.of_sap,e.message);});
+          });
+          await Promise.all(_ofWrites);
+          console.log('✅ Programación guardada en SharePoint');
+        } catch(e){ console.warn('Error Step 3:',e.message); }
+
+        // ── Finalize ────────────────────────────────────────────────────────
+        Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st){
+          window.DB_STATION_QUEUE[st].sort(function(a,b){
             var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
             var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
             var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
@@ -9769,28 +9749,29 @@ function confirmProgMain() {
             return ((op_a&&op_a._colaPos)||999)-((op_b&&op_b._colaPos)||999);
           });
         });
-        sqSyncColaNumbers(); // recompute op.cola from correct _colaPos order
-        // NOW notify supervisor — all SP records are confirmed saved
-        fireSync('coord', 'prog_updated', {count: hoy});
-        ntfyNotificarEvento('prog_updated', {count: hoy}).catch(function(){});
-        console.log('[Programación] Orden final:', _newSapsSorted.map(function(s){ return s+'('+(_colaSnapForSP[s]||'?')+')'; }).join(' → '));
-        var toast = document.getElementById('toast-coord');
-        if (toast) {
-          toast.textContent = '✅ ' + nuevasOfs.length + ' OF(s) registradas en SharePoint';
-          toast.style.opacity='1'; toast.style.transform='translateY(0)';
-          setTimeout(function(){ toast.style.opacity='0'; toast.style.transform='translateY(10px)'; }, 3000);
+        sqSyncColaNumbers();
+        fireSync('coord','prog_updated',{count:hoy});
+        ntfyNotificarEvento('prog_updated',{count:hoy}).catch(function(){});
+        console.log('[Programación] Orden final:',_newSapsSorted.map(function(s){return s+'('+(_colaSnapForSP[s]||'?')+')';}).join(' → '));
+        var toast=document.getElementById('toast-coord');
+        if(toast){
+          toast.textContent='✅ '+nuevasOfs.length+' OF(s) registradas en SharePoint';
+          toast.style.opacity='1';toast.style.transform='translateY(0)';
+          setTimeout(function(){toast.style.opacity='0';toast.style.transform='translateY(10px)';},3000);
         }
-      } catch(e) {
-        window._confirmProgRunning = false; // Re-enable coord poll on error too
         hideLoadingModal();
-        console.error('Error creando ops en SP:', e.message, e);
-        var toastE = document.getElementById('toast-coord');
-        if (toastE) {
-          toastE.textContent = '❌ Error SP: ' + e.message.substring(0, 80);
-          toastE.style.opacity='1'; toastE.style.transform='translateY(0)';
-          setTimeout(function(){ toastE.style.opacity='0'; toastE.style.transform='translateY(10px)'; }, 5000);
+        window._confirmProgRunning=false;
+      } catch(e) {
+        window._confirmProgRunning=false;
+        hideLoadingModal();
+        console.error('Error confirmando programación:',e.message,e);
+        var toastE=document.getElementById('toast-coord');
+        if(toastE){
+          toastE.textContent='❌ Error SP: '+e.message.substring(0,80);
+          toastE.style.opacity='1';toastE.style.transform='translateY(0)';
+          setTimeout(function(){toastE.style.opacity='0';toastE.style.transform='translateY(10px)';},5000);
         }
-        alert('Error guardando operaciones en SharePoint:\n\n' + e.message + '\n\nAbre la consola (F12) para más detalles.');
+        alert('Error guardando operaciones en SharePoint:\n\n'+e.message+'\n\nAbre la consola (F12) para más detalles.');
       }
     }, 300);
   }
