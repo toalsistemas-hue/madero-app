@@ -7804,7 +7804,7 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
-  (_ftTecnicosCache||window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
+  (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
@@ -11853,7 +11853,7 @@ appConfirmValCal = function(){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
-  (_ftTecnicosCache||window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
+  (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
