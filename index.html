@@ -7767,8 +7767,10 @@ function expandTpl(art){expandedTpls[art]=true;renderTpls();}
 function openNewTplModalWithArt(art){
   C.editingTplArt=null; C.tplOpIdx=0;
   C._tplOriginalOps=null; C._tplLockedOps={};
+  // Proactively load technician list if not yet cached
+  if (typeof _tplEnsureTecnicos === 'function') _tplEnsureTecnicos();
   var _banner=document.getElementById('tpl-active-banner');
-  if(_banner) _banner.style.display='none';
+  if(_banner){ _banner.style.display='none'; _banner.innerHTML=''; }
   document.getElementById("tpl-ops-list").innerHTML="";
   document.getElementById("tpl-modal-title").textContent="+ Nueva Plantilla";
   // Reset all fields
@@ -7893,6 +7895,10 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
 
   document.getElementById("tpl-ops-list").insertAdjacentHTML("beforeend",h);
   renumberTplOps();
+  // Ensure technician cache is loaded (may be empty if Admin tab hasn't been visited)
+  if (!window._ftTecnicosCache || !window._ftTecnicosCache.length) {
+    if (typeof _tplEnsureTecnicos === 'function') _tplEnsureTecnicos();
+  }
 }
 
 // ── Ayudantes multi-chip helpers for template op rows ────────────────────────
@@ -7960,6 +7966,46 @@ function tplRemoveAyudante(idx, btn) {
 function closeTplAyuDd(idx) {
   var dd = document.getElementById('top-ayu-dd-'+idx);
   if (dd) dd.style.display = 'none';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+// ── Ensure FT_Tecnicos cache is loaded for template dropdowns ────────────────
+var _tplTecLoading = false;
+async function _tplEnsureTecnicos() {
+  if (_tplTecLoading) return;
+  if (window._ftTecnicosCache && window._ftTecnicosCache.length) {
+    _tplRefreshTecnicoDropdowns();
+    return;
+  }
+  _tplTecLoading = true;
+  try {
+    var res = await flowGet('FT_Tecnicos', '', 200);
+    var items = (res.value||[]).map(function(i){
+      var f = Object.assign({}, i.fields, {id: i.id});
+      if (!f.Nombre && f.Title) f.Nombre = f.Title;
+      return f;
+    }).sort(function(a,b){ return (a.Nombre||'').localeCompare(b.Nombre||''); });
+    window._ftTecnicosCache = items;
+    window.TECHNICIANS = items.filter(function(t){return t.Activo;}).map(function(t){return t.Nombre||t.Title||'';});
+    _tplRefreshTecnicoDropdowns();
+  } catch(e) { console.warn('[tpl] Error loading FT_Tecnicos:', e.message); }
+  finally { _tplTecLoading = false; }
+}
+function _tplRefreshTecnicoDropdowns() {
+  var tecList = (window._ftTecnicosCache||[]).filter(function(t){ return t.Activo; });
+  // Update all Técnico selects in the modal
+  document.querySelectorAll('#tpl-ops-list select[id^="top-tec-"]').forEach(function(sel) {
+    var currentVal = sel.value;
+    var newOpts = '<option value="">— Sin técnico —</option>';
+    tecList.forEach(function(t){
+      var n = t.Nombre||t.Title||'';
+      newOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>';
+    });
+    sel.innerHTML = newOpts;
+    if (currentVal) sel.value = currentVal;
+  });
+  // Update all Ayudantes input placeholders (input exists, dropdown populated on demand)
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -10857,6 +10903,8 @@ function openEditTpl(art){
     }
   }
 
+  // ── Proactively load technician list if not yet cached
+  if (typeof _tplEnsureTecnicos === 'function') _tplEnsureTecnicos();
   // ── Cargar ops con estado de bloqueo
   document.getElementById('tpl-ops-list').innerHTML = '';
   tpl.ops.forEach(function(op){
@@ -11818,6 +11866,9 @@ appConfirmValCal = function(){
   
   function openNewTplModalWithArt(art){
     C.editingTplArt=null; C.tplOpIdx=0;
+    C._tplOriginalOps=null; C._tplLockedOps={};
+    var _banner2=document.getElementById('tpl-active-banner');
+    if(_banner2){ _banner2.style.display='none'; _banner2.innerHTML=''; }
     document.getElementById("tpl-ops-list").innerHTML="";
     document.getElementById("tpl-modal-title").textContent="+ Nueva Plantilla";
     // Reset all fields
