@@ -7877,7 +7877,7 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   });
   if(!_locked){
     h+='<input type="text" id="top-ayu-inp-'+idx+'" placeholder="Agregar ayudante..." autocomplete="off" style="background:transparent;border:none;outline:none;color:var(--text);font-size:.75rem;flex:1;min-width:100px;cursor:text;"';
-    h+=' oninput="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
+    h+=' oninput="tplAyuInput('+idx+',this.value)" onfocus="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
   }
   h+='</div>';
   h+='<div id="top-ayu-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:100%;left:0;margin-top:2px;"></div>';
@@ -7914,7 +7914,7 @@ function tplAyuInput(idx, val) {
     var n = t.Nombre||t.Title||'';
     return n && (!q || n.toLowerCase().indexOf(q) >= 0) && selected.indexOf(n) < 0;
   });
-  if (!filtered.length || !q) { dd.style.display='none'; return; }
+  if (!filtered.length) { dd.style.display='none'; return; }
   dd.innerHTML = filtered.map(function(t){
     var n = t.Nombre||t.Title||'';
     return '<div style="padding:7px 12px;cursor:pointer;font-size:.78rem;border-bottom:1px solid rgba(255,255,255,.04);" ' +
@@ -11975,7 +11975,7 @@ appConfirmValCal = function(){
   });
   if(!_locked){
     h+='<input type="text" id="top-ayu-inp-'+idx+'" placeholder="Agregar ayudante..." autocomplete="off" style="background:transparent;border:none;outline:none;color:var(--text);font-size:.75rem;flex:1;min-width:100px;cursor:text;"';
-    h+=' oninput="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
+    h+=' oninput="tplAyuInput('+idx+',this.value)" onfocus="tplAyuInput('+idx+',this.value)" onkeydown="tplAyuKeydown('+idx+',event)" onblur="setTimeout(function(){closeTplAyuDd('+idx+');},220)">';
   }
   h+='</div>';
   h+='<div id="top-ayu-dd-'+idx+'" style="display:none;position:absolute;z-index:9999;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.4);top:100%;left:0;margin-top:2px;"></div>';
