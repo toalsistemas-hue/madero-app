@@ -9638,6 +9638,18 @@ function confirmProgMain() {
           }
         } catch(e) { console.warn('[Confirm] getSiteId error:', e.message); }
 
+        // ── Refresh token before SP writes — state.token may have expired ────
+        // Raw fetch() calls don't call getToken() so they use whatever state.token
+        // was last set. If the session is >1h old (common for other users), the
+        // token has expired and Graph returns 404. Always get a fresh token here.
+        var _freshToken;
+        try {
+          _freshToken = await getToken(false);  // returns cached if still valid, refreshes if not
+        } catch(e) {
+          console.error('[Confirm] No se pudo obtener token fresco:', e.message);
+          throw new Error('Token expirado o sesión inválida. Recarga la página e intenta de nuevo.');
+        }
+
         // ── Resolve list IDs once by name → use IDs for all writes ──────────
         // Graph API list resolution by NAME can fail intermittently after token
         // renewal or network changes. List IDs are immutable and always work.
@@ -9724,7 +9736,7 @@ function confirmProgMain() {
         // Fetch existing cola records — use list ID for reliable resolution
         var _colaListBase = _listUrl('FT_Cola_Estacion', _listIdCola);
         var _colaRes = await fetch(_colaListBase+'/items?$expand=fields&$top=500',
-          {headers:{Authorization:'Bearer '+state.token}})
+          {headers:{Authorization:'Bearer '+_freshToken}})
           .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
         var _existingColaMap = {};
         var _dups = [];
@@ -9746,7 +9758,7 @@ function confirmProgMain() {
           console.log('[Cola] Eliminando',_dups.length,'duplicados...');
           await Promise.all(_dups.map(function(spId){
             return fetch(_colaListBase+'/items/'+spId,
-              {method:'DELETE',headers:{Authorization:'Bearer '+state.token}}).catch(function(){});
+              {method:'DELETE',headers:{Authorization:'Bearer '+_freshToken}}).catch(function(){});
           }));
         }
         // Compute global max positions (excluding new OFs batch)
@@ -9801,7 +9813,7 @@ function confirmProgMain() {
               try{
                 var res=await fetch(w.url,{
                   method:w.method,
-                  headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},
+                  headers:{Authorization:'Bearer '+_freshToken,'Content-Type':'application/json'},
                   body:JSON.stringify(w.body)
                 });
                 if(res.ok){
@@ -9825,6 +9837,8 @@ function confirmProgMain() {
         if(_failedCola.length>0) console.warn('⚠️ Cola fallida:',_failedCola.length,'ops');
 
         // ══ STEP 3: Save Programado_Hoy / Status / Fecha_Entrega / Cantidad ══
+        // Refresh token again — Step 2 (batch cola writes) may have taken time
+        try { _freshToken = await getToken(false); } catch(e) {}
         // Runs LAST after Flow has had time to recover. Uses Graph API directly
         // (same token scope), bypassing the Flow entirely.
         showLoadingModal('Guardando programación','Paso 3/3: Actualizando estado de OFs...\nCasi listo.');
@@ -9832,13 +9846,13 @@ function confirmProgMain() {
           // Use list ID for reliable resolution; fallback query without $select if needed
           var _ofListBase = _listUrl('FT_OrdenesFabricacion', _listIdOF);
           var _ofRes = await fetch(_ofListBase+'/items?$expand=fields($select=Title)&$top=500',
-            {headers:{Authorization:'Bearer '+state.token}})
+            {headers:{Authorization:'Bearer '+_freshToken}})
             .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
           // Fallback: fetch without $select if the filtered query failed
           if (!_ofRes || !_ofRes.value) {
             console.warn('[Confirm Step3] Query con $select falló, reintentando sin filtro...');
             _ofRes = await fetch(_ofListBase+'/items?$expand=fields&$top=500',
-              {headers:{Authorization:'Bearer '+state.token}})
+              {headers:{Authorization:'Bearer '+_freshToken}})
               .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
           }
           var _ofMap={};
@@ -9862,7 +9876,7 @@ function confirmProgMain() {
             }
             return fetch(_ofListBase+'/items/'+spId+'/fields',{
               method:'PATCH',
-              headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},
+              headers:{Authorization:'Bearer '+_freshToken,'Content-Type':'application/json'},
               body:JSON.stringify(fields)
             }).then(function(r){
               if(!r.ok) console.warn('  ❌ OF update failed:',of_.of_sap,r.status);
