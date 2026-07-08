@@ -9478,6 +9478,24 @@ function confirmProgMain() {
   // Capturar Fecha_Entrega y Cantidad de los inputs del DOM antes de salir del modo edición
   // Validar que OFs programadas tengan los campos obligatorios
   var errores = [];
+
+  // ── Advertencia: ops sin estación asignada ───────────────────────────────
+  var _opsWarn = [];
+  DB.ofs.filter(function(of){ return of.programadoHoy; }).forEach(function(of){
+    var aof = DB.activeOFs.find(function(a){ return a.of_sap === of.of_sap; });
+    if (!aof) return;
+    aof.ops.forEach(function(op){
+      if (!op.estacion) _opsWarn.push('OF ' + of.of_sap + ' · Op ' + (aof.ops.indexOf(op)+1) + ': ' + (op.nombre||op.id));
+    });
+  });
+  if (_opsWarn.length > 0) {
+    var _warnMsg = '⚠️ Las siguientes operaciones no tienen estación asignada y NO aparecerán en la cola de producción:\n\n'
+      + _opsWarn.slice(0,8).join('\n')
+      + (_opsWarn.length > 8 ? '\n... y ' + (_opsWarn.length-8) + ' más' : '')
+      + '\n\n¿Deseas continuar de todas formas?';
+    if (!confirm(_warnMsg)) return;
+  }
+
   DB.ofs.forEach(function(of){
     var feEl = document.getElementById('fe-'+of.of_sap);
     var cantEl = document.getElementById('cant-'+of.of_sap);
@@ -9619,6 +9637,31 @@ function confirmProgMain() {
             FT_SITE_ID = await getSiteId();
           }
         } catch(e) { console.warn('[Confirm] getSiteId error:', e.message); }
+
+        // ── Resolve list IDs once by name → use IDs for all writes ──────────
+        // Graph API list resolution by NAME can fail intermittently after token
+        // renewal or network changes. List IDs are immutable and always work.
+        var _listIdOF   = null;  // FT_OrdenesFabricacion list ID
+        var _listIdCola = null;  // FT_Cola_Estacion list ID
+        try {
+          var _listsRes = await graphGet('sites/'+FT_SITE_ID+'/lists?$select=id,name,displayName&$top=100');
+          (_listsRes.value||[]).forEach(function(lst){
+            var n = lst.name || lst.displayName || '';
+            if (n === 'FT_OrdenesFabricacion' || lst.displayName === 'FT_OrdenesFabricacion') _listIdOF   = lst.id;
+            if (n === 'FT_Cola_Estacion'       || lst.displayName === 'FT_Cola_Estacion')       _listIdCola = lst.id;
+          });
+          console.log('[Confirm] List IDs resolved — OF:', _listIdOF, '| Cola:', _listIdCola);
+          if (!_listIdOF || !_listIdCola) {
+            console.warn('[Confirm] ⚠️ No se pudieron resolver los IDs de listas. Usando nombres como fallback.');
+          }
+        } catch(e) {
+          console.warn('[Confirm] Error resolviendo IDs de listas:', e.message);
+        }
+        // Helper: build base URL using list ID when available, name as fallback
+        function _listUrl(listName, listId) {
+          var base = 'https://graph.microsoft.com/v1.0/sites/' + FT_SITE_ID + '/lists/';
+          return base + (listId || listName);
+        }
         // ── Snapshot ops before any async work ─────────────────────────────
         var _opsSnapshot = {};
         nuevasOfs.forEach(function(sap){
@@ -9678,8 +9721,11 @@ function confirmProgMain() {
         // Flow throttling entirely. No delays needed between writes.
         showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
 
-        // Fetch existing cola records via Graph API
-        var _colaRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500').catch(function(){return null;});
+        // Fetch existing cola records — use list ID for reliable resolution
+        var _colaListBase = _listUrl('FT_Cola_Estacion', _listIdCola);
+        var _colaRes = await fetch(_colaListBase+'/items?$expand=fields&$top=500',
+          {headers:{Authorization:'Bearer '+state.token}})
+          .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
         var _existingColaMap = {};
         var _dups = [];
         ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
@@ -9699,7 +9745,7 @@ function confirmProgMain() {
         if (_dups.length>0) {
           console.log('[Cola] Eliminando',_dups.length,'duplicados...');
           await Promise.all(_dups.map(function(spId){
-            return fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+spId,
+            return fetch(_colaListBase+'/items/'+spId,
               {method:'DELETE',headers:{Authorization:'Bearer '+state.token}}).catch(function(){});
           }));
         }
@@ -9735,7 +9781,7 @@ function confirmProgMain() {
           (_opsSnapshot[sap]||[]).forEach(function(op){
             if(!op.estacion||!op._colaPos||op._colaPos<=0) return;
             var existing=_existingColaMap[op.id];
-            var url='https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items';
+            var url=_colaListBase+'/items';
             var method='POST';
             var body={fields:{Title:op.estacion,OF_SAP:sap,Op_ID:op.id,Posicion:op._colaPos,Tipo_Cola:'normal',Activo:false}};
             if(existing&&existing.spId){
@@ -9783,9 +9829,21 @@ function confirmProgMain() {
         // (same token scope), bypassing the Flow entirely.
         showLoadingModal('Guardando programación','Paso 3/3: Actualizando estado de OFs...\nCasi listo.');
         try {
-          var _ofRes=await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
+          // Use list ID for reliable resolution; fallback query without $select if needed
+          var _ofListBase = _listUrl('FT_OrdenesFabricacion', _listIdOF);
+          var _ofRes = await fetch(_ofListBase+'/items?$expand=fields($select=Title)&$top=500',
+            {headers:{Authorization:'Bearer '+state.token}})
+            .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
+          // Fallback: fetch without $select if the filtered query failed
+          if (!_ofRes || !_ofRes.value) {
+            console.warn('[Confirm Step3] Query con $select falló, reintentando sin filtro...');
+            _ofRes = await fetch(_ofListBase+'/items?$expand=fields&$top=500',
+              {headers:{Authorization:'Bearer '+state.token}})
+              .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
+          }
           var _ofMap={};
-          (_ofRes.value||[]).forEach(function(i){_ofMap[i.fields.Title||'']=i.id;});
+          ((_ofRes&&_ofRes.value)||[]).forEach(function(i){_ofMap[(i.fields&&i.fields.Title)||'']=i.id;});
+          if (!Object.keys(_ofMap).length) console.warn('[Confirm Step3] _ofMap vacío — OFs no se actualizarán');
           var _ofWrites=DB.ofs.map(function(of_){
             var spId=_ofMap[of_.of_sap];
             if(!spId) return Promise.resolve();
@@ -9802,7 +9860,7 @@ function confirmProgMain() {
               of_.fecha_programacion=new Date().toISOString().split('T')[0];
               fields.Fecha_Programacion=of_.fecha_programacion+'T00:00:00Z';
             }
-            return fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields',{
+            return fetch(_ofListBase+'/items/'+spId+'/fields',{
               method:'PATCH',
               headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},
               body:JSON.stringify(fields)
