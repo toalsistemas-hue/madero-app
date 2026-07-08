@@ -243,6 +243,10 @@ tr:last-child td{border-bottom:none;}
 .opr.done{border-color:rgba(34,197,94,.2);opacity:.82;}
 .opr.rejected{border-color:var(--ared);}
 .opr.op_concluded{border-color:#f59e0b;background:rgba(245,158,11,.05);}
+.opr.op_omitida{border-color:rgba(100,100,100,.3);background:rgba(80,80,80,.04);opacity:.7;}
+.app-ob-omitir{background:rgba(100,100,100,.15);color:#8b949e;border:1px solid rgba(100,100,100,.25);border-radius:6px;padding:5px 10px;font-size:.72rem;font-weight:600;cursor:pointer;}
+.app-ob-omitir:active{background:rgba(100,100,100,.3);}
+.app-chip-omitida{background:rgba(100,100,100,.15);color:#6e7681;border:1px solid rgba(100,100,100,.2);border-radius:4px;padding:2px 7px;font-size:.65rem;font-weight:600;}
 .app-op-top{display:flex;align-items:flex-start;gap:5px;}
 .app-move-btns{display:flex;flex-direction:column;gap:1px;flex-shrink:0;}
 .app-mv-btn{width:16px;height:15px;border:1px solid rgba(255,255,255,.08);border-radius:3px;background:transparent;color:var(--adim);font-size:.56rem;cursor:pointer;display:flex;align-items:center;justify-content:center;}
@@ -287,6 +291,7 @@ tr:last-child td{border-bottom:none;}
 .app-fnode-done{border-color:var(--agreen);background:rgba(34,197,94,.07);}
 .app-fnode-running{border-color:var(--aaccent);background:rgba(0,180,216,.07);}
 .app-fnode-paused{border-color:var(--ayellow);background:rgba(245,158,11,.07);}
+.app-fnode-omitida{border-color:rgba(100,100,100,.2);background:rgba(80,80,80,.04);opacity:.5;}
 .app-fnode-validating{border-color:var(--apurple);background:rgba(168,85,247,.07);}
 .app-fnode-pending{background:rgba(22,32,43,.9);}
 .app-notif-b{background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.25);border-radius:7px;padding:8px 10px;margin-bottom:8px;display:flex;gap:6px;align-items:flex-start;}
@@ -353,79 +358,6 @@ tr:last-child td{border-bottom:none;}
 
 /* ── App Shell ── */
 #app-shell-mobile { display:none;height:100vh;height:100dvh;width:100vw;overflow:hidden;position:fixed;top:0;left:0; }
-
-/* ── Monitor Sleep Screen ──────────────────────────────────────── */
-#monitor-sleep-screen {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 500;
-  background: #020810;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-}
-#monitor-sleep-screen.active { display: flex; }
-
-/* Logo pulse animation */
-@keyframes monSleepPulse {
-  0%,100% { opacity: .35; transform: scale(1); }
-  50%      { opacity: .75; transform: scale(1.04); }
-}
-@keyframes monSleepSwipeAnim {
-  0%,100% { transform: translateY(0); opacity: .5; }
-  50%      { transform: translateY(-10px); opacity: 1; }
-}
-@keyframes monSleepDotPulse {
-  0%,100% { opacity: .2; }
-  50%      { opacity: 1; }
-}
-
-.mon-sleep-logo {
-  animation: monSleepPulse 3s ease-in-out infinite;
-  margin-bottom: 48px;
-}
-.mon-sleep-logo svg circle { opacity: .6; }
-
-.mon-sleep-swipe-icon {
-  animation: monSleepSwipeAnim 1.8s ease-in-out infinite;
-  margin-bottom: 10px;
-}
-.mon-sleep-label {
-  font-size: .82rem;
-  color: rgba(255,255,255,.35);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  font-family: 'Segoe UI', sans-serif;
-  font-weight: 500;
-}
-.mon-sleep-clock {
-  position: absolute;
-  top: 28px;
-  right: 32px;
-  font-size: 1.1rem;
-  color: rgba(255,255,255,.18);
-  font-family: 'DM Mono', monospace;
-  letter-spacing: .06em;
-}
-.mon-sleep-dots {
-  display: flex;
-  gap: 6px;
-  margin-top: 28px;
-}
-.mon-sleep-dots span {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: rgba(255,255,255,.3);
-  animation: monSleepDotPulse 1.8s ease-in-out infinite;
-}
-.mon-sleep-dots span:nth-child(2) { animation-delay: .3s; }
-.mon-sleep-dots span:nth-child(3) { animation-delay: .6s; }
-
 </style>
 <script>
 // ── crypto.subtle polyfill para HTTP (red local) ──────────
@@ -600,37 +532,6 @@ tr:last-child td{border-bottom:none;}
                border-radius:7px;padding:5px 8px;cursor:pointer;color:#8b949e;font-size:.85rem;">⚙️</button>
     </div>
   </div>
-
-  <!-- ── Monitor Sleep Screen ─────────────────────────────────────── -->
-  <div id="monitor-sleep-screen">
-    <!-- Clock (keeps ticking during sleep) -->
-    <div class="mon-sleep-clock" id="mon-sleep-clock"></div>
-
-    <!-- Pulsing logo -->
-    <div class="mon-sleep-logo">
-      <svg width="90" height="90" viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="45" cy="45" r="42" stroke="rgba(88,166,255,.4)" stroke-width="2"/>
-        <circle cx="45" cy="45" r="32" fill="rgba(88,166,255,.08)" stroke="rgba(88,166,255,.25)" stroke-width="1.5"/>
-        <text x="45" y="51" text-anchor="middle" font-size="22" font-weight="700"
-              font-family="'Segoe UI',sans-serif" fill="rgba(88,166,255,.7)">M</text>
-      </svg>
-    </div>
-
-    <!-- Swipe-up indicator -->
-    <div class="mon-sleep-swipe-icon">
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <polyline points="6,18 14,8 22,18" stroke="rgba(255,255,255,.5)" stroke-width="2.2"
-                  stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <div class="mon-sleep-label">Desliza hacia arriba para continuar</div>
-
-    <!-- Animated dots -->
-    <div class="mon-sleep-dots">
-      <span></span><span></span><span></span>
-    </div>
-  </div>
-
 
   <!-- Gear menu -->
   <div id="monitor-gear-menu" style="display:none;position:absolute;top:58px;right:12px;
@@ -1740,7 +1641,7 @@ function initActiveOFs() {
       var saAof = DB.activeOFs.find(function(a){return a.of_sap===sa.of_sap;});
       if(!saAof) return sa;
       var done = saAof.ops.filter(function(o){return o.status==='done';}).length;
-      var total = saAof.ops.length;
+      var total = saAof.ops.filter(function(o){return o.status!=='omitida';}).length;
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var st = done===total && total>0 ? 'done' : done>0 ? 'running' :
                (DB.ofs.find(function(o){return o.of_sap===sa.of_sap;})||{}).statusSAP==='EN PROCESO' ? 'running' : 'planeacion';
@@ -2971,7 +2872,7 @@ function renderProg(){
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
-      var total = aof?aof.ops.length:0;
+      var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
       h+="<div class='prog-of-row'>";
       if(C.editingMode) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
@@ -3261,12 +3162,13 @@ function renderSeg(){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof)return;
       var done=aof.ops.filter(function(o){return o.status==="done";}).length;
-      var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
+      var _nonOmit=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       h+="<div style='padding:10px 14px;border-bottom:1px solid var(--border);'>";
       h+="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;'>";
       h+="<div><span style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l);'>OF "+esc(of.of_sap)+(of.articulo?" · "+esc(of.articulo):"")+"</span>";
       h+=" <span style='font-size:.78rem;font-weight:500;'>"+esc(of.descripcion.substring(0,45))+"</span></div>";
-      h+="<span style='font-size:.72rem;color:var(--dim);font-family:\"DM Mono\",monospace;'>"+done+"/"+aof.ops.length+" · "+pct+"%</span></div>";
+      h+="<span style='font-size:.72rem;color:var(--dim);font-family:\"DM Mono\",monospace;'>"+done+"/"+aof.ops.filter(function(o){return o.status!=='omitida';}).length+" · "+pct+"%</span></div>";
       // Mini ops list
       var h2="<div style='display:flex;flex-wrap:wrap;gap:4px;'>";
       aof.ops.forEach(function(op){
@@ -3611,7 +3513,8 @@ function renderAppHoy(){
     g.ofs.forEach(function(of){
       var exp=APP.expanded[of.of_sap];
       var done=of.ops.filter(function(o){return o.status==="done";}).length;
-      var pct=of.ops.length>0?Math.round(done/of.ops.length*100):0;
+      var _nonOmit=of.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       var runC=of.ops.filter(function(o){return o.status==="running";}).length;
       var valC=of.ops.filter(function(o){return o.status==="validating";}).length;
       h+="<div class='app-ofc'><div class='app-ofc-hdr' onclick='toggleAppOF(\""+of.of_sap+"\")'>";
@@ -3779,8 +3682,12 @@ function renderAppOpsPanel(of){
     var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
+      if(op.status==="omitida"){
+        h+="<span class='app-chip-omitida'>⊘ Omitida</span>";
+      }
       if(op.status==="pending"){
         h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Iniciar</button>";
+        h+="<button class='app-ob app-ob-omitir' onclick='appOmitirOp(\""+of.of_sap+"\",\""+op.id+"\")' title='Omitir esta operación'>⊘ Omitir</button>";
         h+="<button class='app-ob app-ob-ghost' style='background:rgba(255,255,255,.06);color:var(--adim);' onclick='appOpenQuickAssign(\""+of.of_sap+"\",\""+op.id+"\")'>👷</button>";
         if(op.cola){
           h+="<div style='display:flex;align-items:center;gap:3px;background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.25);border-radius:5px;padding:2px 7px;'>";
@@ -3982,6 +3889,22 @@ function appMoveOp(sap,idx,dir){
   }
   fireSync("app","op_moved",{of_sap:sap, moved_by:'supervisor'});
 }
+async function appOmitirOp(sap, opId) {
+  var of = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
+  var op = of ? of.ops.find(function(o){ return o.id === opId; }) : null;
+  if (!op || op.status !== 'pending') return;
+  if (!confirm('¿Omitir la operación "' + (op.nombre||opId) + '"?\n\nEsta operación quedará bloqueada y no se mostrará en el monitor.')) return;
+  op.status = 'omitida';
+  op.fin    = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  renderApp();
+  // Persist to SP
+  if (typeof appSaveOpToSP === 'function') {
+    appSaveOpToSP(sap, opId).catch(function(e){ console.warn('SP omitir error:', e.message); });
+  }
+  // Notify coordinator
+  if (typeof fireSync === 'function') fireSync('app', 'op_omitida', {of_sap: sap, op_id: opId});
+}
+
 function appStartOp(sap,opId){
   var _ofRec2=DB.ofs.find(function(o){return o.of_sap===sap;});
   if(_ofRec2&&(_ofRec2.pedidoCierre||_ofRec2.status==='En proceso de cierre')){
@@ -4949,7 +4872,7 @@ function renderProg() {
     if (!ofs.length) return false;
     return ofs.every(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
+      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';});
     });
   }
 
@@ -4971,7 +4894,7 @@ function renderProg() {
     g.ofs.forEach(function(of){ if(of && PENDING_PROG && PENDING_PROG[of.of_sap]) gPrio = PENDING_PROG[of.of_sap].prioridad; });
     var completed = g.ofs.every(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
+      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';});
     }) && g.ofs.some(function(of){return of.programadoHoy;});
     var grpStyle = completed ? 'border-color:var(--green);background:rgba(46,160,67,.04);' : '';
     h += '<div class="prog-card" style="'+grpStyle+'">';
@@ -4994,7 +4917,7 @@ function renderProg() {
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
-      var total = aof ? aof.ops.length : 0;
+      var total = aof ? aof.ops.filter(function(o){return o.status!=='omitida';}).length : 0;
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var borderStyle = pending ? 'border-left:3px solid var(--yellow);' : '';
       h += '<div class="prog-of-row" style="'+borderStyle+'">';
@@ -6171,7 +6094,8 @@ function renderSeg(){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof) return;
       var done=aof.ops.filter(function(o){return o.status==='done';}).length;
-      var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
+      var _nonOmit=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
@@ -9702,10 +9626,6 @@ var _MON = {
   locked:         false,             // config bloqueada
   pollTimer:      null,
   clockTimer:     null,
-  idleTimer:      null,              // inactivity watchdog (2 min → sleep)
-  isIdle:         false,             // true while sleep screen is active
-  _lastActivity:  0,                 // timestamp of last user interaction
-  IDLE_MS:        120000,            // 2 minutes in ms
   pinCtx:         null,              // contexto del PIN actual
   pinDigits:      '',
   technicians:    [],                // cache de FT_Tecnicos
@@ -9715,94 +9635,6 @@ var _MON = {
   DEFAULT_ADMIN_PIN: '123456',
 };
 
-
-// ── Monitor Sleep Screen ──────────────────────────────────────────
-// Tablet is fixed at workstation. After 2 min of no interaction,
-// polling stops and sleep screen activates. Swipe-up or tap wakes it.
-
-function monitorResetIdle() {
-  if (_MON.isIdle) return;           // don't reset while already sleeping
-  _MON._lastActivity = Date.now();
-  if (_MON.idleTimer) clearTimeout(_MON.idleTimer);
-  _MON.idleTimer = setTimeout(function() {
-    monitorGoSleep();
-  }, _MON.IDLE_MS);
-}
-
-function monitorGoSleep() {
-  if (_MON.isIdle) return;
-  _MON.isIdle = true;
-  // Pause polling — stops all Flow calls
-  if (_MON.pollTimer) { clearInterval(_MON.pollTimer); _MON.pollTimer = null; }
-  // Show sleep screen
-  var ss = document.getElementById('monitor-sleep-screen');
-  if (ss) {
-    ss.classList.add('active');
-    // Update sleep clock once immediately then keep ticking via clockTimer
-    var sc = document.getElementById('mon-sleep-clock');
-    if (sc) sc.textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
-  }
-  console.log('[Monitor] Reposo activado — polling detenido');
-}
-
-async function monitorWakeUp() {
-  if (!_MON.isIdle) return;
-  _MON.isIdle = false;
-  // Hide sleep screen
-  var ss = document.getElementById('monitor-sleep-screen');
-  if (ss) ss.classList.remove('active');
-  // Immediate refresh before restarting poll
-  try {
-    await appReloadOpsFromSP();
-    monitorRender();
-  } catch(e) { console.warn('[Monitor] Wake refresh error:', e.message); }
-  // Restart polling
-  monitorStartPolling();
-  // Restart idle watchdog
-  monitorResetIdle();
-  console.log('[Monitor] Reposo terminado — polling reanudado');
-}
-
-function monitorInitSleepScreen() {
-  var ss = document.getElementById('monitor-sleep-screen');
-  if (!ss) return;
-  // Touch swipe-up detection on sleep screen
-  var _touchStartY = 0;
-  ss.addEventListener('touchstart', function(e) {
-    _touchStartY = e.touches[0].clientY;
-  }, {passive: true});
-  ss.addEventListener('touchend', function(e) {
-    var deltaY = e.changedTouches[0].clientY - _touchStartY;
-    if (deltaY < -40) monitorWakeUp();   // swipe up → wake
-  }, {passive: true});
-  // Tap also wakes (covers stylus or desktop)
-  ss.addEventListener('click', function() { monitorWakeUp(); });
-
-  // Listen for ANY interaction on the monitor-screen to reset idle timer
-  var ms = document.getElementById('monitor-screen');
-  if (ms) {
-    ms.addEventListener('touchstart', function() {
-      if (!_MON.isIdle) monitorResetIdle();
-    }, {passive: true});
-    ms.addEventListener('click', function() {
-      if (!_MON.isIdle) monitorResetIdle();
-    }, {passive: true});
-  }
-}
-
-// ── Patch monitorUpdateClock to also update sleep screen clock ────
-var _origMonUpdateClock = null;
-function monitorUpdateClockWithSleep() {
-  // Update main monitor clock
-  var el = document.getElementById('monitor-clock');
-  if (el) el.textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
-  // Also update sleep screen clock while idle
-  if (_MON.isIdle) {
-    var sc = document.getElementById('mon-sleep-clock');
-    if (sc) sc.textContent = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit'});
-  }
-}
-
 // ── Init ──────────────────────────────────────────────────────────
 async function monitorInit() {
   var screen = document.getElementById('monitor-screen');
@@ -9810,8 +9642,7 @@ async function monitorInit() {
   _MON.estaciones = JSON.parse(localStorage.getItem(_MON.ESTACIONES_KEY) || '[]');
   _MON.locked     = localStorage.getItem(_MON.LOCKED_KEY) === '1';
   monitorUpdateClock();
-  // Use patched clock updater that also ticks the sleep screen clock
-  _MON.clockTimer = setInterval(monitorUpdateClockWithSleep, 1000);
+  _MON.clockTimer = setInterval(monitorUpdateClock, 1000);
   // Load Admin PIN from SP Configuracion list
   try {
     var siteId = await appGetSiteId();
@@ -9840,9 +9671,6 @@ async function monitorInit() {
   } else {
     monitorRender();
     monitorStartPolling();
-    // Initialize sleep screen and idle watchdog
-    monitorInitSleepScreen();
-    monitorResetIdle();
   }
 }
 
@@ -9854,10 +9682,6 @@ function monitorUpdateClock() {
 function monitorExit() {
   if (_MON.pollTimer)  { clearInterval(_MON.pollTimer);  _MON.pollTimer  = null; }
   if (_MON.clockTimer) { clearInterval(_MON.clockTimer); _MON.clockTimer = null; }
-  if (_MON.idleTimer)  { clearTimeout(_MON.idleTimer);   _MON.idleTimer  = null; }
-  _MON.isIdle = false;
-  var ss = document.getElementById('monitor-sleep-screen');
-  if (ss) ss.classList.remove('active');
   var screen = document.getElementById('monitor-screen');
   if (screen) screen.style.display = 'none';
   // Restart FabTracker polling when leaving Monitor
@@ -9977,6 +9801,7 @@ function monitorRender() {
     (of.ops || []).forEach(function(op) {
       if (!estaciones.includes(op.estacion)) return;
       var item = { of: of, op: op };
+      if (op.status === 'omitida') return; // ops omitidas no se muestran al operador
       if (op.status === 'done') {
         // Only show if finished today
         if (op.fin && op.fin.includes(today.split('/')[0])) opsTerminadas.push(item);
@@ -10808,7 +10633,6 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
 // ── Gear menu ─────────────────────────────────────────────────────
 var _monTvTapCount = 0, _monTvTapTimer = null, _monTvLastEvt = 0;
 function _monTvTap(e) {
-  monitorResetIdle();   // op card tap resets idle timer
   // Evitar doble disparo touchstart+click en mobile
   var now = Date.now();
   if (e && e.type === 'click' && (now - _monTvLastEvt) < 500) return;
@@ -11164,7 +10988,7 @@ function initActiveOFs() {
       var saAof = DB.activeOFs.find(function(a){return a.of_sap===sa.of_sap;});
       if(!saAof) return sa;
       var done = saAof.ops.filter(function(o){return o.status==='done';}).length;
-      var total = saAof.ops.length;
+      var total = saAof.ops.filter(function(o){return o.status!=='omitida';}).length;
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var st = done===total && total>0 ? 'done' : done>0 ? 'running' :
                (DB.ofs.find(function(o){return o.of_sap===sa.of_sap;})||{}).statusSAP==='EN PROCESO' ? 'running' : 'planeacion';
@@ -11491,7 +11315,7 @@ function renderProg(){
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
-      var total = aof?aof.ops.length:0;
+      var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
       h+="<div class='prog-of-row'>";
       if(C.editingMode) h+="<input type='checkbox' class='prog-chk' "+(of.programadoHoy?"checked":"")+" onchange='toggleProg(\""+of.of_sap+"\",this.checked)'>";
@@ -11781,12 +11605,13 @@ function renderSeg(){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof)return;
       var done=aof.ops.filter(function(o){return o.status==="done";}).length;
-      var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
+      var _nonOmit=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       h+="<div style='padding:10px 14px;border-bottom:1px solid var(--border);'>";
       h+="<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;'>";
       h+="<div><span style='font-family:\"DM Mono\",monospace;font-size:.74rem;color:var(--accent-l);'>OF "+esc(of.of_sap)+(of.articulo?" · "+esc(of.articulo):"")+"</span>";
       h+=" <span style='font-size:.78rem;font-weight:500;'>"+esc(of.descripcion.substring(0,45))+"</span></div>";
-      h+="<span style='font-size:.72rem;color:var(--dim);font-family:\"DM Mono\",monospace;'>"+done+"/"+aof.ops.length+" · "+pct+"%</span></div>";
+      h+="<span style='font-size:.72rem;color:var(--dim);font-family:\"DM Mono\",monospace;'>"+done+"/"+aof.ops.filter(function(o){return o.status!=='omitida';}).length+" · "+pct+"%</span></div>";
       // Mini ops list
       var h2="<div style='display:flex;flex-wrap:wrap;gap:4px;'>";
       aof.ops.forEach(function(op){
@@ -12130,7 +11955,8 @@ function renderAppHoy(){
     g.ofs.forEach(function(of){
       var exp=APP.expanded[of.of_sap];
       var done=of.ops.filter(function(o){return o.status==="done";}).length;
-      var pct=of.ops.length>0?Math.round(done/of.ops.length*100):0;
+      var _nonOmit=of.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       var runC=of.ops.filter(function(o){return o.status==="running";}).length;
       var valC=of.ops.filter(function(o){return o.status==="validating";}).length;
       h+="<div class='app-ofc'><div class='app-ofc-hdr' onclick='toggleAppOF(\""+of.of_sap+"\")'>";
@@ -12305,8 +12131,12 @@ function renderAppOpsPanel(of){
     var _roleForRender = (_appRoleLocal==='readonly') ? 'supervisor' : _appRoleLocal;
     if(appCan('start') || _roleForRender==='supervisor'){
       var canFinish=appCan('finish')&&(op.calResult==="liberado"||(op.status!=="validating"&&!op.needsCal));
+      if(op.status==="omitida"){
+        h+="<span class='app-chip-omitida'>⊘ Omitida</span>";
+      }
       if(op.status==="pending"){
         h+="<button class='app-ob app-ob-start' onclick='appStartOp(\""+of.of_sap+"\",\""+op.id+"\")'>▶ Iniciar</button>";
+        h+="<button class='app-ob app-ob-omitir' onclick='appOmitirOp(\""+of.of_sap+"\",\""+op.id+"\")' title='Omitir esta operación'>⊘ Omitir</button>";
         h+="<button class='app-ob app-ob-ghost' style='background:rgba(255,255,255,.06);color:var(--adim);' onclick='appOpenQuickAssign(\""+of.of_sap+"\",\""+op.id+"\")'>👷</button>";
         if(op.cola){
           h+="<div style='display:flex;align-items:center;gap:3px;background:rgba(31,111,235,.12);border:1px solid rgba(31,111,235,.25);border-radius:5px;padding:2px 7px;'>";
@@ -13491,7 +13321,7 @@ function renderProg() {
     if (!ofs.length) return false;
     return ofs.every(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
+      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';});
     });
   }
 
@@ -13513,7 +13343,7 @@ function renderProg() {
     g.ofs.forEach(function(of){ if(of && PENDING_PROG && PENDING_PROG[of.of_sap]) gPrio = PENDING_PROG[of.of_sap].prioridad; });
     var completed = g.ofs.every(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done';});
+      return aof && aof.ops.length>0 && aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';});
     }) && g.ofs.some(function(of){return of.programadoHoy;});
     var grpStyle = completed ? 'border-color:var(--green);background:rgba(46,160,67,.04);' : '';
     h += '<div class="prog-card" style="'+grpStyle+'">';
@@ -13536,7 +13366,7 @@ function renderProg() {
       var tpl = DB.templates[of.articulo];
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       var done = aof ? aof.ops.filter(function(o){return o.status==='done';}).length : 0;
-      var total = aof ? aof.ops.length : 0;
+      var total = aof ? aof.ops.filter(function(o){return o.status!=='omitida';}).length : 0;
       var pct = total>0 ? Math.round(done/total*100) : 0;
       var borderStyle = pending ? 'border-left:3px solid var(--yellow);' : '';
       h += '<div class="prog-of-row" style="'+borderStyle+'">';
@@ -14799,7 +14629,8 @@ function renderSeg(){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(!aof) return;
       var done=aof.ops.filter(function(o){return o.status==='done';}).length;
-      var pct=aof.ops.length>0?Math.round(done/aof.ops.length*100):0;
+      var _nonOmit=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
+        var pct=_nonOmit>0?Math.round(done/_nonOmit*100):0;
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
