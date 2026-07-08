@@ -4848,7 +4848,13 @@ async function ftConfirmExcelLoad() {
       const fields = { Title: ofSap };
       // ── Parse optional Cantidad ─────────────────────────────────────────
       var _rawCant = row.Cantidad || row.cantidad || row['Cantidad'] || '';
-      var _cantVal = _rawCant !== '' ? (parseInt(String(_rawCant).replace(/[^0-9]/g,'')) || null) : null;
+      // Preserve decimal point/comma (e.g. SAP exports "6.5" or "6,5")
+      // Replace comma-as-decimal with dot, then strip everything except digits and dot
+      var _cantStr = String(_rawCant).trim().replace(/,/g, '.').replace(/[^0-9.]/g, '');
+      // If multiple dots remain (e.g. thousands separator "1.000"), keep only last segment
+      var _cantDots = _cantStr.split('.');
+      if (_cantDots.length > 2) _cantStr = _cantDots.slice(-2).join('.');
+      var _cantVal = _cantStr !== '' ? (parseFloat(_cantStr) || null) : null;
 
       // ── Parse optional Fecha_Entrega — Excel serial, DD/MM/YYYY, or YYYY-MM-DD ──
       var _rawFecha = String(row.Fecha_Entrega || row.fecha_entrega || row['Fecha_Entrega'] || row['Fecha Entrega'] || '').trim();
