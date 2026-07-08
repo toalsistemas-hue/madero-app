@@ -5785,7 +5785,7 @@ async function ftLoadDataFromSP() {
       pedidoCerrado: f.Status === 'Cerrado',
       fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
-      cantidad: parseInt(f.Cantidad||0)||null,
+      cantidad: parseFloat(String(f.Cantidad||'').replace(',','.'))||null,
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -5846,7 +5846,7 @@ async function ftLoadDataFromSP() {
             var fe = i.fields.Fecha_Entrega||'';
             // Extraer solo YYYY-MM-DD del formato ISO 2026-06-19T07:00:00Z
             if(fe && fe.indexOf('T')>=0) fe = fe.split('T')[0];
-            if(sap) extraMap[sap] = {fecha_entrega: fe, cantidad: parseInt(i.fields.Cantidad||0)||null};
+            if(sap) extraMap[sap] = {fecha_entrega: fe, cantidad: parseFloat(String(i.fields.Cantidad||'').replace(',','.'))||null};
           });
           DB.ofs.forEach(function(of){
             if(extraMap[of.of_sap]){
@@ -7579,7 +7579,7 @@ function getProgFields(sap){
   var cantEl=document.getElementById('cant-'+sap);
   return {
     fecha_entrega: feEl?feEl.value:'',
-    cantidad: cantEl?parseInt(cantEl.value)||0:0
+    cantidad: cantEl?(parseFloat(String(cantEl.value).replace(',','.'))||0):0
   };
 }
 function toggleProg(sap,val){
@@ -9482,7 +9482,7 @@ function confirmProgMain() {
     var feEl = document.getElementById('fe-'+of.of_sap);
     var cantEl = document.getElementById('cant-'+of.of_sap);
     if(feEl) of.fecha_entrega = feEl.value || of.fecha_entrega || '';
-    if(cantEl) of.cantidad = parseInt(cantEl.value)||of.cantidad||null;
+    if(cantEl) of.cantidad = parseFloat(String(cantEl.value).replace(',','.'))||of.cantidad||null;
     // Validar obligatoriedad si está marcada para producción
     var pendProg = PENDING_PROG[of.of_sap];
     var vaProgramada = pendProg ? pendProg.programadoHoy : of.programadoHoy;
@@ -10028,7 +10028,7 @@ function getProgFields(sap){
   var cantEl=document.getElementById('cant-'+sap);
   return {
     fecha_entrega: feEl?feEl.value:'',
-    cantidad: cantEl?parseInt(cantEl.value)||0:0
+    cantidad: cantEl?(parseFloat(String(cantEl.value).replace(',','.'))||0):0
   };
 }
 // -- 1: Modal asignación de técnicos a ops ----------------
@@ -11754,7 +11754,7 @@ appConfirmValCal = function(){
     var cantEl=document.getElementById('cant-'+sap);
     return {
       fecha_entrega: feEl?feEl.value:'',
-      cantidad: cantEl?parseInt(cantEl.value)||0:0
+      cantidad: cantEl?(parseFloat(String(cantEl.value).replace(',','.'))||0):0
     };
   }
   function toggleProg(sap,val){
@@ -14424,7 +14424,7 @@ async function ftRptLoad() {
     _rptData.ofs=(res[0].value||[]).map(function(i){
       var f=i.fields||{};
       return{id:i.id,of_sap:f.OF_SAP||f.Title||'',pedido:f.Numero_Pedido||f.Pedido||'',cliente:f.Cliente||'',
-        descripcion:f.Descripcion_Articulo||'',cantidad:parseInt(f.Cantidad||0)||0,status:f.Status||'Sin programar',
+        descripcion:f.Descripcion_Articulo||'',cantidad:parseFloat(String(f.Cantidad||'').replace(',','.'))||0,status:f.Status||'Sin programar',
         fecha_prog:(f.Fecha_Programacion||'').split('T')[0],fecha_entrega:(f.Fecha_Entrega||'').split('T')[0],prioridad:f.Prioridad||'Normal'};
     }).filter(function(of){var s=(of.status||'').toLowerCase();return s!=='cerrado'&&s!=='pedido cancelado'&&s!=='cerrada';});
     _rptData.ops=(res[1].value||[]).map(function(i){
