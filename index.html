@@ -4945,36 +4945,29 @@ window.ftDiagnosticColumnNames = ftDiagnosticColumnNames;
 // -- SP Persistence: Save Programado_Hoy + Status -------------------------
 async function ftSaveProgramacionToSP() {
   // Used for standalone saves (e.g. prioridad changes outside confirmProgMain).
-  // confirmProgMain now runs Step 3 inline using Graph API directly.
-  if (!FT_SITE_ID) {
-    try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
-  }
+  // Uses Flow (spEscribir) to work for all users regardless of direct Graph access.
   try {
-    const res = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items?$expand=fields($select=Title)&$select=id&$top=500');
-    const itemMap = {};
-    (res.value||[]).forEach(i => { itemMap[i.fields.Title||''] = i.id; });
-    for (const of_ of DB.ofs) {
-      const spId = itemMap[of_.of_sap];
+    var _ofRes = await flowGet('FT_OrdenesFabricacion', '', 2000).catch(function(){return {value:[]};});
+    var itemMap = {};
+    (_ofRes.value||[]).forEach(function(i){ var f=i.fields||{}; itemMap[f.OF_SAP||f.Title||'']=i.id; });
+    for (var _fi=0; _fi<DB.ofs.length; _fi++) {
+      var of_ = DB.ofs[_fi];
+      var spId = itemMap[of_.of_sap];
       if (!spId) continue;
-      const newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
+      var newStatus = of_.programadoHoy ? 'En Fabricacion' : 'Sin programar';
       var fieldsToSave = { Programado_Hoy: of_.programadoHoy === true, Status: newStatus };
-      // Normalize Fecha_Entrega to full ISO8601 with Z for SP DateTime field
       if (of_.fecha_entrega) {
         fieldsToSave.Fecha_Entrega = of_.fecha_entrega.includes('T')
-          ? of_.fecha_entrega
-          : of_.fecha_entrega + 'T00:00:00Z';
+          ? of_.fecha_entrega : of_.fecha_entrega + 'T00:00:00Z';
       }
       if (of_.cantidad) fieldsToSave.Cantidad = of_.cantidad;
       if (of_.programadoHoy && !of_.fecha_programacion) {
         of_.fecha_programacion = new Date().toISOString().split('T')[0];
         fieldsToSave.Fecha_Programacion = of_.fecha_programacion + 'T00:00:00Z';
       }
-      // Use Graph API directly (no Flow throttling)
-      await fetch('https://graph.microsoft.com/v1.0/sites/'+FT_SITE_ID+'/lists/FT_OrdenesFabricacion/items/'+spId+'/fields', {
-        method: 'PATCH',
-        headers: { Authorization: 'Bearer '+state.token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(fieldsToSave)
-      }).catch(e => console.warn('SP save Programado_Hoy error:', of_.of_sap, e));
+      await spEscribir('FT_OrdenesFabricacion', fieldsToSave, parseInt(spId))
+        .catch(function(e){ console.warn('SP save Programado_Hoy error:', of_.of_sap, e); });
+      if (_fi < DB.ofs.length-1) await new Promise(function(r){setTimeout(r,200);});
     }
     console.log('✅ Programación guardada en SharePoint');
   } catch(e) { console.warn('ftSaveProgramacionToSP error:', e); }
@@ -6414,6 +6407,20 @@ async function ftLoadDataFromSP() {
       try {
         // Re-validate FT_SITE_ID if it may have changed after network event
         if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e) { return; } }
+        // Detect if user's token has direct Graph access to FT lists.
+        // If not (Emilio-type accounts), fall back to Flow-based poll.
+        if (window._coordCanUseGraph === undefined) {
+          try {
+            var _testR = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id&$top=1');
+            window._coordCanUseGraph = !!(_testR && _testR.value !== undefined);
+          } catch(e) { window._coordCanUseGraph = false; }
+          console.log('[Coord poll] Direct Graph access:', window._coordCanUseGraph);
+        }
+        // If no direct Graph access, use full Flow reload instead
+        if (!window._coordCanUseGraph) {
+          await ftLoadDataFromSP();
+          return;
+        }
         var r = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc');
         var latestMod = (r.value&&r.value.length) ? (r.value[0].lastModifiedDateTime||'') : '';
         if (!window._coordLastOpsMod && latestMod) {
@@ -11108,15 +11115,18 @@ function saveTplModal(){
   // ── Detectar ops eliminadas (comparar con snapshot original)
   var _deletedOps = [];
   if(C._tplOriginalOps && C.editingTplArt === art){
-    var _newOpKeys = ops.map(function(o){ return o.nombre+'|'+o.estacion; });
+    // Identity key = nombre only. Estacion is a mutable field — changing it
+    // is an UPDATE, not a delete+create. Using nombre+'|'+estacion would
+    // incorrectly flag station assignment as deletion of the old op.
+    var _newOpKeys = ops.map(function(o){ return o.nombre; });
     C._tplOriginalOps.forEach(function(origOp){
-      var k = origOp.nombre+'|'+origOp.estacion;
+      var k = origOp.nombre;
       if(_newOpKeys.indexOf(k) === -1){
         // Esta op fue eliminada — verificar que no esté activa (doble seguridad)
         var _isActive = false;
         var _activeStatuses = {running:1,paused:1,validating:1,op_concluded:1};
         (DB.activeOFs||[]).filter(function(aof){ return aof.articulo===art; }).forEach(function(aof){
-          if((aof.ops||[]).some(function(op){ return op.nombre===origOp.nombre && op.estacion===origOp.estacion && _activeStatuses[op.status]; }))
+          if((aof.ops||[]).some(function(op){ return op.nombre===origOp.nombre && _activeStatuses[op.status]; }))
             _isActive = true;
         });
         if(!_isActive) _deletedOps.push(origOp);
@@ -11149,8 +11159,8 @@ function saveTplModal(){
               var f=item.fields||item;
               return String(f.OF_SAP||'')===String(_aof.of_sap) &&
                      (f.Nombre||f.Title||'')===_dOp.nombre &&
-                     (f.Estacion||'')===_dOp.estacion &&
                      (f.Status||'pending')==='pending'; // solo eliminar si está pending
+              // Note: do NOT match on Estacion — station change is an update not a delete
             });
             if(_spItem && _spItem.id){
               try{
@@ -11159,7 +11169,7 @@ function saveTplModal(){
                 console.log('🗑 Op eliminada de SP:', _dOp.nombre, 'OF:', _aof.of_sap);
                 // Eliminar de aof.ops en memoria
                 _aof.ops = (_aof.ops||[]).filter(function(op){
-                  return !(op.nombre===_dOp.nombre && op.estacion===_dOp.estacion);
+                  return op.nombre !== _dOp.nombre;
                 });
                 // Eliminar de cola en SP
                 var _qRes = await flowGet('FT_Cola_Estacion','',200);
@@ -11263,8 +11273,10 @@ function saveTplModal(){
           var needsCreate = [];
 
           tpl.ops.forEach(function(tplOp, i){
-            // Find first unconsumed match in availableOps
+            // Match by nombre only — estacion is mutable (user may have just assigned it)
+            // Exact match (nombre+estacion) first, then nombre-only fallback
             var matchIdx = -1;
+            // Pass 1: exact nombre+estacion match
             for(var j=0; j<availableOps.length; j++){
               if(availableOps[j] &&
                  availableOps[j].nombre === tplOp.nombre &&
@@ -11272,7 +11284,17 @@ function saveTplModal(){
                 matchIdx = j; break;
               }
             }
+            // Pass 2: nombre-only match (covers station assignment/change)
+            if(matchIdx < 0){
+              for(var j=0; j<availableOps.length; j++){
+                if(availableOps[j] && availableOps[j].nombre === tplOp.nombre){
+                  matchIdx = j; break;
+                }
+              }
+            }
             if(matchIdx >= 0){
+              // Update estacion in memory to match new template value
+              availableOps[matchIdx].estacion = tplOp.estacion;
               reordered.push(availableOps[matchIdx]);
               availableOps[matchIdx] = null; // consume it
             } else {
@@ -11293,10 +11315,13 @@ function saveTplModal(){
               var op = aof.ops[oi];
               if(op._spId){
                 try {
-                  await graphPatch(
-                    'sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items/'+op._spId+'/fields',
-                    {Secuencia: oi+1}
-                  );
+                  // PATCH Secuencia + Estacion (in case station was assigned/changed)
+                  var _patchFields = {Secuencia: oi+1};
+                  var _tplMatchOp = tpl.ops[oi];
+                  if(_tplMatchOp && _tplMatchOp.estacion !== undefined){
+                    _patchFields.Estacion = _tplMatchOp.estacion;
+                  }
+                  await spEscribir('FT_Operaciones', _patchFields, parseInt(op._spId));
                   patchCount++;
                 } catch(pe){ console.warn('PATCH Secuencia:', pe.message); }
                 // Delay entre PATCHes para evitar throttling (503/429) en OFs con muchas ops
