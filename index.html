@@ -5621,8 +5621,8 @@ const LISTAS_PROTEGIDAS = [
   'FT_Operaciones','FT_Timers','FT_Status_Estacion',
   'FT_CalTiempos','FT_Plantillas_Operaciones','FT_Articulos',
   'FT_Catalogo_Operaciones','FT_OrdenesFabricacion',
-  'FT_Estaciones','FT_Pedidos'
-  // FT_Cola_Estacion removed — now uses Graph API directly (no Flow throttling)
+  'FT_Estaciones','FT_Pedidos',
+  'FT_Cola_Estacion'  // restored — Graph API direct fails for non-admin users
   // FT_Tecnicos removed — its flow returns 502; using graphPatch directly
 ];
 
@@ -9639,12 +9639,17 @@ function confirmProgMain() {
         } catch(e) { console.warn('[Confirm] getSiteId error:', e.message); }
 
         // ── Refresh token before SP writes — state.token may have expired ────
-        // Raw fetch() calls don't call getToken() so they use whatever state.token
-        // was last set. If the session is >1h old (common for other users), the
-        // token has expired and Graph returns 404. Always get a fresh token here.
         var _freshToken;
         try {
-          _freshToken = await getToken(false);  // returns cached if still valid, refreshes if not
+          _freshToken = await getToken(false);
+          // Decode token to log scopes and expiry for debugging
+          try {
+            var _tp = JSON.parse(atob(_freshToken.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+            var _expIn = Math.round((_tp.exp*1000 - Date.now())/60000);
+            console.log('[Confirm] Token OK — usuario:', _tp.upn||_tp.preferred_username||'?',
+              '| expira en:', _expIn, 'min',
+              '| scopes:', _tp.scp||'no scp');
+          } catch(de) {}
         } catch(e) {
           console.error('[Confirm] No se pudo obtener token fresco:', e.message);
           throw new Error('Token expirado o sesión inválida. Recarga la página e intenta de nuevo.');
@@ -9664,7 +9669,8 @@ function confirmProgMain() {
           });
           console.log('[Confirm] List IDs resolved — OF:', _listIdOF, '| Cola:', _listIdCola);
           if (!_listIdOF || !_listIdCola) {
-            console.warn('[Confirm] ⚠️ No se pudieron resolver los IDs de listas. Usando nombres como fallback.');
+            console.warn('[Confirm] ⚠️ IDs no resueltos. Listas disponibles:',
+              (_listsRes.value||[]).map(function(l){return l.name||l.displayName;}).join(', '));
           }
         } catch(e) {
           console.warn('[Confirm] Error resolviendo IDs de listas:', e.message);
@@ -9728,16 +9734,15 @@ function confirmProgMain() {
           await Promise.all(batch.map(function(s){ return saveOfsOps([s]); }));
         }
 
-        // ══ STEP 2: Save FT_Cola_Estacion via Graph API (NO Flow) ══════════
-        // Graph API directo: Sites.ReadWrite.All scope confirmed — eliminates
-        // Flow throttling entirely. No delays needed between writes.
+        // ══ STEP 2: Save FT_Cola_Estacion via Flow (same as Step 1) ═══════
+        // Using Flow for all SP writes — Graph API direct fails for users whose
+        // token does not carry Sites.ReadWrite.All (MSAL audience/scope issue).
+        // The Flow uses its own SP connection independent of the user's token.
         showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
 
-        // Fetch existing cola records — use list ID for reliable resolution
-        var _colaListBase = _listUrl('FT_Cola_Estacion', _listIdCola);
-        var _colaRes = await fetch(_colaListBase+'/items?$expand=fields&$top=500',
-          {headers:{Authorization:'Bearer '+_freshToken}})
-          .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
+        // Fetch existing cola records via Flow
+        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 2000).catch(function(){return {value:[]};});
+        var _colaRes = _colaFlowRes;
         var _existingColaMap = {};
         var _dups = [];
         ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
@@ -9753,13 +9758,12 @@ function confirmProgMain() {
             _dups.push(del);
           }
         });
-        // Delete duplicates via Graph API (fast, no throttling)
+        // Delete duplicates via Flow
         if (_dups.length>0) {
           console.log('[Cola] Eliminando',_dups.length,'duplicados...');
-          await Promise.all(_dups.map(function(spId){
-            return fetch(_colaListBase+'/items/'+spId,
-              {method:'DELETE',headers:{Authorization:'Bearer '+_freshToken}}).catch(function(){});
-          }));
+          for (var _di=0; _di<_dups.length; _di++) {
+            await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(_dups[_di])).catch(function(){});
+          }
         }
         // Compute global max positions (excluding new OFs batch)
         var _nuevasSet={};
@@ -9787,103 +9791,74 @@ function confirmProgMain() {
             if(live) live._colaPos=snap._colaPos;
           });
         });
-        // Write all cola records in parallel (Graph API — no throttling)
+        // Write cola records via Flow — batches of 5 with 300ms spacing
         var _colaWrites = [];
         _newSapsSorted.forEach(function(sap){
           (_opsSnapshot[sap]||[]).forEach(function(op){
             if(!op.estacion||!op._colaPos||op._colaPos<=0) return;
             var existing=_existingColaMap[op.id];
-            var url=_colaListBase+'/items';
-            var method='POST';
-            var body={fields:{Title:op.estacion,OF_SAP:sap,Op_ID:op.id,Posicion:op._colaPos,Tipo_Cola:'normal',Activo:false}};
-            if(existing&&existing.spId){
-              url+='/'+existing.spId+'/fields';
-              method='PATCH';
-              body={Posicion:op._colaPos,Activo:false};
-            }
-            _colaWrites.push({url:url,method:method,body:body,op:op,sap:sap});
+            _colaWrites.push({existing:existing,op:op,sap:sap});
           });
         });
-        var _COLA_BATCH=10; // Graph API handles parallel well; use batches of 10
         var _failedCola=[];
-        for(var cb=0;cb<_colaWrites.length;cb+=_COLA_BATCH){
-          var cbatch=_colaWrites.slice(cb,cb+_COLA_BATCH);
-          var batchResults=await Promise.all(cbatch.map(async function(w){
-            for(var _cr=0;_cr<3;_cr++){
-              try{
-                var res=await fetch(w.url,{
-                  method:w.method,
-                  headers:{Authorization:'Bearer '+_freshToken,'Content-Type':'application/json'},
-                  body:JSON.stringify(w.body)
-                });
-                if(res.ok){
-                  var rd=await res.json().catch(function(){return {};});
-                  if(rd.id) w.op._queueSpId=rd.id;
-                  console.log('  ✅ Cola:',w.op.id,'pos='+w.op._colaPos);
-                  return true;
-                }
-                if(res.status===429||res.status===503){
-                  var retry=parseInt(res.headers.get('Retry-After')||'2');
-                  await new Promise(function(r){setTimeout(r,(retry+1)*1000);});
-                }
-              }catch(e){console.warn('  ❌ Cola error:',w.op.id,e.message);}
-            }
-            _failedCola.push(w);
-            return false;
-          }));
-          showLoadingModal('Guardando programación',
-            'Paso 2/3: Cola '+(cb+cbatch.length)+'/'+_colaWrites.length+'\nNo cierres esta ventana.');
+        for(var ci=0;ci<_colaWrites.length;ci++){
+          var w=_colaWrites[ci];
+          var _saved=false;
+          for(var _cr=0;_cr<3&&!_saved;_cr++){
+            if(_cr>0) await new Promise(function(r){setTimeout(r,1500*_cr);});
+            try{
+              if(w.existing&&w.existing.spId){
+                await spEscribir('FT_Cola_Estacion',{Posicion:w.op._colaPos,Activo:false},parseInt(w.existing.spId));
+              } else {
+                var _newColaRes=await spEscribir('FT_Cola_Estacion',
+                  {Title:w.op.estacion,OF_SAP:w.sap,Op_ID:w.op.id,Posicion:w.op._colaPos,Tipo_Cola:'normal',Activo:false},null);
+                if(_newColaRes&&_newColaRes.id) w.op._queueSpId=_newColaRes.id;
+              }
+              console.log('  ✅ Cola:',w.op.id,'pos='+w.op._colaPos);
+              _saved=true;
+            }catch(e){console.warn('  ❌ Cola error (intento '+(_cr+1)+'):',w.op.id,e.message);}
+          }
+          if(!_saved) _failedCola.push(w);
+          if(ci<_colaWrites.length-1) await new Promise(function(r){setTimeout(r,300);});
+          if((ci+1)%5===0) showLoadingModal('Guardando programación',
+            'Paso 2/3: Cola '+(ci+1)+'/'+_colaWrites.length+'\nNo cierres esta ventana.');
         }
         if(_failedCola.length>0) console.warn('⚠️ Cola fallida:',_failedCola.length,'ops');
 
         // ══ STEP 3: Save Programado_Hoy / Status / Fecha_Entrega / Cantidad ══
-        // Refresh token again — Step 2 (batch cola writes) may have taken time
-        try { _freshToken = await getToken(false); } catch(e) {}
-        // Runs LAST after Flow has had time to recover. Uses Graph API directly
-        // (same token scope), bypassing the Flow entirely.
+        // Uses spEscribir (Flow) — Graph API direct fails for users without
+        // direct SP token scope. Flow uses its own connection independent of user.
         showLoadingModal('Guardando programación','Paso 3/3: Actualizando estado de OFs...\nCasi listo.');
         try {
-          // Use list ID for reliable resolution; fallback query without $select if needed
-          var _ofListBase = _listUrl('FT_OrdenesFabricacion', _listIdOF);
-          var _ofRes = await fetch(_ofListBase+'/items?$expand=fields($select=Title)&$top=500',
-            {headers:{Authorization:'Bearer '+_freshToken}})
-            .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
-          // Fallback: fetch without $select if the filtered query failed
-          if (!_ofRes || !_ofRes.value) {
-            console.warn('[Confirm Step3] Query con $select falló, reintentando sin filtro...');
-            _ofRes = await fetch(_ofListBase+'/items?$expand=fields&$top=500',
-              {headers:{Authorization:'Bearer '+_freshToken}})
-              .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
-          }
+          // Fetch OF SP IDs via Flow (same as initial data load)
+          var _ofFlowRes = await flowGet('FT_OrdenesFabricacion','',2000).catch(function(){return {value:[]};});
           var _ofMap={};
-          ((_ofRes&&_ofRes.value)||[]).forEach(function(i){_ofMap[(i.fields&&i.fields.Title)||'']=i.id;});
-          if (!Object.keys(_ofMap).length) console.warn('[Confirm Step3] _ofMap vacío — OFs no se actualizarán');
-          var _ofWrites=DB.ofs.map(function(of_){
+          (_ofFlowRes.value||[]).forEach(function(i){
+            var f=i.fields||{};
+            _ofMap[f.OF_SAP||f.Title||'']=i.id;
+          });
+          if(!Object.keys(_ofMap).length) console.warn('[Confirm Step3] _ofMap vacío — OFs no se actualizarán');
+          for(var _oi=0;_oi<DB.ofs.length;_oi++){
+            var of_=DB.ofs[_oi];
             var spId=_ofMap[of_.of_sap];
-            if(!spId) return Promise.resolve();
+            if(!spId) continue;
             var newStatus=of_.programadoHoy?'En Fabricacion':'Sin programar';
             var fields={Programado_Hoy:of_.programadoHoy===true,Status:newStatus};
-            // Normalize Fecha_Entrega to ISO8601 with Z
             if(of_.fecha_entrega){
               fields.Fecha_Entrega=of_.fecha_entrega.includes('T')
-                ?of_.fecha_entrega
-                :of_.fecha_entrega+'T00:00:00Z';
+                ?of_.fecha_entrega:of_.fecha_entrega+'T00:00:00Z';
             }
             if(of_.cantidad) fields.Cantidad=of_.cantidad;
             if(of_.programadoHoy&&!of_.fecha_programacion){
               of_.fecha_programacion=new Date().toISOString().split('T')[0];
               fields.Fecha_Programacion=of_.fecha_programacion+'T00:00:00Z';
             }
-            return fetch(_ofListBase+'/items/'+spId+'/fields',{
-              method:'PATCH',
-              headers:{Authorization:'Bearer '+_freshToken,'Content-Type':'application/json'},
-              body:JSON.stringify(fields)
-            }).then(function(r){
-              if(!r.ok) console.warn('  ❌ OF update failed:',of_.of_sap,r.status);
-              else console.log('  ✅ OF actualizada:',of_.of_sap);
-            }).catch(function(e){console.warn('  ❌ OF error:',of_.of_sap,e.message);});
-          });
-          await Promise.all(_ofWrites);
+            try{
+              await spEscribir('FT_OrdenesFabricacion',fields,parseInt(spId));
+              console.log('  ✅ OF actualizada:',of_.of_sap);
+            }catch(e){console.warn('  ❌ OF error:',of_.of_sap,e.message);}
+            if(_oi<DB.ofs.length-1) await new Promise(function(r){setTimeout(r,300);});
+          }
           console.log('✅ Programación guardada en SharePoint');
         } catch(e){ console.warn('Error Step 3:',e.message); }
 
