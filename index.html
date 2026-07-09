@@ -6404,6 +6404,18 @@ async function ftLoadDataFromSP() {
     window._coordPollTimer = setInterval(async function(){
       if (!state.token || !FT_SITE_ID) return;
       if (window._confirmProgRunning) return; // Don't poll during programming confirmation
+      if (document.hidden) return;  // browser tab/window hidden — skip this tick
+      // Adaptive interval: only poll at full speed on data-active pages.
+      // On other pages (Inicio, Pedidos, etc.), run every ~120s instead of 30s.
+      var _activePage = C && C.currentPage;
+      var _isActivePage = (_activePage === 'Fabricaciones' || _activePage === 'fabricaciones' ||
+                           _activePage === 'seguimiento'   || _activePage === 'historial');
+      if (!_isActivePage) {
+        window._coordSlowTick = (window._coordSlowTick || 0) + 1;
+        if (window._coordSlowTick % 4 !== 0) return; // skip 3 of 4 ticks → ~120s
+      } else {
+        window._coordSlowTick = 0; // reset when back on active page
+      }
       try {
         // Re-validate FT_SITE_ID if it may have changed after network event
         if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e) { return; } }
@@ -6629,8 +6641,38 @@ async function ftLoadDataFromSP() {
           }
         } catch(e2) { /* silencioso */ }
       }
-    }, 30000); // cada 30s
+    }, 30000); // base tick — adaptive interval logic runs inside
   }
+
+  // ── Page Visibility — pausar coord poll cuando se minimiza el navegador ──
+  // Cuando el usuario cambia de pestaña del SO o minimiza el navegador,
+  // document.hidden=true y los ticks del poll hacen return arriba.
+  // Al volver a la ventana, hacemos refresh inmediato sin esperar el próximo tick.
+  document.addEventListener('visibilitychange', async function() {
+    if (!document.hidden && state.token && FT_SITE_ID && !window._confirmProgRunning) {
+      // Ventana visible de nuevo — refresh inmediato
+      console.log('[Coord] Ventana visible — refresh inmediato');
+      window._coordSlowTick = 0; // reset slow-poll counter
+      try {
+        if (window._coordCanUseGraph === false) {
+          await ftLoadDataFromSP();
+        } else {
+          // Lightweight check first — only full reload if data changed
+          var _vr = await graphGet('sites/'+FT_SITE_ID+
+            '/lists/FT_Operaciones/items?$select=id,lastModifiedDateTime&$top=1&$orderby=lastModifiedDateTime%20desc')
+            .catch(function(){return null;});
+          if (_vr && _vr.value && _vr.value.length) {
+            var _vm = _vr.value[0].lastModifiedDateTime || '';
+            if (_vm && _vm !== window._coordLastOpsMod) {
+              await ftLoadDataFromSP();
+            }
+          }
+        }
+        if (C.currentPage === 'seguimiento') renderSeg();
+        else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
+      } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
+    }
+  });
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   }
