@@ -16142,6 +16142,53 @@ function startSPPolling() {
   }, 45000); // cada 45s — reducido de 20s para ahorrar Flow actions (SP Leer)
 }
 
+// ── Page Visibility — pausar poll cuando pantalla se bloquea ─────
+// Cuando Android bloquea la pantalla o el usuario cambia de app,
+// el navegador dispara visibilitychange con document.hidden=true.
+// Pausamos el setInterval para evitar llamadas innecesarias al Flow.
+// Al volver al primer plano, reiniciamos el poll y hacemos refresh.
+(function() {
+  var _appWasPolling = false; // era el poll de FabTracker activo antes de ocultar?
+  var _monWasPolling = false; // era el poll del Monitor activo?
+
+  document.addEventListener('visibilitychange', async function() {
+    if (document.hidden) {
+      // ── Pantalla bloqueada / app en background ──────────────────
+      // Pausar FabTracker poll
+      if (_spPollTimer) {
+        clearInterval(_spPollTimer);
+        _spPollTimer = null;
+        _appWasPolling = true;
+        console.log('[Visibility] Pantalla oculta — FabTracker poll pausado');
+      }
+      // Pausar Monitor poll (si el monitor está activo y NO está en reposo ya)
+      if (_MON && _MON.pollTimer && !_MON.isIdle) {
+        clearInterval(_MON.pollTimer);
+        _MON.pollTimer = null;
+        _monWasPolling = true;
+        console.log('[Visibility] Pantalla oculta — Monitor poll pausado');
+      }
+    } else {
+      // ── Pantalla visible de nuevo ───────────────────────────────
+      console.log('[Visibility] Pantalla visible — reanudando polls');
+      // Reanudar FabTracker poll
+      if (_appWasPolling && !_spPollTimer) {
+        _appWasPolling = false;
+        // Refresh inmediato para mostrar datos frescos
+        try { await spPollCheck(); renderApp(); } catch(e) {}
+        startSPPolling();
+      }
+      // Reanudar Monitor poll (solo si no está en reposo)
+      if (_monWasPolling && _MON && !_MON.pollTimer && !_MON.isIdle) {
+        _monWasPolling = false;
+        try { await spPollCheck(); monitorRender(); } catch(e) {}
+        monitorStartPolling();
+        monitorResetIdle();
+      }
+    }
+  });
+})();
+
 async function spPollCheck() {
   // All SP list access via flow — Graph list access not available with this app token
   if (!appToken && !appMsalInstance) return;
