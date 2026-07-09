@@ -8015,7 +8015,7 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   }
   h+='</div>';
   if(!_locked){
-    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp(\"'+idx+'\")" title="Eliminar operación">✕</button>';
+    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp('+idx+')" title="Eliminar operación">✕</button>';
   }else{
     h+='<span style="font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;flex-shrink:0;" title="No se puede eliminar: operación activa en producción">✕</span>';
   }
@@ -12210,7 +12210,7 @@ appConfirmValCal = function(){
   }
   h+='</div>';
   if(!_locked){
-    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp(\"'+idx+'\")" title="Eliminar operación">✕</button>';
+    h+='<button class="btn-sm-danger" style="flex-shrink:0;" onclick="removeTplOp('+idx+')" title="Eliminar operación">✕</button>';
   }else{
     h+='<span style="font-size:.75rem;color:#f87171;opacity:.4;cursor:not-allowed;padding:2px 6px;flex-shrink:0;" title="No se puede eliminar: operación activa en producción">✕</span>';
   }
