@@ -553,7 +553,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
     <input type="password" id="login-pass" class="field-input" style="display:none;" placeholder="••••••••" onkeydown="if(event.key==='Enter') loginDemo()">
     <button class="btn-login" onclick="loginDemo()" style="display:none;">Entrar en modo demo</button>
     <div class="login-error" id="login-error">Usuario no encontrado o sin acceso</div>
-    <div class="login-version">v1.7.1</div>
+    <div class="login-version">v1.7.2</div>
   </div>
 </div>
 
@@ -13068,12 +13068,17 @@ function renderHist(){
   } else {
     artKeys.forEach(function(art){
       var g=artGroups[art];
+      var _ctId = 'ct-'+art.replace(/[^a-zA-Z0-9]/g,'_');
       calH+='<div style="background:rgba(0,82,139,.06);border:1px solid var(--border);border-radius:7px;margin-bottom:9px;overflow:hidden;">';
-      calH+='<div style="padding:8px 12px;background:rgba(0,82,139,.1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;">';
+      calH+='<div style="padding:8px 12px;background:rgba(0,82,139,.1);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="(function(el){var t=document.getElementById(\''+_ctId+'\');if(!t)return;var open=t.style.display!==\'none\';t.style.display=open?\'none\':\'\';el.querySelector(\'.ct-chevron\').textContent=open?\'▶\':\'▼\';})(this)">';
       calH+='<div><div style="font-family:\'DM Mono\',monospace;font-size:.72rem;color:var(--accent-l);">'+esc(art)+'</div>';
       calH+='<div style="font-size:.8rem;font-weight:600;">'+esc(g.name)+'</div></div>';
+      calH+='<div style="display:flex;align-items:center;gap:10px;">';
       calH+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.88rem;font-weight:700;color:var(--yellow);">'+fmtMSS(g.totalAvg)+'</div>';
-      calH+='<div style="font-size:.62rem;color:var(--dim);">T. Total estimado</div></div></div>';
+      calH+='<div style="font-size:.62rem;color:var(--dim);">T. Total estimado</div></div>';
+      calH+='<span class="ct-chevron" style="color:var(--dim);font-size:.75rem;transition:transform .2s;">▼</span>';
+      calH+='</div></div>';
+      calH+='<div id="'+_ctId+'">';
       calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th></tr></thead><tbody>';
       g.ops.forEach(function(op){
         calH+='<tr><td style="font-weight:500;">'+esc(op.nombre)+'</td>';
@@ -13081,7 +13086,7 @@ function renderHist(){
         calH+='<td style="font-family:\'DM Mono\',monospace;color:'+(op.avg>0?'var(--accent-l)':'var(--muted)')+';">'+(op.avg>0?fmtMSS(op.avg):'—')+'</td>';
         calH+='<td style="color:var(--dim);">'+op.count+'</td></tr>';
       });
-      calH+='</tbody></table></div>';
+      calH+='</tbody></table></div></div>'; // close table + collapsible wrapper
     });
   }
   document.getElementById('hist-cal-tiempos').innerHTML=calH;
