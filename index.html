@@ -6405,14 +6405,17 @@ async function ftLoadDataFromSP() {
       var avg = parseFloat(f.Promedio_Seg||0);
       var count = parseInt(f.Count||f.Cuenta||muestras.length||0);
       DB.calTiemposGuardados[key] = {
-        of_sap:    f.OF_SAP||'',
-        op_id:     f.Op_ID||'',
-        samples:   muestras,
-        muestras:  muestras,
-        avg:       avg,
-        promedio:  avg,
-        count:     count,
-        _spId:     i.id
+        of_sap:         f.OF_SAP||'',
+        op_id:          f.Op_ID||'',
+        samples:        muestras,
+        muestras:       muestras,
+        avg:            avg,
+        promedio:       avg,
+        count:          count,
+        _spId:          i.id,
+        tecnico_op:     f.Tecnico_Op   || '',
+        tecnico_cal:    f.Tecnico_Cal  || '',
+        fecha_registro: f.Fecha_Registro ? f.Fecha_Registro.split('T')[0] : '',
       };
     });
     console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, 'registros');
@@ -13039,7 +13042,22 @@ function renderHist(){
       // Use average of averages across multiple OFs of same article
       var displayAvg = savedCount>0 ? Math.round(totalAvg/savedCount) : 0;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
-      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount});
+      // Collect tecnico_op/cal/fecha from latest measurement for this op+article combo
+      var _lastTecOp='', _lastTecCal='', _lastFecha='';
+      matchAofs.forEach(function(aof){
+        var realOp=aof.ops.find(function(o){return o.nombre===op.nombre&&o.estacion===op.estacion;});
+        if(realOp){
+          var key2=aof.of_sap+'_'+realOp.id;
+          var d2=calTiemGetData(key2);
+          if(d2.saved&&d2.fecha_registro){
+            _lastTecOp=d2.tecnico_op||_lastTecOp;
+            _lastTecCal=d2.tecnico_cal||_lastTecCal;
+            _lastFecha=d2.fecha_registro||_lastFecha;
+          }
+        }
+      });
+      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount,
+        tecnico_op:_lastTecOp,tecnico_cal:_lastTecCal,fecha_registro:_lastFecha});
       artGroups[art].totalAvg+=displayAvg;
     });
   });
@@ -13057,7 +13075,8 @@ function renderHist(){
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
       var existing=artGroups[art].ops.find(function(o){return o.nombre===op.nombre;});
       if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count;}
-      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count});
+      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count,
+        tecnico_op:d.tecnico_op||'',tecnico_cal:d.tecnico_cal||'',fecha_registro:d.fecha_registro||''});
       artGroups[art].totalAvg+=d.avg;
     });
   });
@@ -13076,14 +13095,17 @@ function renderHist(){
       calH+='<div style="display:flex;align-items:center;gap:10px;">';
       calH+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.88rem;font-weight:700;color:var(--yellow);">'+fmtMSS(g.totalAvg)+'</div>';
       calH+='<div style="font-size:.62rem;color:var(--dim);">T. Total estimado</div></div>';
-      calH+='<span class="ct-chevron" style="color:var(--dim);font-size:.75rem;transition:transform .2s;">▼</span>';
+      calH+='<span class="ct-chevron" style="color:var(--dim);font-size:.75rem;transition:transform .2s;">▶</span>';
       calH+='</div></div>';
-      calH+='<div id="'+_ctId+'">';
-      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th></tr></thead><tbody>';
+      calH+='<div id="'+_ctId+'" style="display:none">';  // contraído por defecto
+      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Técnico Op.</th><th>Analista Cal.</th><th>Fecha Medición</th><th>Mediciones</th></tr></thead><tbody>';
       g.ops.forEach(function(op){
         calH+='<tr><td style="font-weight:500;">'+esc(op.nombre)+'</td>';
         calH+='<td style="color:var(--dim);">'+esc(op.estacion)+'</td>';
         calH+='<td style="font-family:\'DM Mono\',monospace;color:'+(op.avg>0?'var(--accent-l)':'var(--muted)')+';">'+(op.avg>0?fmtMSS(op.avg):'—')+'</td>';
+        calH+='<td style="color:var(--dim);">'+(op.tecnico_op?'<span style="background:rgba(61,155,233,.1);border:1px solid rgba(61,155,233,.2);border-radius:4px;padding:1px 6px;font-size:.65rem;">👷 '+esc(op.tecnico_op)+'</span>':'<span style="color:var(--muted);">—</span>')+'</td>';
+        calH+='<td style="color:var(--dim);">'+(op.tecnico_cal?'<span style="background:rgba(124,92,191,.1);border:1px solid rgba(124,92,191,.2);border-radius:4px;padding:1px 6px;font-size:.65rem;">📋 '+esc(op.tecnico_cal)+'</span>':'<span style="color:var(--muted);">—</span>')+'</td>';
+        calH+='<td style="color:var(--dim);font-family:\'DM Mono\',monospace;font-size:.7rem;">'+(op.fecha_registro||'—')+'</td>';
         calH+='<td style="color:var(--dim);">'+op.count+'</td></tr>';
       });
       calH+='</tbody></table></div></div>'; // close table + collapsible wrapper
@@ -13755,9 +13777,10 @@ function fmtMSS(secs){
 }
 function calTiemGetData(key){
   var d = DB.calTiemposGuardados[key];
-  if(!d) return {samples:[], avg:0, count:0, saved:false};
-  if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true}; // legado mins→secs
-  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0};
+  if(!d) return {samples:[], avg:0, count:0, saved:false, tecnico_op:'', tecnico_cal:'', fecha_registro:''};
+  if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true, tecnico_op:'', tecnico_cal:'', fecha_registro:''};
+  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0,
+    tecnico_op:d.tecnico_op||'', tecnico_cal:d.tecnico_cal||'', fecha_registro:d.fecha_registro||''};
 }
 
 function renderCalTiemInputs(of, inFlujo){

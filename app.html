@@ -7326,6 +7326,19 @@ function renderCalTiemInputs(of, inFlujo){
     }
     h += '</div>';
     if(!d.saved){
+      // Técnico selector
+      var _tecs = (window.DB && DB.tecnicos) ? DB.tecnicos : (window.TECHNICIANS||[]);
+      var _savedTec = (APP._ctTecnico && APP._ctTecnico[key]) || '';
+      h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
+      h += '<span style="font-size:.62rem;color:var(--adim);white-space:nowrap;">👷 Técnico:</span>';
+      h += '<select data-ctkey="'+key+'" onchange="calTiemSetTecnico(\''+key+'\',this.value)"';
+      h += ' style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);';
+      h += 'color:var(--atext);padding:3px 6px;border-radius:5px;font-size:.7rem;outline:none;">';
+      h += '<option value="">— Seleccionar técnico —</option>';
+      _tecs.forEach(function(t){
+        h += '<option value="'+esc(t)+'"'+(_savedTec===t?' selected':'')+'>'+esc(t)+'</option>';
+      });
+      h += '</select></div>';
       h += '<div style="font-size:.6rem;color:var(--adim);margin-bottom:4px;">Formato: <span style="font-family:monospace;color:var(--aaccent);">3:31</span> o <span style="font-family:monospace;color:var(--aaccent);">3.31</span> = 3 min 31 seg</div>';
       h += '<div style="display:flex;flex-direction:column;gap:4px;">';
       var showSamples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [''];
@@ -7383,16 +7396,25 @@ function calTiemAddSample(key){
   APP._ctSamples[key].push('');
   renderApp();
 }
+function calTiemSetTecnico(key, value) {
+  if (!APP._ctTecnico) APP._ctTecnico = {};
+  APP._ctTecnico[key] = value;
+}
+
 function calTiemSave(key){
   var samples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [];
   var nums = samples.map(parseMSS).filter(function(v){ return v>0; });
   if(!nums.length){ alert('Ingresa al menos una muestra. Formato: 3:31 ó 3.31 = 3 min 31 seg'); return; }
   var avgSecs = Math.round(nums.reduce(function(s,v){ return s+v; },0) / nums.length);
   var parts = key.split('_');
+  var _tecnicoOp = (APP._ctTecnico && APP._ctTecnico[key]) || '';
   var calData = {
     samples: nums, muestras: nums, avg: avgSecs, promedio: avgSecs, count: nums.length,
     articulo: parts[0]||'', operacion: parts[1]||'', estacion: parts[2]||'',
+    tecnico_op: _tecnicoOp,
   };
+  // Clear tecnico selection after save
+  if (APP._ctTecnico) delete APP._ctTecnico[key];
   DB.calTiemposGuardados[key] = calData;
   if(APP&&APP.calTimes) APP.calTimes[key] = avgSecs;
   if(APP._ctSamples) delete APP._ctSamples[key];
@@ -8840,6 +8862,7 @@ async function appSaveCalTiempoToSP(key, calData) {
       Promedio_Seg:  calData.promedio||calData.avg||0,
       Count:         calData.count||0,
       Tecnico_Cal:   appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
+      Tecnico_Op:    calData.tecnico_op || '',
       Fecha_Registro: new Date().toISOString(),
     };
     if (calData._spId) {
@@ -15873,6 +15896,19 @@ function renderCalTiemInputs(of, inFlujo){
     }
     h += '</div>';
     if(!d.saved){
+      // Técnico selector
+      var _tecs = (window.DB && DB.tecnicos) ? DB.tecnicos : (window.TECHNICIANS||[]);
+      var _savedTec = (APP._ctTecnico && APP._ctTecnico[key]) || '';
+      h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">';
+      h += '<span style="font-size:.62rem;color:var(--adim);white-space:nowrap;">👷 Técnico:</span>';
+      h += '<select data-ctkey="'+key+'" onchange="calTiemSetTecnico(\''+key+'\',this.value)"';
+      h += ' style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);';
+      h += 'color:var(--atext);padding:3px 6px;border-radius:5px;font-size:.7rem;outline:none;">';
+      h += '<option value="">— Seleccionar técnico —</option>';
+      _tecs.forEach(function(t){
+        h += '<option value="'+esc(t)+'"'+(_savedTec===t?' selected':'')+'>'+esc(t)+'</option>';
+      });
+      h += '</select></div>';
       h += '<div style="font-size:.6rem;color:var(--adim);margin-bottom:4px;">Formato: <span style="font-family:monospace;color:var(--aaccent);">3:31</span> o <span style="font-family:monospace;color:var(--aaccent);">3.31</span> = 3 min 31 seg</div>';
       h += '<div style="display:flex;flex-direction:column;gap:4px;">';
       var showSamples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [''];
@@ -15930,6 +15966,11 @@ function calTiemAddSample(key){
   APP._ctSamples[key].push('');
   renderApp();
 }
+function calTiemSetTecnico(key, value) {
+  if (!APP._ctTecnico) APP._ctTecnico = {};
+  APP._ctTecnico[key] = value;
+}
+
 function calTiemSave(key){
   var samples = (APP._ctSamples && APP._ctSamples[key]) ? APP._ctSamples[key] : [];
   var nums = samples.map(parseMSS).filter(function(v){ return v>0; });
