@@ -45,28 +45,68 @@
 body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
 
 /* ═══════════ LOGIN ═══════════ */
+
+/* ── Slideshow background ── */
+.ls-bg {
+  position: fixed; inset: 0; z-index: 0;
+  overflow: hidden;
+}
+.ls-slide {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  opacity: 0;
+  filter: blur(8px) brightness(.45) saturate(1.1);
+  transform: scale(1.08);
+  transition: opacity 1.8s ease-in-out, transform 8s ease-out;
+  will-change: opacity, transform;
+}
+.ls-slide.active {
+  opacity: 1;
+  transform: scale(1.0);
+}
+/* Overlay for readability */
+.ls-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    160deg,
+    rgba(5,12,24,.72) 0%,
+    rgba(0,40,80,.55) 50%,
+    rgba(8,18,36,.78) 100%
+  );
+}
+
+/* Placeholder slides — replace background-image with real photo URLs */
+/* ── Fotos reales — 4 slides ─────────────────────────────────── */
+/* Rutas relativas desde index.html en raíz del repo de GitHub Pages */
+.ls-slide:nth-child(1){ background-image: url('planta1.jpg'); }
+.ls-slide:nth-child(2){ background-image: url('planta2.jpg'); }
+.ls-slide:nth-child(3){ background-image: url('planta3.png'); }
+.ls-slide:nth-child(4){ background-image: url('planta4.png'); }
+/* Slide 5 reutiliza planta1 como cierre del ciclo */
+.ls-slide:nth-child(5){ background-image: url('planta1.jpg'); }
+
+/* Floating grain texture for depth */
+.ls-grain {
+  position: absolute; inset: 0;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px;
+  pointer-events: none;
+}
+
 #login-screen {
-  min-height:100vh; width:100%;
-  display:flex; align-items:center; justify-content:center;
-  background:var(--bg); position:relative; overflow:hidden;
-}
-#login-screen::before {
-  content:''; position:fixed; top:-200px; left:-200px;
-  width:600px; height:600px;
-  background:radial-gradient(circle,rgba(0,82,139,.30) 0%,transparent 70%);
-  pointer-events:none;
-}
-#login-screen::after {
-  content:''; position:fixed; bottom:-150px; right:-150px;
-  width:450px; height:450px;
-  background:radial-gradient(circle,rgba(124,92,191,.18) 0%,transparent 70%);
-  pointer-events:none;
+  min-height: 100vh; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background: #080e1a; position: relative; overflow: hidden;
 }
 .login-card {
-  background:var(--bg-card); border:1px solid var(--border-color);
-  border-radius:16px; padding:38px 34px 34px;
-  width:400px; max-width:94vw; z-index:1;
-  box-shadow:0 20px 60px rgba(0,0,0,.50);
+  background: rgba(10,20,38,.82);
+  border: 1px solid rgba(61,155,233,.18);
+  border-radius: 18px; padding: 38px 34px 34px;
+  width: 400px; max-width: 94vw; z-index: 1;
+  box-shadow: 0 24px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 .login-brand { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
 .login-icon  { width:40px; height:40px; background:var(--accent); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; }
@@ -230,10 +270,31 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
 /* ── Bienvenida ── */
 .welcome-hero {
-  background:var(--bg-card); border:1px solid var(--border-color);
-  border-radius:var(--radius); padding:28px 32px; margin-bottom:24px;
-  display:flex; align-items:center; gap:20px;
+  position: relative;
+  border-radius: var(--radius); padding: 32px 32px; margin-bottom: 24px;
+  display: flex; align-items: center; gap: 20px;
+  overflow: hidden;
+  background: rgba(10,20,38,.7);
+  border: 1px solid rgba(61,155,233,.15);
+  box-shadow: 0 4px 32px rgba(0,0,0,.35);
 }
+/* Animated photo strip behind welcome card */
+.welcome-hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  filter: blur(12px) brightness(.3) saturate(1.2);
+  transform: scale(1.1);
+  z-index: 0;
+  animation: welcomeBgCycle 24s ease-in-out infinite;
+}
+@keyframes welcomeBgCycle {
+  0%,25%  { background-image: url('planta1.jpg'); }
+  33%,58% { background-image: url('planta2.jpg'); }
+  66%,91% { background-image: url('planta3.png'); }
+  100%    { background-image: url('planta4.png'); }
+}
+.welcome-hero > * { position: relative; z-index: 1; }
 .welcome-avatar {
   width:56px; height:56px; background:var(--accent); border-radius:50%;
   display:flex; align-items:center; justify-content:center;
@@ -488,6 +549,16 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
      LOGIN
 ═══════════════════════════════ -->
 <div id="login-screen">
+  <!-- Photo slideshow background -->
+  <div class="ls-bg" id="ls-bg">
+    <div class="ls-slide active"></div>
+    <div class="ls-slide"></div>
+    <div class="ls-slide"></div>
+    <div class="ls-slide"></div>
+    <div class="ls-slide"></div>
+    <div class="ls-overlay"></div>
+    <div class="ls-grain"></div>
+  </div>
   <div class="login-card">
     <div class="login-brand">
       <div class="login-icon">⚙️</div>
@@ -14824,5 +14895,34 @@ function ftRptExportExcel(){
     </div>
   </div>
   <style>@keyframes cargando-bar{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}</style>
+
+<script>
+// ── Login photo slideshow ─────────────────────────────────────
+(function() {
+  function initSlideshow() {
+    var slides = document.querySelectorAll('#ls-bg .ls-slide');
+    if (!slides.length) return;
+    var current = 0;
+    function next() {
+      slides[current].classList.remove('active');
+      current = (current + 1) % slides.length;
+      slides[current].classList.add('active');
+    }
+    var timer = setInterval(next, 5000);
+    // Stop once login is hidden
+    var obs = new MutationObserver(function() {
+      var ls = document.getElementById('login-screen');
+      if (ls && ls.style.display === 'none') { clearInterval(timer); obs.disconnect(); }
+    });
+    var ls = document.getElementById('login-screen');
+    if (ls) obs.observe(ls, { attributes: true, attributeFilter: ['style'] });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSlideshow);
+  } else {
+    initSlideshow();
+  }
+})();
+</script>
 </body>
 </html>
