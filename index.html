@@ -758,6 +758,14 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .prog-of-row{display:grid;grid-template-columns:40px 1fr auto auto auto;gap:8px;align-items:start;padding:8px 13px;border-bottom:1px solid var(--border);}
 .prog-of-row:last-child{border-bottom:none;}
 .prog-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--accent-l);}
+/* Expandir / comprimir OFs por pedido */
+.prog-card.collapsed .prog-of-row{display:none;}
+.prog-toggle{background:none;border:none;cursor:pointer;color:var(--dim);font-size:.78rem;line-height:1;padding:2px 4px;transition:transform .18s;flex-shrink:0;}
+.prog-toggle:hover{color:var(--text);}
+.prog-card.collapsed .prog-toggle{transform:rotate(-90deg);}
+/* Spinner de carga de Programación */
+.fab-spinner{display:inline-block;width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent-l);border-radius:50%;animation:fabspin .8s linear infinite;vertical-align:middle;}
+@keyframes fabspin{to{transform:rotate(360deg);}}
 
 /* Plantillas */
 .tpl-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:9px;overflow:hidden;transition:border-color .3s;}
@@ -2074,6 +2082,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: COTIZACIONES · MANO DE OBRA -->
+<div class="page" id="page-Cotizaciones" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="cotz-iframe"
+    src="Cotizaciones.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:block;z-index:10;"
+    title="Cotizaciones Mano de Obra">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -2095,10 +2113,65 @@ function hideLoadingModal(){var m=document.getElementById('modal-cargando');if(m
 // ═══════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════
+// ENTORNO (dev / prod) — detección automática por ruta
+//   dev  → .../madero-app-dev/...  → SharePoint "Madero-app.dev"           (+ flujos dev)
+//   prod → automatizaciones.maderoequipos.com o .../madero-app/...
+//          → SharePoint "Automatizacion Madero"                            (+ flujos prod)
+// NOTA: ambos repos se publican en github.io, por eso se detecta por la RUTA
+// (/madero-app-dev/) y NO por el hostname. El MISMO archivo sirve para los dos
+// repos; no se edita nada al promover a producción.
+// ════════════════════════════════════════════════════
+const ENV = (location.pathname.indexOf('madero-app-dev') !== -1) ? 'dev' : 'prod';
+const ENVIRONMENTS = {
+  prod: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    sitePath:     '/sites/AutomatizacionMadero',
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ',
+  },
+  dev: {
+    siteHost:     'maderoequipos.sharepoint.com',
+    // Sitio de prueba confirmado (URL: .../sites/Madero-app.dev/SitePages/CollabHome.aspx)
+    sitePath:     '/sites/Madero-app.dev',
+    // Flujos duplicados apuntando al sitio Madero-app.dev (SP Leer v2 dev / SP Escribir dev)
+    flowLeer:     'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/23/workflows/70cad9dba9b94b688e1da9e22640a5c8/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=D3kjlE6bV--rWtcOB6VYOa-Px9cUJO6I3ZDioKF-lXo',
+    flowEscribir: 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/15/workflows/95a8131106e548d78e6bc1425b1e27ec/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=YtsiuezXw78lL7snUVZiY3j8BpVO9A_M3IrQF5MXQIg',
+  },
+};
+const ACTIVE = ENVIRONMENTS[ENV];
+try { console.info('[ENV] Entorno activo:', ENV, '→ sitio', ACTIVE.sitePath); } catch(e){}
+
+// ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
+// Etiqueta fija visible en login y ya dentro de la plataforma. No bloquea clics.
+if (ENV === 'dev') {
+  (function(){
+    function addEnvBadge(){
+      if (document.getElementById('env-badge-prueba')) return;
+      var host = document.body || document.documentElement;
+      if (!host) return;
+      var b = document.createElement('div');
+      b.id = 'env-badge-prueba';
+      b.textContent = 'VERSIÓN PRUEBA';
+      b.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);'
+        + 'z-index:2147483647;background:#d9822b;color:#fff;'
+        + 'font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'
+        + 'letter-spacing:.08em;padding:6px 16px;border-radius:0 0 8px 8px;'
+        + 'box-shadow:0 2px 6px rgba(0,0,0,.25);pointer-events:none;'
+        + 'white-space:nowrap;user-select:none;';
+      host.appendChild(b);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addEnvBadge);
+    else addEnvBadge();
+    // Reponer la etiqueta si alguna pantalla re-renderiza y la elimina
+    setInterval(addEnvBadge, 3000);
+  })();
+}
+
 const CONFIG = {
   clientId:       '55be1c75-c28f-4659-80f6-a07a08c69bcc',
   tenantId:       '5ec2356c-a46e-47ae-8c02-15e82b6d317d',
-  sharepointSite: 'https://maderoequipos.sharepoint.com/sites/AutomatizacionMadero',
+  sharepointSite: 'https://' + ACTIVE.siteHost + ACTIVE.sitePath,
   scopes: [
     'https://graph.microsoft.com/User.Read',
     'https://graph.microsoft.com/Sites.ReadWrite.All',
@@ -2482,8 +2555,8 @@ function loadUserDemo(email) {
 let cachedSiteId = null;
 async function getSiteId() {
   if (cachedSiteId) { window._cachedSiteId = cachedSiteId; return cachedSiteId; }
-  const host = 'maderoequipos.sharepoint.com';
-  const path = '/sites/AutomatizacionMadero';
+  const host = ACTIVE.siteHost;
+  const path = ACTIVE.sitePath;
   const res  = await graphGet(`sites/${host}:${path}`);
   cachedSiteId = res.id;
   return cachedSiteId;
@@ -2988,6 +3061,20 @@ function navigateToPantalla(pantallaID) {
     // Ocultar iframe si se navega a otra pantalla
     var ifrm = document.getElementById('cot-iframe');
     if (ifrm) ifrm.style.display = 'none';
+    var cotzIfrm = document.getElementById('cotz-iframe');
+    if (cotzIfrm) cotzIfrm.style.display = 'none';
+
+    if (pantallaID==='Cotizaciones') {
+      if (cotzIfrm) {
+        cotzIfrm.style.display = 'block';
+        // Pedir a Cotizaciones que recargue datos ya con la sesión del padre activa
+        setTimeout(function() {
+          if (cotzIfrm && cotzIfrm.contentWindow) {
+            cotzIfrm.contentWindow.postMessage({ type: 'COT_REFRESH' }, '*');
+          }
+        }, 300);
+      }
+    }
 
     if (pantallaID==='Cotizador') {
       if (ifrm) ifrm.style.display = 'block';
@@ -3212,6 +3299,17 @@ function buildCard(p) {
 }
 
 function toggleCard(h) { h.parentElement.classList.toggle('expanded'); }
+// Expandir / comprimir las OFs de un pedido en Programación (estado persistente entre re-renders)
+function toggleProgCard(btn){
+  var card = btn.closest ? btn.closest('.prog-card') : null;
+  if(!card){ var p=btn.parentElement; while(p && !(p.classList&&p.classList.contains('prog-card'))) p=p.parentElement; card=p; }
+  if(!card) return;
+  card.classList.toggle('collapsed');
+  var ped = card.getAttribute('data-pedido') || '';
+  window._progCollapsed = window._progCollapsed || {};
+  if(card.classList.contains('collapsed')) window._progCollapsed[ped] = true;
+  else delete window._progCollapsed[ped];
+}
 
 // ═══════════════════════════════════════════════════════
 // MODAL & ACCIONES
@@ -3281,6 +3379,8 @@ function doLogout() {
   if (ifrm) ifrm.style.display = 'none';
   var bpmIfrm = document.getElementById('bpm-iframe');
   if (bpmIfrm) bpmIfrm.style.display = 'none';
+  var cotzIfrm = document.getElementById('cotz-iframe');
+  if (cotzIfrm) cotzIfrm.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
@@ -5638,8 +5738,8 @@ async function graphPost(endpoint, body, retry) {
 // Estas funciones usan Flows en lugar de Graph API directa
 // para que los usuarios no requieran permisos directos en SP
 // ═══════════════════════════════════════════════════════════════════
-const FLOW_URL_LEER    = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ff456972635f448e9211ec7d122bcad2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=OkfQkYFiSXAEPTwx938LhF9btNEEkG4dhcfyvNUszEU';
-const FLOW_URL_ESCRIBIR = 'https://default5ec2356ca46e47ae8c0215e82b6d31.7d.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/ab0a69af3fc94891b5ca5ffe71fe30d5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=5FfFE5fv70ysBpljWpBqUQcmEMe1drp6OKtfySgBOPQ';
+const FLOW_URL_LEER    = ACTIVE.flowLeer;
+const FLOW_URL_ESCRIBIR = ACTIVE.flowEscribir;
 
 // Listas que se leen/escriben via Flow (permisos restringidos en SP)
 const LISTAS_PROTEGIDAS = [
@@ -5755,6 +5855,88 @@ async function spEscribir(lista, datos, itemId) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PUENTE GENÉRICO SP PARA PANTALLAS EMBEBIDAS (Cotizaciones, Garantías, …)
+// Cualquier iframe hijo pide operaciones de SharePoint al padre por
+// postMessage; el padre las ejecuta con sus accesores env-aware
+// (spGet/spEscribir/graphGet/graphPost/getToken/getSiteId) y responde.
+// Así las pantallas embebidas NO llevan sitio, listas, flujos ni token
+// propios: heredan automáticamente el entorno (dev/prod) del padre.
+// Protocolo:  { type:'SP_BRIDGE_REQUEST',  callId, op, args }
+//          →  { type:'SP_BRIDGE_RESPONSE', callId, error, result }
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('message', async function(e) {
+  if (!e.data || e.data.type !== 'SP_BRIDGE_REQUEST') return;
+  var callId = e.data.callId;
+  var op     = e.data.op;
+  var args   = e.data.args || {};
+  function reply(error, result) {
+    try {
+      if (e.source) e.source.postMessage({
+        type: 'SP_BRIDGE_RESPONSE', callId: callId,
+        error: error || null, result: (result !== undefined ? result : null)
+      }, '*');
+    } catch (_) {}
+  }
+  if (!state.token || state.isDemoMode) { reply('no_token', null); return; }
+  try {
+    if (op === 'list') {
+      var r = await spGet(args.lista, args.queryParams);
+      reply(null, { value: (r && r.value) ? r.value : [] });
+
+    } else if (op === 'get') {
+      var sidG = await getSiteId();
+      var qp = args.queryParams || '$expand=fields';
+      var it = await graphGet('sites/'+sidG+'/lists/'+args.lista+'/items/'+args.itemId+'?'+qp);
+      reply(null, it);
+
+    } else if (op === 'create') {
+      var cr = await spEscribir(args.lista, args.fields, 0);
+      var newId = (cr && cr.id !== undefined) ? cr.id
+                : (cr && cr.ID !== undefined) ? cr.ID : null;
+      reply(null, { id: newId, raw: cr });
+
+    } else if (op === 'update') {
+      await spEscribir(args.lista, args.fields, args.itemId);
+      reply(null, { ok: true });
+
+    } else if (op === 'uploadAttachment') {
+      var sidU  = await getSiteId();
+      var tokU  = await getToken();
+      var bytes = Uint8Array.from(atob(args.contentBase64 || ''), function(c){ return c.charCodeAt(0); });
+      var path  = args.carpeta + '/' + args.itemId + '/' + encodeURIComponent(args.fileName);
+      var up = await fetch('https://graph.microsoft.com/v1.0/sites/'+sidU+'/drive/root:/'+path+':/content', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + tokU, 'Content-Type': 'application/octet-stream' },
+        body: bytes
+      });
+      if (!up.ok) { reply('upload_' + up.status, null); return; }
+      reply(null, await up.json());
+
+    } else if (op === 'sendMail') {
+      // NOTA: requiere el scope Mail.Send en CONFIG.scopes del portal (ver TODO).
+      var tokM = await getToken();
+      var mr = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tokM, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: {
+          subject: args.asunto,
+          body: { contentType: 'HTML', content: args.html },
+          toRecipients: (args.to || []).map(function(a){ return { emailAddress: { address: a } }; }),
+          ccRecipients: (args.cc || []).map(function(a){ return { emailAddress: { address: a } }; })
+        }})
+      });
+      if (!mr.ok && mr.status !== 202) { reply('mail_' + mr.status, null); return; }
+      reply(null, { ok: true });
+
+    } else {
+      reply('op_desconocida:' + op, null);
+    }
+  } catch (err) {
+    reply(String(err && err.message ? err.message : err), null);
+  }
+});
+
 // -- SP Data Layer — Load FabTracker data --------------
 var FT_SITE_ID = null;
 // Reset SP column maps on each load to avoid stale cache
@@ -5767,6 +5949,8 @@ async function ftLoadDataFromSP() {
     console.info('ftLoadDataFromSP: omitido (modo demo o sin token)');
     return;
   }
+  window._fabLoading = true;
+  if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   try {
     const siteId = await getSiteId();
     FT_SITE_ID = siteId;
@@ -6712,6 +6896,9 @@ async function ftLoadDataFromSP() {
   });
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
+  } finally {
+    window._fabLoading = false;
+    if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   }
 }
 
@@ -7645,7 +7832,9 @@ function renderProg(){
     });
     h+="</div>";
   });
-  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+  if(!h) h = window._fabLoading
+    ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
+    : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
   // KPIs — excluir cerrados y cancelados
   var _ofsActivas = DB.ofs.filter(function(o){return o.status!=='Pedido Cancelado'&&o.status!=='Cerrado'&&!o.pedidoCerrado;});
@@ -10030,10 +10219,11 @@ function renderProg(){
     var completed = pedidoIsComplete(g.pedido);
     var grpStyle = completed ? "border-color:var(--green);background:rgba(46,160,67,.04);"
                  : cancelado ? "border-color:var(--red);background:rgba(239,68,68,.04);opacity:.7;" : "";
-    h+="<div class='prog-card' style='"+grpStyle+"'>";
+    var _colP = (window._progCollapsed && window._progCollapsed[g.pedido]) ? " collapsed" : "";
+    h+="<div class='prog-card"+_colP+"' data-pedido='"+esc(g.pedido)+"' style='"+grpStyle+"'>";
     h+="<div class='prog-ped-hdr' style='"+(completed?"background:rgba(46,160,67,.08);":cancelado?"background:rgba(239,68,68,.06);":"")+"'>";
-    h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
-    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
+    h+="<div style='display:flex;align-items:center;gap:6px;min-width:0;'><button type='button' class='prog-toggle' title='Expandir / comprimir órdenes' onclick='toggleProgCard(this)'>▾</button><div style='min-width:0;'><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
+    h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div></div>";
     h+="<div style='display:flex;align-items:center;gap:8px'>";
     h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
     if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
@@ -10111,7 +10301,9 @@ function renderProg(){
     });
     h+="</div>";
   });
-  if(!h) h="<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
+  if(!h) h = window._fabLoading
+    ? "<div style='text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem'><span class='fab-spinner'></span><div style='margin-top:12px'>Cargando programación…</div></div>"
+    : "<div style='text-align:center;padding:30px;color:var(--muted);font-size:.82rem'>Sin resultados para el filtro actual.</div>";
   document.getElementById("prog-list").innerHTML = h;
 
   // ── Sección pedidos cancelados ──
