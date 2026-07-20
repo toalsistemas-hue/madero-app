@@ -9127,6 +9127,12 @@ var APP_PUESTO_ROL_MAP = [
   // Puesto dual: Supervisor + Analista Calidad (check first — more specific)
   { keywords: ['supervisor pro / analista', 'supervisor pro/analista', 'sup pro / analista',
                'analista / supervisor', 'sup_pro_analista'], roles: ['supervisor', 'calidad_tiem'] },
+  // Puesto combinado: Supervisor Pro + Monitor → supervisor en FabTracker.
+  // El acceso a la pantalla Monitor se asigna en FT_PuestosMovil; la administración
+  // del Monitor sigue protegida por su PIN.
+  { keywords: ['supervisor pro / monitor', 'supervisor pro/monitor', 'sup pro / monitor',
+               'sup_pro / monitor', 'sup_pro/monitor', 'sup_pro_monitor',
+               'supervisor / monitor', 'supervisor/monitor'], roles: ['supervisor'] },
   // Administrador General — acceso completo en la app
   { keywords: ['administrador general', 'admin general', 'admingeneral',
                'direcciongeneral', 'direccion general', 'director',
