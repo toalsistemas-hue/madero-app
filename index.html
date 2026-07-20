@@ -1077,7 +1077,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
           <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
-          <button class="btn btn-success btn-sm" onclick="confirmProgMain()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
+          <button class="btn btn-success btn-sm" onclick="abrirRevisionProgramacion()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="cancelEditMode()" id="btn-cancel-prog" style="display:none;">✕ Cancelar</button>
         </div>
       </div>
@@ -4853,23 +4853,36 @@ function openOpPickerForTpl(idx){
   opPickerRender();
   openCModal('modal-op-picker');
 }
+// Nombres de operación que YA están en las filas de la plantilla actual (modal abierto)
+function _tplOpsActuales(){
+  var set={};
+  document.querySelectorAll('#tpl-ops-list input[id^="top-n-"]').forEach(function(inp){
+    var v=(inp.value||'').trim().toLowerCase(); if(v) set[v]=true;
+  });
+  return set;
+}
 function opPickerRender(){
   var q=(document.getElementById('op-picker-search')||{value:''}).value.trim().toLowerCase();
   var ops=(DB.opCatalogFull||[]).slice().sort(function(a,b){return (a.nombre||'').localeCompare(b.nombre||'');});
   if(q) ops=ops.filter(function(o){
     return (o.nombre||'').toLowerCase().indexOf(q)>=0||(o.articulo||'').toLowerCase().indexOf(q)>=0;
   });
+  var _yaAsig=_tplOpsActuales();
   var list=document.getElementById('op-picker-list');
   list.innerHTML='';
   ops.forEach(function(o){
+    var _asig=!!_yaAsig[(o.nombre||'').toLowerCase()];
+    var _bg    = _asig ? 'rgba(46,160,67,.12)' : 'rgba(255,255,255,.04)';
+    var _bgHov = _asig ? 'rgba(46,160,67,.2)'  : 'rgba(255,255,255,.09)';
+    var _brd   = _asig ? 'rgba(46,160,67,.55)' : 'rgba(255,255,255,.07)';
     var div=document.createElement('div');
     div.setAttribute('data-op-nombre',o.nombre);
-    div.style.cssText='padding:10px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;cursor:pointer;transition:background .15s;';
+    div.style.cssText='padding:10px 14px;background:'+_bg+';border:1px solid '+_brd+';border-radius:8px;cursor:pointer;transition:background .15s;';
     var artDesc=o.articulo&&(DB.articles[o.articulo]||o.desc)?(' — <span style="color:var(--dim);">'+esc((DB.articles[o.articulo]||o.desc||''))+'</span>'):'';
-    div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+'</div>'+
+    div.innerHTML='<div style="font-size:.8rem;font-weight:600;">'+esc(o.nombre)+(_asig?' <span style="font-size:.6rem;color:#4caf50;font-weight:700;">✓ ya en la plantilla</span>':'')+'</div>'+
       (o.articulo?'<div style="font-size:.7rem;color:var(--accent-l);font-family:\'DM Mono\',monospace;margin-top:2px;">'+esc(o.articulo)+artDesc+'</div>':'');
-    div.onmouseover=function(){this.style.background='rgba(255,255,255,.09)';};
-    div.onmouseout=function(){this.style.background='rgba(255,255,255,.04)';};
+    div.onmouseover=function(){this.style.background=_bgHov;};
+    div.onmouseout=function(){this.style.background=_bg;};
     div.onclick=function(){opPickerSelect(this.getAttribute('data-op-nombre'));};
     list.appendChild(div);
   });
@@ -5367,29 +5380,41 @@ function closeTplOpDd(idx){
 }
 
 // Auto-register new operations in catalog after saving template (no article relationship)
-async function registerNewOpsInCatalog(art, ops){
+async function registerNewOpsInCatalog(art, ops, artDesc){
   if (!ops || !ops.length) return;
   if (!FT_SITE_ID) { try { FT_SITE_ID = await getSiteId(); } catch(e){ return; } }
-  var catalog = DB.opCatalog || [];
-  // Only register ops not already in catalog
+  var full = DB.opCatalogFull || [];
+  // Descripción = la del ARTÍCULO destino (misma convención que el alta manual)
+  var desc = artDesc || (DB.articles && DB.articles[art]) || (DB.articulosMaestros && DB.articulosMaestros[art]) || '';
+  // Registrar SOLO las ops que aún NO existan para ESTE artículo (dedup por nombre + artículo,
+  // no global). Así al duplicar una plantilla, sus operaciones se dan de alta ligadas al
+  // artículo nuevo, sin duplicar si ya existían para ese artículo.
   var newOps = ops.filter(function(op){
-    return op.nombre && catalog.indexOf(op.nombre) < 0;
+    if (!op.nombre) return false;
+    return !full.some(function(c){ return c.nombre===op.nombre && String(c.articulo||'')===String(art||''); });
   });
   if (!newOps.length) return;
-  console.log('Registrando', newOps.length, 'operaciones nuevas en FT_Catalogo_Operaciones...');
+  console.log('Registrando', newOps.length, 'operaciones en FT_Catalogo_Operaciones para artículo', art, '...');
   var saved = 0;
   for (var i = 0; i < newOps.length; i++) {
     var opName = newOps[i].nombre;
     try {
-      // FT_Catalogo_Operaciones: just Title (= nombre operacion)
-      await spEscribir('FT_Catalogo_Operaciones', { Title: opName }, null);
-      // Update in-memory catalog
+      var fields = { Title: opName };
+      if (art)  fields.Articulo_Key = art;
+      if (desc) fields.Descripcion  = desc;
+      // Inserción PURA vía Graph (no por flujo): el flujo hace upsert por Título y
+      // sobrescribiría la operación del artículo original. Con graphPost se crea una
+      // fila nueva, permitiendo la misma operación para dos artículos distintos.
+      var res = await graphPost('sites/'+FT_SITE_ID+'/lists/FT_Catalogo_Operaciones/items', { fields: fields });
+      // Actualizar catálogo en memoria (por artículo + nombre global)
+      if (!DB.opCatalogFull) DB.opCatalogFull = [];
+      DB.opCatalogFull.push({ nombre: opName, articulo: art||'', desc: desc, spId: (res&&res.id)?String(res.id):'' });
       if (!DB.opCatalog) DB.opCatalog = [];
       if (DB.opCatalog.indexOf(opName) < 0) { DB.opCatalog.push(opName); DB.opCatalog.sort(); }
       saved++;
     } catch(e){ console.warn('Error registrando op "'+opName+'":', e.message); }
   }
-  if (saved) console.log('✅', saved, 'operaciones nuevas en catálogo SP');
+  if (saved) console.log('✅', saved, 'operaciones registradas en catálogo SP para', art);
 }
 
 // ---- Gestión de catálogo: importar desde Excel / ver lista ----
@@ -5961,6 +5986,8 @@ async function ftLoadDataFromSP() {
     return;
   }
   window._fabLoading = true;
+  // Overlay "Cargando…" solo en la PRIMERA carga y estando en la pantalla de Fabricaciones
+  if (!window._fabDatosCargados) { var _fpPg=document.getElementById('page-Fabricaciones'); if(_fpPg && _fpPg.classList.contains('active') && typeof _fabShowLoadOverlay==='function') _fabShowLoadOverlay(); }
   if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
   try {
     const siteId = await getSiteId();
@@ -6909,7 +6936,15 @@ async function ftLoadDataFromSP() {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   } finally {
     window._fabLoading = false;
+    window._fabDatosCargados = true;
+    if (typeof _fabHideLoadOverlay==='function') _fabHideLoadOverlay();
     if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }
+    // Re-render de la pestaña coordinador activa tras la primera carga
+    try {
+      if (C && C.currentPage === 'seguimiento' && typeof renderSeg==='function') (window.renderSeg||renderSeg)();
+      else if (C && C.currentPage === 'flujos' && typeof renderCoordFlujos==='function') renderCoordFlujos();
+      else if (C && C.currentPage === 'historial' && typeof renderHist==='function') renderHist();
+    } catch(_e2){}
   }
 }
 
@@ -6958,7 +6993,7 @@ async function ftCreateOpInSP(of_sap, op, aof) {
     Ayudantes_JSON: (op.ayudantes || []).join(','),
     Status:         op.status || 'pending',
     Secuencia:      seqNum,
-    Qty_Total:      op.qty_total || 10,
+    Qty_Total:      op.qty_total || 1,
     Qty_OK:         op.qty_ok || 0,
     Qty_Def:        op.qty_def || 0,
     Qty_Rej:        op.qty_rej || 0,
@@ -7303,7 +7338,7 @@ function initActiveOFs() {
     var ops = tpl ? tpl.ops.map(function(op,i){
       var _tAyu2=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return {id:"op_"+of.of_sap+"_"+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo,
-        tecnico:op.tecnico||"",ayudantes:_tAyu2,qty_total:op.cantidad?parseInt(op.cantidad):10,
+        tecnico:op.tecnico||"",ayudantes:_tAyu2,qty_total:op.cantidad?parseInt(op.cantidad):1,
         qty_ok:0,qty_def:0,qty_rej:0,
         status:"pending",inicio:null,fin:null,mins:0,
         isTemplate:true,pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -9770,6 +9805,7 @@ function updatePedidoPrio(pedido, val) {
 // -- 1 & 2: confirmProgMain aplica PENDING a DB ------------
 function confirmProgMain() {
   window.confirmProgMain = confirmProgMain;
+  if (window._confirmProgRunning) { alert('Hay un registro en curso. Espera a que termine antes de programar otra orden.'); return; }
   // Capturar Fecha_Entrega y Cantidad de los inputs del DOM antes de salir del modo edición
   // Validar que OFs programadas tengan los campos obligatorios
   var errores = [];
@@ -9851,14 +9887,17 @@ function confirmProgMain() {
       if (!_existingAof) {
         var tpl = DB.templates[of.articulo];
         var padre = tpl&&tpl.padre ? {articulo:tpl.padre,nombre:DB.articles[tpl.padre]||''} : null;
-        var ops = tpl ? tpl.ops.map(function(op,i){
+        // Fase A: si hubo revisión/edición previa, usar esas ops; si no, la plantilla
+        var _fuenteOps = (window._progOpsEditadas && window._progOpsEditadas[sap]) ? window._progOpsEditadas[sap] : (tpl ? tpl.ops : []);
+        if (window._progOpsEditadas) delete window._progOpsEditadas[sap];
+        var ops = (_fuenteOps||[]).map(function(op,i){
           return {id:'op_'+sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
             tipo:op.tipo||'Secuencial', tecnico:op.tecnico||'', ayudantes:op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[],
-            qty_total:op.cantidad?parseInt(op.cantidad):10, qty_ok:0, qty_def:0, qty_rej:0,
+            qty_total:op.cantidad?parseInt(op.cantidad):1, qty_ok:0, qty_def:0, qty_rej:0,
             status:'pending', inicio:null, fin:null, mins:0,
             isTemplate:true, pauseReason:null, valcalNote:null,
             needsCal:false, calResult:null, calComment:null};
-        }) : [];
+        });
         DB.activeOFs.push({of_sap:sap, pedido:of.pedido, cliente:of.cliente,
           ofv:of.ofv||'', articulo:of.articulo, descripcion:of.descripcion,
           prioridad:of.prioridad, padre:padre, subarts:tpl&&tpl.subarts?tpl.subarts.slice():[],
@@ -10015,7 +10054,14 @@ function confirmProgMain() {
               if (_existingOpsMap[_opKey] && !op._spId) op._spId=_existingOpsMap[_opKey].id;
               var _saved=false;
               for (var _r=0; _r<3 && !_saved; _r++) {
-                if(_r>0) await new Promise(function(r){setTimeout(r,2000*_r);}); // exponential backoff
+                if(_r>0){
+                  await new Promise(function(r){setTimeout(r,2000*_r);}); // exponential backoff
+                  // Idempotencia: si el intento previo alcanzó a crear la op pero se perdió la respuesta,
+                  // re-leer y adoptar su _spId para ACTUALIZAR en vez de crear un duplicado.
+                  if(!op._spId){
+                    try{ var _rk=await flowGet('FT_Operaciones','',5000); var _rh=(_rk.value||[]).find(function(it){var f=it.fields||{}; return String(f.OF_SAP||'')===String(sap) && String(f.Op_ID||'')===String(op.id);}); if(_rh) op._spId=_rh.id; }catch(_e){}
+                  }
+                }
                 try { await ftSaveOpToSP(sap,op.id); _saved=true; }
                 catch(e){ console.warn('  Op error ('+(_r+1)+'):',op.id,e.message); }
               }
@@ -10104,7 +10150,14 @@ function confirmProgMain() {
           var w=_colaWrites[ci];
           var _saved=false;
           for(var _cr=0;_cr<3&&!_saved;_cr++){
-            if(_cr>0) await new Promise(function(r){setTimeout(r,1500*_cr);});
+            if(_cr>0){
+              await new Promise(function(r){setTimeout(r,1500*_cr);});
+              // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
+              // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
+              if(!(w.existing&&w.existing.spId)){
+                try{ var _cc=await flowGet('FT_Cola_Estacion','',2000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
+              }
+            }
             try{
               if(w.existing&&w.existing.spId){
                 await spEscribir('FT_Cola_Estacion',{Posicion:w.op._colaPos,Activo:false},parseInt(w.existing.spId));
@@ -10163,6 +10216,30 @@ function confirmProgMain() {
           }
           console.log('✅ Programación guardada en SharePoint');
         } catch(e){ console.warn('Error Step 3:',e.message); }
+
+        // ── Verificación post-registro (Fase B): detectar ops faltantes o duplicadas ──
+        try{
+          var _verRes = await flowGet('FT_Operaciones','',5000).catch(function(){return {value:[]};});
+          var _problemas = [];
+          _newSapsSorted.forEach(function(sap){
+            var _esperado = (_opsSnapshot[sap]||[]).length;
+            if(!_esperado) return;
+            var _porOp = {}, _dups = 0;
+            (_verRes.value||[]).forEach(function(it){
+              var f = it.fields||{};
+              if(String(f.OF_SAP||'') !== String(sap)) return;
+              var oid = f.Op_ID||''; if(!oid) return;
+              _porOp[oid] = (_porOp[oid]||0)+1;
+              if(_porOp[oid]===2) _dups++;
+            });
+            var _unicos = Object.keys(_porOp).length;
+            if(_unicos < _esperado) _problemas.push('OF '+sap+': faltan operaciones ('+_unicos+'/'+_esperado+')');
+            if(_dups > 0) _problemas.push('OF '+sap+': '+_dups+' operación(es) duplicada(s)');
+          });
+          if(_problemas.length){
+            alert('⚠ La verificación posterior al registro detectó:\n\n'+_problemas.join('\n')+'\n\nVuelve a registrar la OF (el sistema reutiliza las operaciones existentes, no las duplica) o revisa la programación.');
+          }
+        }catch(_ev){ console.warn('Verificación post-registro:', _ev && _ev.message); }
 
         // ── Finalize ────────────────────────────────────────────────────────
         Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st){
@@ -10271,7 +10348,7 @@ function renderProg(){
         var _esPendienteNueva2 = !of.programadoHoy && PENDING_PROG[of.of_sap] && PENDING_PROG[of.of_sap].programadoHoy;
         var _ordenActual2 = _esPendienteNueva2 ? (PENDING_COLA_ORDER[of.of_sap] || '') : '';
         h+="<div style='display:flex;flex-direction:column;align-items:center;gap:2px;'>"
-         +"<input type='checkbox' class='prog-chk' "+(_pendingChecked2?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">"
+         +"<input type='checkbox' class='prog-chk' data-sap='"+esc(of.of_sap)+"' "+(_pendingChecked2?"checked":"")+" onchange=\"toggleProg('"+esc(of.of_sap)+"',this.checked)\">"
          +"<div id='cola-wrap-"+esc(of.of_sap)+"' style='display:"+(_esPendienteNueva2?"flex":"none")+";flex-direction:column;align-items:center;gap:1px;' title='Orden de cola'>"
          +"<span style='font-size:.52rem;color:var(--dim);'>Cola</span>"
          +"<input type='number' min='1' max='99' id='cola-ord-"+esc(of.of_sap)+"' value='"+(_ordenActual2||'')+"'"
@@ -10398,7 +10475,7 @@ function openOFOpsModal(sap) {
         var ops = tpl.ops.map(function(op,i){
           var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):1,
             qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -10414,7 +10491,7 @@ function openOFOpsModal(sap) {
         aof.ops = tpl.ops.map(function(op,i){
           var _tAyu45=op.ayudantes?String(op.ayudantes).split(',').map(function(s){return s.trim();}).filter(Boolean):[];
           return {id:'op_'+sap+'_'+i,nombre:op.nombre,estacion:op.estacion,tipo:op.tipo||'Secuencial',
-            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):10,
+            tecnico:op.tecnico||'',ayudantes:_tAyu45,qty_total:op.cantidad?parseInt(op.cantidad):1,
             qty_ok:0,qty_def:0,qty_rej:0,
             status:'pending',inicio:null,fin:null,mins:0,isTemplate:true,
             pauseReason:null,valcalNote:null,needsCal:false,calResult:null,calComment:null};
@@ -10463,7 +10540,7 @@ function openOFOpsModal(sap) {
     // Piezas
     h += '<div style="min-width:80px;">';
     h += '<div style="font-size:.68rem;color:var(--dim);font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;">📦 Piezas</div>';
-    h += '<input type="number" min="1" value="'+(op.qty_total||10)+'" id="qty-'+sap+'-'+i+'" class="form-input-sm" style="width:72px;">';
+    h += '<input type="number" min="1" value="'+(op.qty_total||1)+'" id="qty-'+sap+'-'+i+'" class="form-input-sm" style="width:72px;">';
     h += '</div>';
     h += '</div>';
 
@@ -11706,7 +11783,7 @@ function saveTplModal(){
     var newOps = ops.map(function(op,i){
       var existing = aof.ops.find(function(o){return o.nombre===op.nombre && o.estacion===op.estacion;});
       return existing || {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
-        tipo:op.tipo, tecnico:'', qty_total:10, qty_ok:0, qty_def:0, qty_rej:0,
+        tipo:op.tipo, tecnico:'', qty_total:1, qty_ok:0, qty_def:0, qty_rej:0,
         status:'pending', inicio:null, fin:null, mins:0, isTemplate:true,
         pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
     });
@@ -11869,7 +11946,7 @@ function _checkQueueThenStart(sap, opId, op){
       '<strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion)+'<br>'+
       '<span style="color:var(--ared);font-size:.72rem;">⚠ Asigna técnico y piezas para continuar.</span>';
     document.getElementById('app-qa-tech').value = op.tecnico || '';
-    document.getElementById('app-qa-qty').value  = op.qty_total || 10;
+    document.getElementById('app-qa-qty').value  = op.qty_total || 1;
     openAppModal('app-modal-quick-assign');
     return;
   }
@@ -11938,7 +12015,7 @@ function appOpenQuickAssign(sap, opId){
   document.getElementById('app-quick-assign-info').innerHTML =
     '<strong>'+esc(op.nombre)+'</strong><br><span style="font-size:.72rem;color:var(--adim);">'+esc(op.estacion)+'</span>';
   document.getElementById('app-qa-tech').value = op.tecnico || '';
-  document.getElementById('app-qa-qty').value  = op.qty_total || 10;
+  document.getElementById('app-qa-qty').value  = op.qty_total || 1;
   // Inyectar sección de ayudantes en el modal
   var ayudantes = op.ayudantes || [];
   var existing = document.getElementById('app-qa-ayud-wrap');
@@ -12173,6 +12250,22 @@ appConfirmValCal = function(){
       PENDING_PROG[sap] = {programadoHoy: of0 ? of0.programadoHoy : false, prioridad: of0 ? of0.prioridad : 'normal'};
     }
     PENDING_PROG[sap].programadoHoy = val;
+    // Selección ÚNICA: al marcar una OF NUEVA, desmarcar cualquier otra OF nueva ya marcada
+    if (val) {
+      var _selOf = DB.ofs.find(function(o){return o.of_sap===sap;});
+      if (_selOf && !_selOf.programadoHoy) {
+        Object.keys(PENDING_PROG).forEach(function(_o){
+          if (_o===sap) return;
+          var _od = DB.ofs.find(function(o){return o.of_sap===_o;});
+          if (_od && !_od.programadoHoy && PENDING_PROG[_o].programadoHoy) {
+            PENDING_PROG[_o].programadoHoy = false;
+            delete PENDING_COLA_ORDER[_o];
+            var _c = document.querySelector('.prog-chk[data-sap="'+_o+'"]'); if(_c) _c.checked=false;
+            var _w = document.getElementById('cola-wrap-'+_o); if(_w) _w.style.display='none';
+          }
+        });
+      }
+    }
     var ofDb = DB.ofs.find(function(o){return o.of_sap===sap;});
     var isNueva = ofDb && !ofDb.programadoHoy;
     if (isNueva) {
@@ -12681,7 +12774,8 @@ function renderSeg(){
         var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b',omitida:'#6e7681'}[op.status]||'var(--muted)';
         var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳',omitida:'🏁'}[op.status]||'○';
         var _esOmit = op.status==='omitida';
-        h+='<div style="background:'+(_esOmit?'rgba(110,118,129,.08)':'rgba(255,255,255,.03)')+';border:1px solid '+(_esOmit?'rgba(110,118,129,.55)':'var(--border)')+';border-radius:4px;padding:5px 9px;">';
+        var _esRun = op.status==='running';
+        h+='<div style="background:'+(_esOmit?'rgba(110,118,129,.08)':_esRun?'rgba(46,160,67,.06)':'rgba(255,255,255,.03)')+';border:1px solid '+(_esOmit?'rgba(110,118,129,.55)':_esRun?'rgba(46,160,67,.5)':'var(--border)')+';border-radius:4px;padding:5px 9px;">';
         h+='<div style="display:flex;align-items:flex-start;gap:6px;">';
         h+='<span style="color:'+sCol+';font-size:.7rem;margin-top:2px;flex-shrink:0;">'+sIco+'</span>';
         h+='<div style="flex:1;min-width:0;">';
@@ -15422,6 +15516,144 @@ function ftRptExportExcel(){
     }catch(e){ alert('No se pudo eliminar: '+e.message); }
   };
 })();
+</script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   FASE A — Revisión y confirmación de programación (una OF a la vez)
+   El botón "Confirmar" abre este modal con las operaciones a registrar
+   (secuencia, estación, técnico, ayudantes, cantidad) editables. Al
+   confirmar, se guardan las correcciones y se ejecuta confirmProgMain().
+   Aditivo: no cambia el proceso de registro existente.
+   ═══════════════════════════════════════════════════════════════════ */
+(function(){
+  function _esc(s){ return (typeof esc==='function')?esc(s):String(s==null?'':s); }
+  function _stationsOpts(sel){
+    var st=(window.STATIONS&&window.STATIONS.length)?window.STATIONS:[];
+    return '<option value="">—</option>'+st.map(function(s){return '<option value="'+_esc(s)+'"'+(s===sel?' selected':'')+'>'+_esc(s)+'</option>';}).join('');
+  }
+  function _tecOpts(sel){
+    var t=(window._ftTecnicosCache||[]).filter(function(x){return x && x.Activo!==false;});
+    var nombres=t.map(function(x){return x.Nombre||x.Title||'';}).filter(Boolean);
+    if(sel && nombres.indexOf(sel)===-1) nombres.unshift(sel); // asegurar que el técnico ya asignado aparezca
+    var opts='<option value="">— Sin técnico —</option>';
+    nombres.forEach(function(n){ opts+='<option value="'+_esc(n)+'"'+(n===sel?' selected':'')+'>'+_esc(n)+'</option>'; });
+    return opts;
+  }
+  function ensureModal(){
+    if(document.getElementById('rev-prog-modal')) return;
+    var d=document.createElement('div');
+    d.id='rev-prog-modal';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:100050;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px;';
+    d.innerHTML='<div style="background:var(--card,#161b22);border:1px solid var(--border,#30363d);border-radius:12px;max-width:920px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">'
+      +'<div style="padding:14px 18px;border-bottom:1px solid var(--border,#30363d);display:flex;align-items:center;justify-content:space-between;">'
+      +'<div><div style="font-weight:700;font-size:.95rem;color:var(--text,#e6edf3);">🧾 Revisar programación</div><div id="rev-prog-sub" style="font-size:.75rem;color:var(--dim,#8b949e);"></div></div>'
+      +'<button onclick="cerrarRevisionProgramacion()" style="background:none;border:none;color:var(--dim,#8b949e);font-size:1.3rem;cursor:pointer;line-height:1;">&times;</button>'
+      +'</div>'
+      +'<div id="rev-prog-body" style="padding:14px 18px;overflow-y:auto;"></div>'
+      +'<div style="padding:12px 18px;border-top:1px solid var(--border,#30363d);display:flex;justify-content:flex-end;gap:10px;">'
+      +'<button onclick="cerrarRevisionProgramacion()" style="background:none;border:1px solid var(--border,#30363d);border-radius:8px;padding:8px 16px;font-size:.8rem;color:var(--text,#e6edf3);cursor:pointer;">Cancelar</button>'
+      +'<button id="rev-prog-confirmar" onclick="confirmarRevisionProgramacion()" style="background:var(--green,#2ea043);border:none;border-radius:8px;padding:8px 18px;font-size:.8rem;color:#fff;cursor:pointer;font-weight:600;">✓ Confirmar y registrar</button>'
+      +'</div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('click', function(e){ if(e.target===d) cerrarRevisionProgramacion(); });
+  }
+  window.cerrarRevisionProgramacion=function(){ var m=document.getElementById('rev-prog-modal'); if(m) m.style.display='none'; };
+
+  window.abrirRevisionProgramacion=async function(){
+    if (window._confirmProgRunning) { alert('Hay un registro en curso. Espera a que termine.'); return; }
+    // OFs NUEVAS marcadas (que aún no estaban programadas)
+    var nuevas=Object.keys(PENDING_PROG).filter(function(sap){
+      if(!PENDING_PROG[sap] || !PENDING_PROG[sap].programadoHoy) return false;
+      var of=DB.ofs.find(function(o){return o.of_sap===sap;});
+      return of && !of.programadoHoy;
+    });
+    // Sin altas nuevas (solo bajas o prioridad) → registrar directo, sin modal
+    if(!nuevas.length){ confirmProgMain(); return; }
+    // Asegurar la lista de técnicos para los desplegables del modal
+    if (typeof _tplEnsureTecnicos === 'function') { try { await _tplEnsureTecnicos(); } catch(e){} }
+    ensureModal();
+    var m=document.getElementById('rev-prog-modal');
+    var h='';
+    nuevas.forEach(function(sap){
+      var of=DB.ofs.find(function(o){return o.of_sap===sap;})||{};
+      var tpl=DB.templates[of.articulo];
+      var ops=(tpl&&tpl.ops)?tpl.ops:[];
+      h+='<div data-revof="'+_esc(sap)+'" style="margin-bottom:16px;">';
+      h+='<div style="font-size:.8rem;font-weight:700;color:var(--accent-l,#58a6ff);margin-bottom:6px;">OF '+_esc(sap)+(of.articulo?' · '+_esc(of.articulo):'')+' <span style="color:var(--dim,#8b949e);font-weight:400;">'+_esc((of.descripcion||'').substring(0,55))+'</span></div>';
+      if(!ops.length){ h+='<div style="color:#f87171;font-size:.78rem;">⚠ El artículo no tiene plantilla de operaciones; no hay nada que registrar.</div></div>'; return; }
+      h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:.74rem;">';
+      h+='<thead><tr style="color:var(--dim,#8b949e);text-align:left;"><th style="padding:4px 6px;width:46px;">Sec</th><th style="padding:4px 6px;">Operación</th><th style="padding:4px 6px;">Estación</th><th style="padding:4px 6px;">Técnico</th><th style="padding:4px 6px;">Ayudantes</th><th style="padding:4px 6px;width:66px;">Cant</th></tr></thead><tbody>';
+      ops.forEach(function(op,i){
+        var ayu=op.ayudantes?String(op.ayudantes):'';
+        var _inp='background:var(--bg,#0d1117);border:1px solid var(--border,#30363d);border-radius:5px;color:var(--text,#e6edf3);padding:3px 4px;font-size:.72rem;';
+        h+='<tr data-revop="1" style="border-top:1px solid var(--border,#30363d);">';
+        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-sec" value="'+(i+1)+'" style="width:42px;text-align:center;'+_inp+'"></td>';
+        h+='<td style="padding:4px 6px;"><span style="color:var(--text,#e6edf3);">'+_esc(op.nombre)+'</span><input type="hidden" class="rev-nom-v" value="'+_esc(op.nombre)+'"><input type="hidden" class="rev-tipo-v" value="'+_esc(op.tipo||'secuencial')+'"></td>';
+        h+='<td style="padding:4px 6px;"><select class="rev-est" style="'+_inp+'">'+_stationsOpts(op.estacion||'')+'</select></td>';
+        h+='<td style="padding:4px 6px;"><select class="rev-tec" style="'+_inp+'">'+_tecOpts(op.tecnico||'')+'</select></td>';
+        h+='<td style="padding:4px 6px;"><input type="text" class="rev-ayu" value="'+_esc(ayu)+'" placeholder="coma-separado" style="width:130px;'+_inp+'"></td>';
+        h+='<td style="padding:4px 6px;"><input type="number" min="1" class="rev-cant" value="'+(op.cantidad?parseInt(op.cantidad):1)+'" style="width:58px;'+_inp+'"></td>';
+        h+='</tr>';
+      });
+      h+='</tbody></table></div></div>';
+    });
+    m.querySelector('#rev-prog-sub').textContent = (nuevas.length===1) ? ('OF '+nuevas[0]+' — revisa y corrige antes de registrar') : (nuevas.length+' OFs a registrar');
+    m.querySelector('#rev-prog-body').innerHTML=h;
+    m.style.display='flex';
+  };
+
+  window.confirmarRevisionProgramacion=function(){
+    var m=document.getElementById('rev-prog-modal'); if(!m) return;
+    var _b=document.getElementById('rev-prog-confirmar'); if(_b){ if(_b.disabled) return; _b.disabled=true; _b.textContent='Registrando…'; }
+    window._progOpsEditadas = window._progOpsEditadas || {};
+    m.querySelectorAll('[data-revof]').forEach(function(sec){
+      var sap=sec.getAttribute('data-revof');
+      var arr=[];
+      sec.querySelectorAll('tr[data-revop]').forEach(function(r){
+        arr.push({
+          _sec: parseInt(r.querySelector('.rev-sec').value)||9999,
+          nombre: r.querySelector('.rev-nom-v').value,
+          tipo: r.querySelector('.rev-tipo-v').value,
+          estacion: r.querySelector('.rev-est').value,
+          tecnico: r.querySelector('.rev-tec').value,
+          ayudantes: r.querySelector('.rev-ayu').value,
+          cantidad: parseInt(r.querySelector('.rev-cant').value)||10
+        });
+      });
+      arr.sort(function(a,b){return a._sec-b._sec;});
+      if(arr.length) window._progOpsEditadas[sap]=arr;
+    });
+    cerrarRevisionProgramacion();
+    confirmProgMain();
+  };
+})();
+</script>
+<script>
+/* Overlay "Cargando datos de Fabricación…" — visible solo en la PRIMERA carga,
+   cubre cualquier pestaña activa para que el usuario no piense que no hay datos. */
+(function(){
+  function ensure(){
+    if(document.getElementById('fab-load-overlay')) return;
+    var d=document.createElement('div');
+    d.id='fab-load-overlay';
+    d.style.cssText='display:none;position:fixed;inset:0;z-index:99000;background:rgba(3,8,16,.72);flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+    d.innerHTML='<span class="fab-spinner"></span><div style="color:var(--text,#e6edf3);font-size:.9rem;font-weight:600;">Cargando datos de Fabricación…</div>';
+    document.body.appendChild(d);
+  }
+  window._fabShowLoadOverlay=function(){ ensure(); var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='flex'; };
+  window._fabHideLoadOverlay=function(){ var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='none'; };
+})();
+</script>
+<script>
+/* Advertencia al intentar cerrar/recargar/salir de la pestaña MIENTRAS un registro
+   de programación está en curso (evita abortar el proceso a la mitad). */
+window.addEventListener('beforeunload', function(e){
+  if (window._confirmProgRunning) {
+    e.preventDefault();
+    e.returnValue = 'Hay un registro de programación en curso. Si sales ahora, el proceso quedará incompleto.';
+    return e.returnValue;
+  }
+});
 </script>
 </body>
 </html>
