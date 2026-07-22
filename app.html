@@ -4035,11 +4035,19 @@ async function appOmitirOp(sap, opId) {
   var of = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
   var op = of ? of.ops.find(function(o){ return o.id === opId; }) : null;
   if (!op || op.status !== 'pending') return;
-  if (!confirm('¿Omitir la operación "' + (op.nombre||opId) + '"?\n\nEsta operación quedará bloqueada y no se mostrará en el monitor.')) return;
+  // Comentario OBLIGATORIO al omitir
+  var _omitCmt = prompt('¿Motivo para omitir la operación "' + (op.nombre||opId) + '"?\n\nEsta operación quedará bloqueada y no se mostrará en el monitor.\n\nEscribe el comentario (obligatorio):');
+  if (_omitCmt === null) return; // cancelado
+  _omitCmt = String(_omitCmt).trim();
+  if (!_omitCmt) { alert('Debes escribir un comentario para omitir la operación.'); return; }
   _appOmitiendo = true;
   _appShowOmitOverlay('Aplicando omisión…');
   op.status = 'omitida';
+  op.omitComment = _omitCmt;
   op.fin    = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  // Candado local: protege el estado 'omitida' de que un poll/reload lo revierta
+  // mientras SharePoint termina de propagar el cambio.
+  op._localStatus = 'omitida'; op._localStatusAt = Date.now();
   renderApp();
   try {
     // Esperar a que termine el guardado en SP antes de permitir otra omisión
@@ -6734,19 +6742,19 @@ function renderHist(){
         var rec=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
         return rec&&(rec.articulo===art||rec._virtualArticulo===art);
       });
-      var totalAvg=0; var savedCount=0;
+      var totalAvg=0; var savedCount=0; var _lastCmt='';
       matchAofs.forEach(function(aof){
         var realOp=aof.ops.find(function(o){return o.nombre===op.nombre&&o.estacion===op.estacion;});
         if(realOp){
           var key2=aof.of_sap+'_'+realOp.id;
           var d2=calTiemGetData(key2);
-          if(d2.saved){totalAvg+=d2.avg;savedCount++;}
+          if(d2.saved){totalAvg+=d2.avg;savedCount++; if(d2.comentario)_lastCmt=d2.comentario;}
         }
       });
       // Use average of averages across multiple OFs of same article
       var displayAvg = savedCount>0 ? Math.round(totalAvg/savedCount) : 0;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
-      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount});
+      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount,comentario:_lastCmt});
       artGroups[art].totalAvg+=displayAvg;
     });
   });
@@ -6763,8 +6771,8 @@ function renderHist(){
       if(!d.saved)return;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
       var existing=artGroups[art].ops.find(function(o){return o.nombre===op.nombre;});
-      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count;}
-      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count});
+      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count; if(d.comentario)existing.comentario=d.comentario;}
+      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count,comentario:d.comentario||''});
       artGroups[art].totalAvg+=d.avg;
     });
   });
@@ -6781,12 +6789,13 @@ function renderHist(){
       calH+='<div style="font-size:.8rem;font-weight:600;">'+esc(g.name)+'</div></div>';
       calH+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.88rem;font-weight:700;color:var(--yellow);">'+fmtMSS(g.totalAvg)+'</div>';
       calH+='<div style="font-size:.62rem;color:var(--dim);">T. Total estimado</div></div></div>';
-      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th></tr></thead><tbody>';
+      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th><th>Comentario</th></tr></thead><tbody>';
       g.ops.forEach(function(op){
         calH+='<tr><td style="font-weight:500;">'+esc(op.nombre)+'</td>';
         calH+='<td style="color:var(--dim);">'+esc(op.estacion)+'</td>';
         calH+='<td style="font-family:\'DM Mono\',monospace;color:'+(op.avg>0?'var(--accent-l)':'var(--muted)')+';">'+(op.avg>0?fmtMSS(op.avg):'—')+'</td>';
-        calH+='<td style="color:var(--dim);">'+op.count+'</td></tr>';
+        calH+='<td style="color:var(--dim);">'+op.count+'</td>';
+        calH+='<td style="color:var(--dim);font-size:.7rem;">'+(op.comentario?esc(op.comentario):'<span style="color:var(--muted);">—</span>')+'</td></tr>';
       });
       calH+='</tbody></table></div>';
     });
@@ -7409,8 +7418,8 @@ function calTiemGetData(key){
   if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true}; // legado mins→secs
   // _editing=true significa en edición pero ya guardado — mostrar como guardado
   // _editing=true → mostrar formulario (saved=false), pero preservar _spId
-  if(d._editing) return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:false, _spId:d._spId};
-  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0, _spId:d._spId};
+  if(d._editing) return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:false, _spId:d._spId, comentario:d.comentario||''};
+  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0, _spId:d._spId, comentario:d.comentario||''};
 }
 
 function renderCalTiemInputs(of, inFlujo){
@@ -8420,7 +8429,8 @@ async function _appLoadDataFromSP_impl() {
         })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
         calComment: o.CalComment||null,
-        calLineaComment: o.CalLineaComment||null, supFinComment: o.SupFinComment||null, analistaComment: o.AnalistaComment||null,
+        calLineaComment: o.CalLineaComment||null, supFinComment: o.SupFinComment||null, analistaComment: o.AnalistaComment||null, omitComment: o.OmitComment||null,
+        historialCambios: (function(){try{return JSON.parse(o.Historial_Cambios||'[]');}catch(e){return [];}})(), _histLastStatus: (o.Status||o.status||'pending'),
         qty_def_retrabajo: parseInt(o.Qty_Def_Retrabajo||o.qty_def_retrabajo||0),
         qty_def_chatarra: parseInt(o.Qty_Def_Chatarra||o.qty_def_chatarra||0),
         _spId: o.ID||o._itemId||null,
@@ -8724,7 +8734,7 @@ async function _appLoadDataFromSP_impl() {
         var muestras=[]; try{muestras=JSON.parse(f.Muestras_JSON||'[]');}catch(e){}
         var avg=parseFloat(f.Promedio_Seg||0);
         var spId=i.id||f.ID||f.id;
-        DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),_spId:spId};
+        DB.calTiemposGuardados[key]={samples:muestras,muestras:muestras,avg:avg,promedio:avg,count:parseInt(f.Count||muestras.length||0),comentario:f.Comentario||'',tecnico_op:f.Tecnico_Op||'',tecnico_cal:f.Tecnico_Cal||'',_spId:spId};
       });
       console.log('[CalTiempos] Cargados desde SP:', Object.keys(DB.calTiemposGuardados).length, '| _spIds:', Object.values(DB.calTiemposGuardados).filter(function(v){return v._spId;}).length);
     } catch(e){ console.warn('[CalTiempos] No se pudieron cargar:', e.message); }
@@ -8733,11 +8743,45 @@ async function _appLoadDataFromSP_impl() {
 }
 
 // Persist op changes to SP from app
+// ── Bitácora de auditoría de operaciones (FT_Operaciones.Historial_Cambios) ──
+function _appAuditUser(){
+  return (typeof appCurrentUser!=='undefined' && appCurrentUser && (appCurrentUser.email||appCurrentUser.nombre))
+      || (typeof APP_USER_PROFILE!=='undefined' && APP_USER_PROFILE && APP_USER_PROFILE.nombre)
+      || 'App';
+}
+function appPushHistorial(op, accion){
+  if(!op || !accion) return;
+  if(!Array.isArray(op.historialCambios)) op.historialCambios = [];
+  var now=new Date();
+  op.historialCambios.push({
+    fecha: now.toLocaleDateString('es-MX'),
+    hora:  now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}),
+    usuario: _appAuditUser(),
+    accion: String(accion)
+  });
+  if(op.historialCambios.length>150) op.historialCambios = op.historialCambios.slice(-150);
+}
+function _appAccionPorStatus(op, prev){
+  switch(op.status){
+    case 'running':    return (prev==='paused')?'Reanudó la operación':((prev==='validating')?'Reanudó tras validación de Calidad':'Inició la operación');
+    case 'paused':     return 'Pausó la operación'+(op.pauseReason?' ('+op.pauseReason+')':'');
+    case 'validating': return 'Envió a validación de Calidad'+(op.valcalNote&&op.valcalNote.charAt(0)!=='{'?': '+op.valcalNote:'');
+    case 'done':       return 'Terminó la operación (OK:'+(op.qty_ok||0)+' Def:'+(op.qty_def||0)+((op.qty_chat||0)?' Chat:'+op.qty_chat:'')+((op.qty_rej||0)?' Rec:'+op.qty_rej:'')+')';
+    case 'omitida':    return 'Omitió la operación'+(op.omitComment?': '+op.omitComment:'');
+    default:           return 'Actualizó la operación';
+  }
+}
 async function appSaveOpToSP(of_sap, opId) {
   try {
     const aof = DB.activeOFs.find(a=>a.of_sap===of_sap);
     const op = aof ? aof.ops.find(o=>o.id===opId) : null;
     if (!op) return;
+    // Registrar en bitácora: acción explícita (op._accionLog) o derivada de cambio de estado
+    var _accionAudit = op._accionLog || null;
+    if(!_accionAudit && op._histLastStatus !== op.status) _accionAudit = _appAccionPorStatus(op, op._histLastStatus);
+    op._accionLog = null;
+    if(_accionAudit) appPushHistorial(op, _accionAudit);
+    op._histLastStatus = op.status;
 
     const patchFields = {
       Status:         op.status || 'pending',
@@ -8766,6 +8810,8 @@ async function appSaveOpToSP(of_sap, opId) {
     if (op.calLineaComment) patchFields.CalLineaComment = op.calLineaComment;
     if (op.supFinComment)   patchFields.SupFinComment   = op.supFinComment;
     if (op.analistaComment) patchFields.AnalistaComment = op.analistaComment;
+    if (op.omitComment)     patchFields.OmitComment     = op.omitComment;
+    if (Array.isArray(op.historialCambios)) patchFields.Historial_Cambios = JSON.stringify(op.historialCambios);
     patchFields.Qty_Def_Retrabajo = op.qty_def_retrabajo || 0;
     patchFields.Qty_Def_Chatarra  = op.qty_def_chatarra  || 0;
     if (op.isRetrabajo === true) patchFields.isRetrabajo = true;
@@ -9039,6 +9085,7 @@ async function appSaveCalTiempoToSP(key, calData) {
       Tecnico_Cal:   appCurrentUser ? appCurrentUser.nombre||appCurrentUser.email : 'App',
       Tecnico_Op:    calData.tecnico_op || '',
       Fecha_Registro: new Date().toISOString(),
+      Comentario:    calData.comentario || '',
     };
     if (calData._spId) {
       await appFlowEscribir('FT_CalTiempos', 'actualizar', parseInt(calData._spId), fields);
@@ -13222,6 +13269,7 @@ function appCalRespond(result){
   op.calComment=comment;op.needsCal=false;
   // Comentario del encargado de Calidad de Línea — columna dedicada, persiste entre ciclos
   if(comment) op.calLineaComment=comment;
+  op._accionLog = 'Validación de Calidad de línea: '+(result==='liberado'?'Liberado':'Rechazado')+(comment?' — '+comment:'');
   if(result==="liberado"){
     op.calResult="liberado";op.status="running";op.qty_rej=0;
     // Reiniciar timer usando el elapsed acumulado antes de la pausa de validación
@@ -15458,19 +15506,19 @@ function renderHist(){
         var rec=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
         return rec&&(rec.articulo===art||rec._virtualArticulo===art);
       });
-      var totalAvg=0; var savedCount=0;
+      var totalAvg=0; var savedCount=0; var _lastCmt='';
       matchAofs.forEach(function(aof){
         var realOp=aof.ops.find(function(o){return o.nombre===op.nombre&&o.estacion===op.estacion;});
         if(realOp){
           var key2=aof.of_sap+'_'+realOp.id;
           var d2=calTiemGetData(key2);
-          if(d2.saved){totalAvg+=d2.avg;savedCount++;}
+          if(d2.saved){totalAvg+=d2.avg;savedCount++; if(d2.comentario)_lastCmt=d2.comentario;}
         }
       });
       // Use average of averages across multiple OFs of same article
       var displayAvg = savedCount>0 ? Math.round(totalAvg/savedCount) : 0;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
-      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount});
+      artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion,avg:displayAvg,count:savedCount,comentario:_lastCmt});
       artGroups[art].totalAvg+=displayAvg;
     });
   });
@@ -15487,8 +15535,8 @@ function renderHist(){
       if(!d.saved)return;
       if(!artGroups[art])artGroups[art]={name:artName,ops:[],totalAvg:0};
       var existing=artGroups[art].ops.find(function(o){return o.nombre===op.nombre;});
-      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count;}
-      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count});
+      if(existing){existing.avg=Math.round((existing.avg+d.avg)/2);existing.count+=d.count; if(d.comentario)existing.comentario=d.comentario;}
+      else artGroups[art].ops.push({nombre:op.nombre,estacion:op.estacion||'—',avg:d.avg,count:d.count,comentario:d.comentario||''});
       artGroups[art].totalAvg+=d.avg;
     });
   });
@@ -15505,12 +15553,13 @@ function renderHist(){
       calH+='<div style="font-size:.8rem;font-weight:600;">'+esc(g.name)+'</div></div>';
       calH+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.88rem;font-weight:700;color:var(--yellow);">'+fmtMSS(g.totalAvg)+'</div>';
       calH+='<div style="font-size:.62rem;color:var(--dim);">T. Total estimado</div></div></div>';
-      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th></tr></thead><tbody>';
+      calH+='<table style="margin:0;"><thead><tr><th>Operación</th><th>Estación</th><th>T. Promedio</th><th>Mediciones</th><th>Comentario</th></tr></thead><tbody>';
       g.ops.forEach(function(op){
         calH+='<tr><td style="font-weight:500;">'+esc(op.nombre)+'</td>';
         calH+='<td style="color:var(--dim);">'+esc(op.estacion)+'</td>';
         calH+='<td style="font-family:\'DM Mono\',monospace;color:'+(op.avg>0?'var(--accent-l)':'var(--muted)')+';">'+(op.avg>0?fmtMSS(op.avg):'—')+'</td>';
-        calH+='<td style="color:var(--dim);">'+op.count+'</td></tr>';
+        calH+='<td style="color:var(--dim);">'+op.count+'</td>';
+        calH+='<td style="color:var(--dim);font-size:.7rem;">'+(op.comentario?esc(op.comentario):'<span style="color:var(--muted);">—</span>')+'</td></tr>';
       });
       calH+='</tbody></table></div>';
     });
@@ -16062,8 +16111,8 @@ function calTiemGetData(key){
   if(typeof d === 'number') return {samples:[d*60], avg:d*60, count:1, saved:true}; // legado mins→secs
   // _editing=true significa en edición pero ya guardado — mostrar como guardado
   // _editing=true → mostrar formulario (saved=false), pero preservar _spId
-  if(d._editing) return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:false, _spId:d._spId};
-  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0, _spId:d._spId};
+  if(d._editing) return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:false, _spId:d._spId, comentario:d.comentario||''};
+  return {samples:d.samples||[], avg:d.avg||0, count:d.count||0, saved:d.count>0, _spId:d._spId, comentario:d.comentario||''};
 }
 
 function renderCalTiemInputs(of, inFlujo){
@@ -16173,19 +16222,19 @@ function calTiemSave(key){
   var avgSecs = Math.round(nums.reduce(function(s,v){ return s+v; },0) / nums.length);
   var existing = DB.calTiemposGuardados[key];
   var spId = existing ? existing._spId : undefined;
-  var calData = { samples:nums, muestras:nums, avg:avgSecs, promedio:avgSecs, count:nums.length, _spId:spId };
+  var _cmt = (APP._ctComment && APP._ctComment[key]) ? String(APP._ctComment[key]).trim() : (existing&&existing.comentario?existing.comentario:'');
+  var calData = { samples:nums, muestras:nums, avg:avgSecs, promedio:avgSecs, count:nums.length, comentario:_cmt, _spId:spId };
   DB.calTiemposGuardados[key] = calData;
   if(APP&&APP.calTimes) APP.calTimes[key] = avgSecs;
   if(APP._ctSamples) delete APP._ctSamples[key];
   console.log('[CalTiemSave] key='+key+' | _spId='+spId+' | samples='+nums.length);
   if(appSiteId) appSaveCalTiempoToSP(key, calData);
-  // Comentario del analista de calidad → persistir en FT_Operaciones (columna AnalistaComment)
-  var _cmt = (APP._ctComment && APP._ctComment[key]) ? String(APP._ctComment[key]).trim() : '';
+  // Comentario del analista → también en FT_Operaciones (columna AnalistaComment)
   if(_cmt){
     var _us=key.indexOf('_'); var _ofSap=_us>-1?key.slice(0,_us):key; var _opId=_us>-1?key.slice(_us+1):'';
     var _aof=DB.activeOFs.find(function(a){return a.of_sap===_ofSap;});
     var _op=_aof?_aof.ops.find(function(o){return o.id===_opId;}):null;
-    if(_op){ _op.analistaComment=_cmt; if(appSiteId) appSaveOpToSP(_ofSap,_opId).catch(function(e){}); }
+    if(_op){ _op.analistaComment=_cmt; _op._accionLog='Analista de Calidad registró comentario: '+_cmt; if(appSiteId) appSaveOpToSP(_ofSap,_opId).catch(function(e){}); }
   }
   if(APP._ctComment) delete APP._ctComment[key];
   renderApp();
@@ -16542,6 +16591,9 @@ async function appReloadOpsFromSP() {
           calLineaComment: o.CalLineaComment || null,
           supFinComment:   o.SupFinComment || null,
           analistaComment: o.AnalistaComment || null,
+          omitComment:     o.OmitComment || null,
+          historialCambios: (function(){try{return JSON.parse(o.Historial_Cambios||'[]');}catch(e){return [];}})(),
+          _histLastStatus:  (o.Status || 'pending'),
           // Preservar fechas reales desde memoria si SP no las tiene aún
           fecha_inicio_real: o.Fecha_Inicio || (existing ? existing.fecha_inicio_real||'' : ''),
           fecha_fin_real:    o.Fecha_Fin    || (existing ? existing.fecha_fin_real||''    : ''),
