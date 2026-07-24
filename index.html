@@ -12866,6 +12866,7 @@ function renderSeg(){
               '🕐 Turno '+(si+1)+': '+esc(seg.tecnico||'')+' · '+fmtM(seg.mins||0)+' · OK:'+(seg.qty_ok||0)+
               ((seg.qty_def||0)>0?' DEF:'+seg.qty_def:'')+
               ((seg.qty_rest||0)>0?' · <span style="color:var(--yellow);">'+seg.qty_rest+' restantes</span>':'')+
+              '<div style="opacity:.85;font-size:.62rem;margin-top:1px;">🟢 Inicio: '+esc((seg.fecha_inicio||seg.fecha||'')+' '+(seg.inicio||''))+' · 🏁 Fin: '+esc((seg.fecha_fin||seg.fecha||'')+' '+(seg.fin||''))+'</div>'+
               '</div>';
           });
           h+='</div>';
