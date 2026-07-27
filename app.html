@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.57</title>
+<title>FabTracker App v2.58</title>
 
 <!-- MSAL Browser -->
 
@@ -4394,6 +4394,7 @@ function appConfirmReanudar(){
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
+    op._localStatus='done';op._localStatusAt=Date.now();op._pauseTipo=null;op.pauseReason=null;
     // Generar nueva op para turno B
     // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
     var _turnoIdx = of.ops.length; // índice al final (antes del push)
@@ -11189,6 +11190,9 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   op.qty_total = pzAok + pzAdef; op.qty_ok = pzAok; op.qty_def = pzAdef;
   op.mins = turnoA ? (turnoA.mins||0) : 0;
   op._traspasoA = { tecnico: op.tecnico, ayudantes: op.ayudantes || [] };
+  // Candado local: evitar que el poll/reload revierta 'done' al 'paused' de la pausa de fin de turno
+  op._localStatus = 'done'; op._localStatusAt = Date.now();
+  op._pauseTipo = null; op.pauseReason = null;
   // Create new op B
   var _turnoIdx  = of.ops.length;
   var _turnoOpId = 'op_' + of.of_sap + '_turnoB' + _turnoIdx;
@@ -11202,6 +11206,7 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
     needsCal: op.needsCal, calResult: null, calComment: null,
     pauseReason: null, _pauseTipo: null
   };
+  newOp._colaPos = op._colaPos || null; // heredar la posición de cola del turno A
   of.ops.push(newOp);
   // Persist
   (async function() {
@@ -11220,9 +11225,10 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
       var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
       newOp._spId = res && res.id ? res.id : null;
       if (newOp.estacion) {
+        var _posB = op._colaPos || 999; // heredar la posición del turno A para que quede en el lugar correcto
         appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
           Title: of.of_sap+'_'+newOp.id, OF_SAP: of.of_sap, Op_ID: newOp.id,
-          Estacion: newOp.estacion, Posicion: 999, Tipo_Cola: 'normal', Status: 'pending', Activo: true
+          Estacion: newOp.estacion, Posicion: _posB, Tipo_Cola: 'normal', Status: 'pending', Activo: true
         }).then(function(r) { if (r&&r.id) newOp._queueSpId = r.id; }).catch(function(){});
       }
       console.log('[Monitor] Traspaso turno B: ' + nuevoTech + ' · ' + pzRest + ' pzas');
@@ -13269,6 +13275,7 @@ function appConfirmReanudar(){
     op.qty_total=pzAok+pzAdef;op.qty_ok=pzAok;op.qty_def=pzAdef;
     op.mins=turnoA?turnoA.mins:0;
     op._traspasoA={tecnico:op.tecnico,ayudantes:op.ayudantes||[]};
+    op._localStatus='done';op._localStatusAt=Date.now();op._pauseTipo=null;op.pauseReason=null;
     // Generar nueva op para turno B
     // Op_ID: mismo patrón que otras ops → op_<sap>_<índice>
     var _turnoIdx = of.ops.length; // índice al final (antes del push)
