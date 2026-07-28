@@ -12802,14 +12802,14 @@ function renderSeg(){
   var pL={alta:'🔴 ALTA',media:'🟡 MEDIA',normal:'⬜ NORMAL'};
 
   groups.forEach(function(g){
-    var grpDone=0, grpTotal=0;
+    var grpDone=0, grpTotal=0, grpAll=0;
     g.ofs.forEach(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-      if(aof){grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
+      if(aof){grpAll+=aof.ops.length;grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
     });
-    // "Completado" incluye el caso donde TODAS las operaciones están omitidas (grpTotal=0):
-    // se considera terminado si toda op está done u omitida (misma regla que pedidoIsComplete).
-    var allDone = (typeof pedidoIsComplete==='function') ? pedidoIsComplete(g.pedido) : (grpTotal>0 && grpDone===grpTotal);
+    // "Completado" = hay operaciones y todas están done u omitida. grpTotal excluye omitidas,
+    // por lo que grpDone===grpTotal cubre también el caso en que TODAS están omitidas (0===0).
+    var allDone = grpAll>0 && grpDone===grpTotal;
     var grpPct = grpTotal>0 ? Math.round(grpDone/grpTotal*100) : (allDone?100:0);
 
     var isExpanded = window._segExpanded[g.pedido] !== false; // default open
