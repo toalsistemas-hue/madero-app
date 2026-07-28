@@ -12807,8 +12807,10 @@ function renderSeg(){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
       if(aof){grpDone+=aof.ops.filter(function(o){return o.status==='done';}).length;grpTotal+=aof.ops.filter(function(o){return o.status!=='omitida';}).length;}
     });
-    var grpPct = grpTotal>0?Math.round(grpDone/grpTotal*100):0;
-    var allDone = grpTotal>0 && grpDone===grpTotal;
+    // "Completado" incluye el caso donde TODAS las operaciones están omitidas (grpTotal=0):
+    // se considera terminado si toda op está done u omitida (misma regla que pedidoIsComplete).
+    var allDone = (typeof pedidoIsComplete==='function') ? pedidoIsComplete(g.pedido) : (grpTotal>0 && grpDone===grpTotal);
+    var grpPct = grpTotal>0 ? Math.round(grpDone/grpTotal*100) : (allDone?100:0);
 
     var isExpanded = window._segExpanded[g.pedido] !== false; // default open
     h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">';
