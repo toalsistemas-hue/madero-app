@@ -6797,6 +6797,9 @@ async function ftLoadDataFromSP() {
         // ese metadato no llega. Calculamos una firma con el contenido para detectar cambios.
         var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
         var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
+        // GUARDA: si la lectura vuelve vacía (fallo/lentitud transitoria del flujo protegido),
+        // NO tocar las operaciones en memoria — reconstruir con [] borraría el avance de TODAS las OFs.
+        if (!allOps.length) { console.warn('[Coord poll] Lectura de FT_Operaciones vacía — se conserva el estado actual.'); return; }
         var _opsSig = allOps.map(function(o){return (o.OF_SAP||'')+'~'+(o.Op_ID||o.Title||'')+'~'+(o.Status||'')+'~'+(o.Mins||0)+'~'+(o.Qty_OK||0)+'~'+(o.Qty_Def||0)+'~'+(o.Qty_Chat||0)+'~'+(o.Qty_Rej||0)+'~'+(o.NeedsCal||'')+'~'+(o.CalResult||'');}).sort().join('|');
         if (!window._coordLastOpsMod) {
           // Primer poll — establecer línea base sin recargar
@@ -7307,14 +7310,16 @@ async function ftSavePedidoStatusToSP(pedido) {
     // Find all OFs for this pedido and compute aggregate status
     var pedOFs = DB.activeOFs.filter(function(a){ return a.pedido === pedido; });
     if (!pedOFs.length) return;
-    var totalOps = 0, doneOps = 0, runningOps = 0;
+    var totalOps = 0, doneOps = 0, runningOps = 0, allOps = 0;
     pedOFs.forEach(function(aof){
-      totalOps += aof.ops.length;
+      allOps += aof.ops.length;
+      totalOps += aof.ops.filter(function(o){ return o.status!=='omitida'; }).length; // sin omitidas
       doneOps  += aof.ops.filter(function(o){ return o.status==='done'; }).length;
       runningOps += aof.ops.filter(function(o){ return o.status==='running'; }).length;
     });
-    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : 0;
-    var status = doneOps===totalOps&&totalOps>0 ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
+    // Todas omitidas (totalOps=0) pero con operaciones → 100% / Completado
+    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : (allOps>0?100:0);
+    var status = (allOps>0 && doneOps===totalOps) ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
     var fields = {
       Title:             pedido,
       Pedido:            pedido,
@@ -12879,7 +12884,8 @@ function renderSeg(){
         return;
       }
       var _nOm=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
-        var pct=_nOm>0?Math.round(done/_nOm*100):0;
+        // Si no hay operaciones no-omitidas (todas omitidas) pero sí hay operaciones → 100%
+        var pct=_nOm>0?Math.round(done/_nOm*100):(aof.ops.length>0?100:0);
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
@@ -15159,9 +15165,12 @@ function ftRptBuildData(){
     Object.keys(opsPorOfEst[ofSap]).forEach(function(est){
       var ops=opsPorOfEst[ofSap][est];
       var total=ops.length;
+      var omit=ops.filter(function(o){return (o.status||'').toLowerCase()==='omitida';}).length;
+      var noOmit=total-omit; // denominador SIN operaciones omitidas
       var term=ops.filter(function(o){var s=(o.status||'').toLowerCase();return s==='done'||s==='terminada'||s==='terminado';}).length;
       var enProc=ops.some(function(o){var s=(o.status||'').toLowerCase();return s==='running'||s==='paused'||s==='validating';});
-      var pct=total>0?Math.round(term/total*100):0;
+      // Sin operaciones no-omitidas (todas omitidas) pero con operaciones → 100%
+      var pct=noOmit>0?Math.round(term/noOmit*100):(total>0?100:0);
       var opStatus=(pct===100&&total>0)?'Terminada':((enProc||term>0)?'En Proceso':'Planeación');
       var personasSet={};
       ops.forEach(function(o){if(o.tecnico)personasSet[o.tecnico]=true;(o.ayudantes||[]).forEach(function(a){if(a)personasSet[a]=true;});});
