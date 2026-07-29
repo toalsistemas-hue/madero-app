@@ -7307,16 +7307,14 @@ async function ftSavePedidoStatusToSP(pedido) {
     // Find all OFs for this pedido and compute aggregate status
     var pedOFs = DB.activeOFs.filter(function(a){ return a.pedido === pedido; });
     if (!pedOFs.length) return;
-    var totalOps = 0, doneOps = 0, runningOps = 0, allOps = 0;
+    var totalOps = 0, doneOps = 0, runningOps = 0;
     pedOFs.forEach(function(aof){
-      allOps += aof.ops.length;
-      totalOps += aof.ops.filter(function(o){ return o.status!=='omitida'; }).length; // sin omitidas
+      totalOps += aof.ops.length;
       doneOps  += aof.ops.filter(function(o){ return o.status==='done'; }).length;
       runningOps += aof.ops.filter(function(o){ return o.status==='running'; }).length;
     });
-    // Todas omitidas (totalOps=0) pero con operaciones → 100% / Completado
-    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : (allOps>0?100:0);
-    var status = (allOps>0 && doneOps===totalOps) ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
+    var pct = totalOps > 0 ? Math.round(doneOps/totalOps*100) : 0;
+    var status = doneOps===totalOps&&totalOps>0 ? 'Completado' : runningOps>0 ? 'En Fabricacion' : 'Planeacion';
     var fields = {
       Title:             pedido,
       Pedido:            pedido,
@@ -12881,8 +12879,7 @@ function renderSeg(){
         return;
       }
       var _nOm=aof.ops.filter(function(o){return o.status!=='omitida';}).length;
-        // Si no hay operaciones no-omitidas (todas omitidas) pero sí hay operaciones → 100%
-        var pct=_nOm>0?Math.round(done/_nOm*100):(aof.ops.length>0?100:0);
+        var pct=_nOm>0?Math.round(done/_nOm*100):0;
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--border);">';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">';
       h+='<div><span style="font-family:\'DM Mono\',monospace;font-size:.74rem;color:var(--accent-l);">OF '+esc(of.of_sap)+(of.articulo?' · '+esc(of.articulo):'')+'</span>';
@@ -15162,12 +15159,9 @@ function ftRptBuildData(){
     Object.keys(opsPorOfEst[ofSap]).forEach(function(est){
       var ops=opsPorOfEst[ofSap][est];
       var total=ops.length;
-      var omit=ops.filter(function(o){return (o.status||'').toLowerCase()==='omitida';}).length;
-      var noOmit=total-omit; // denominador SIN operaciones omitidas
       var term=ops.filter(function(o){var s=(o.status||'').toLowerCase();return s==='done'||s==='terminada'||s==='terminado';}).length;
       var enProc=ops.some(function(o){var s=(o.status||'').toLowerCase();return s==='running'||s==='paused'||s==='validating';});
-      // Sin operaciones no-omitidas (todas omitidas) pero con operaciones → 100%
-      var pct=noOmit>0?Math.round(term/noOmit*100):(total>0?100:0);
+      var pct=total>0?Math.round(term/total*100):0;
       var opStatus=(pct===100&&total>0)?'Terminada':((enProc||term>0)?'En Proceso':'Planeación');
       var personasSet={};
       ops.forEach(function(o){if(o.tecnico)personasSet[o.tecnico]=true;(o.ayudantes||[]).forEach(function(a){if(a)personasSet[a]=true;});});
