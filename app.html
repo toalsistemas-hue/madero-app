@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.60</title>
+<title>FabTracker App v2.62</title>
 
 <!-- MSAL Browser -->
 
@@ -7995,6 +7995,48 @@ function appEsProtegida(endpoint){
   return APP_LISTAS_PROTEGIDAS.some(function(l){ return endpoint.indexOf('/lists/'+l) !== -1; });
 }
 
+// ═══ Ruteo dinámico Graph/flujo por usuario (igual que el portal) ═══════
+// Se intenta Graph directo; si el usuario no tiene permiso (401/403/404) se
+// recuerda esa lista y se usa el flujo. Reduce ejecuciones de Power Automate
+// y acelera lectura/escritura para usuarios con acceso.
+window._SP_GRAPH_DIRECT_ENABLED_APP = (window._SP_GRAPH_DIRECT_ENABLED_APP !== false); // interruptor de seguridad
+window._appGraphCap = window._appGraphCap || {}; // { lista: true(Graph)|false(flujo)|undefined }
+function _appGraphCapKey(){ try{ return 'madero_appgraphcap_'+(((typeof APP_USER_PROFILE!=='undefined'&&APP_USER_PROFILE)&&(APP_USER_PROFILE.email||APP_USER_PROFILE.usuario))||'anon').toLowerCase(); }catch(_){ return 'madero_appgraphcap_anon'; } }
+function _appGraphCapLoad(){
+  if(window._appGraphCapHydrated) return; window._appGraphCapHydrated=true;
+  try{ var raw=localStorage.getItem(_appGraphCapKey()); if(raw){ var o=JSON.parse(raw); if(o&&o.at&&(Date.now()-o.at<86400000)&&o.caps){ Object.keys(o.caps).forEach(function(k){ if(window._appGraphCap[k]===undefined) window._appGraphCap[k]=o.caps[k]; }); } } }catch(_){}
+}
+function _appGraphCapSave(){ try{ localStorage.setItem(_appGraphCapKey(), JSON.stringify({at:Date.now(),caps:window._appGraphCap})); }catch(_){} }
+
+// Lectura de toda la lista por Graph directo con paginación (@odata.nextLink).
+async function _appSpGraphLeerLista(lista, top){
+  var sid=await appGetSiteId(); var token=await appGetToken();
+  var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
+  var out=[], guard=0;
+  while(url && guard<500){
+    guard++;
+    var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+    if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    var data=await res.json();
+    (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
+    url=data['@odata.nextLink']||null;
+    if(top && out.length>=top) break;
+  }
+  return { value: out };
+}
+// Escritura por Graph directo (crear/actualizar) — fetch directo, sin re-ruteo.
+async function _appSpGraphEscribirLista(lista, operacion, itemId, datos){
+  var sid=await appGetSiteId(); var token=await appGetToken();
+  var base='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items';
+  var res;
+  if(operacion==='crear'){ res=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:datos})}); }
+  else { res=await fetch(base+'/'+itemId+'/fields',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)}); }
+  if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph write '+res.status+' '+lista); e._authFail=true; throw e; }
+  if(!res.ok){ var t=await res.text(); throw new Error('Graph write '+lista+' '+res.status+': '+t.slice(0,200)); }
+  var txt=await res.text(); if(!txt) return {resultado:'ok'}; try{ return JSON.parse(txt); }catch(_){ return {resultado:'ok'}; }
+}
+
 async function appGraphGet(endpoint, retry) {
   // Listas protegidas: lecturas de colección por el flujo
   if (appEsProtegida(endpoint)) {
@@ -8128,6 +8170,18 @@ var APP_FLOW_URL_ESCRIBIR_TIMERS = '';
 
 async function appFlowGet(lista, top) {
   top = top || 500;
+  // Ruta rápida Graph: si el usuario tiene (o podría tener) acceso a esta lista.
+  _appGraphCapLoad();
+  if (window._SP_GRAPH_DIRECT_ENABLED_APP && window._appGraphCap[lista] !== false) {
+    try {
+      var _gr = await _appSpGraphLeerLista(lista, top);
+      if (window._appGraphCap[lista] !== true) { window._appGraphCap[lista]=true; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' → Graph directo'); }
+      return _gr;
+    } catch(ge) {
+      if (ge && ge._authFail) { window._appGraphCap[lista]=false; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' → flujo (sin permiso Graph)'); }
+      // otro error de Graph → caemos al flujo sin marcar
+    }
+  }
   const ctrl = new AbortController();
   const tid = setTimeout(function(){ ctrl.abort(); }, 20000);
   let res;
@@ -8168,6 +8222,11 @@ async function appFlowGet(lista, top) {
 }
 
 async function appFlowEscribir(lista, operacion, itemId, datos) {
+  // Ruta rápida Graph: solo si YA confirmamos lectura Graph en esa lista (no arriesgar a ciegas).
+  if (window._SP_GRAPH_DIRECT_ENABLED_APP && window._appGraphCap[lista] === true) {
+    try { return await _appSpGraphEscribirLista(lista, operacion, itemId, datos); }
+    catch(ge){ if(ge&&ge._authFail){ window._appGraphCap[lista]=false; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' escritura → flujo'); } else { throw ge; } }
+  }
   var payload = { lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos };
   console.log('[FlowEscribir] '+lista+' op='+operacion+' itemId='+itemId+' datos_keys='+Object.keys(datos||{}).join(','));
   var res = await fetch(APP_FLOW_URL_ESCRIBIR, {
@@ -8272,6 +8331,7 @@ async function _appLoadDataFromSP_impl() {
         Programado_Hoy:       f.Programado_Hoy,
         Status:               f.Status || f.Status_SAP || 'Sin programar',
         Fecha_Entrega:        f.Fecha_Entrega || f.FechaEntrega || null,
+        Monitor_Override:     f.Monitor_Override || f.MonitorOverride || '',
       };
     };
     // Normalize Op fields
@@ -8406,6 +8466,8 @@ async function _appLoadDataFromSP_impl() {
       descripcion: f.Descripcion_Articulo||'',
       prioridad:   (f.Prioridad||'Normal').toLowerCase(),
       ofv:         f.OFV||f.Rotacion||'',
+      fecha_entrega: (String(f.Fecha_Entrega||f.FechaEntrega||'').split('T')[0]) || '',
+      monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
@@ -10123,21 +10185,26 @@ function monitorExit() {
 // ── Polling ───────────────────────────────────────────────────────
 function monitorStartPolling() {
   if (_MON.pollTimer) clearInterval(_MON.pollTimer);
-  var _monPollCount = 0;
   _MON.pollTimer = setInterval(async function() {
     if (_appLoadDataInProgress) return; // avoid conflict with FabTracker poll
-    _monPollCount++;
+    // Refresco adaptativo: Graph (sin costo Power Automate) → corto; flujo → como antes.
+    var _g = !!(window._appGraphCap && window._appGraphCap['FT_Operaciones'] === true);
+    var _lightEvery = _g ? 10000 : 30000;
+    var _fullEvery  = _g ? 60000 : 120000;
+    var _now = Date.now();
     try {
-      if (_monPollCount % 4 === 0) {
-        // Full reload every ~2 min to pick up tecnico/ayudantes changes
-        await appLoadDataFromSP();
+      if (!_MON._lastFull || (_now - _MON._lastFull) >= _fullEvery) {
+        _MON._lastFull = _now; _MON._lastLight = _now;
+        await appLoadDataFromSP();           // recarga completa
+      } else if (!_MON._lastLight || (_now - _MON._lastLight) >= _lightEvery) {
+        _MON._lastLight = _now;
+        await spPollCheck();                 // solo cambios
       } else {
-        // Lightweight poll — only check for changes
-        await spPollCheck();
+        return;                              // nada pendiente este tick
       }
       monitorRender();
     } catch(e) { console.warn('[Monitor] Poll error:', e.message); }
-  }, 30000);
+  }, 10000); // tick 10s — la cadencia real la fija el gate adaptativo
 }
 
 // ── Technicians cache ─────────────────────────────────────────────
@@ -10286,6 +10353,47 @@ function monitorSetTab(tab) {
 }
 
 // ── Main render ───────────────────────────────────────────────────
+// ── Ventana de visibilidad del Monitor ──────────────────────────────────
+// Regla: por estación se muestran solo las N OFs más urgentes (por fecha de entrega).
+// - Las ops ya iniciadas (activas) NUNCA se ocultan aunque su OF caiga fuera del top-N.
+// - Override del coordinador: 'pin' = siempre visible, 'hide' = nunca visible.
+var MON_MAX_OFS = 5;
+function _monFeMs(of) {
+  var fe = of && of.fecha_entrega;
+  if (!fe) return Infinity;
+  var p = String(fe).split('T')[0].split('-');
+  if (p.length !== 3) return Infinity;
+  var d = new Date(+p[0], +p[1]-1, +p[2]); d.setHours(0,0,0,0);
+  var t = d.getTime();
+  return isNaN(t) ? Infinity : t;
+}
+// items: array {of, op} de UNA estación (solo ops activas+pendientes, sin done/omitida).
+// Devuelve un objeto {of_sap: true} con las OFs visibles en esa estación.
+function _monVisibleOFsForStation(items) {
+  var _ACTIVE = { running:true, paused:true, validating:true, op_concluded:true, retrabajo:true, chatarra:true };
+  var byOf = {};
+  items.forEach(function(it) {
+    var k = it.of.of_sap;
+    if (!byOf[k]) byOf[k] = { of: it.of, hasActive:false };
+    if (_ACTIVE[it.op.status]) byOf[k].hasActive = true;
+  });
+  var entries = Object.keys(byOf).map(function(k){ return byOf[k]; });
+  var visible = {}, count = 0, autoPool = [];
+  entries.forEach(function(e) {
+    var ov = (e.of.monitor_override||'');
+    if (ov === 'hide') return;               // nunca visible
+    if (ov === 'pin') { visible[e.of.of_sap] = true; count++; return; } // siempre visible
+    autoPool.push(e);
+  });
+  // Ops ya iniciadas: siempre visibles (seguridad — no quitar trabajo en curso)
+  autoPool.forEach(function(e) { if (e.hasActive) { visible[e.of.of_sap] = true; count++; } });
+  // Pendientes: rellenar hasta N por urgencia de fecha de entrega
+  autoPool.filter(function(e){ return !e.hasActive; })
+    .sort(function(a,b){ return _monFeMs(a.of) - _monFeMs(b.of); })
+    .forEach(function(e) { if (count < MON_MAX_OFS) { visible[e.of.of_sap] = true; count++; } });
+  return visible;
+}
+
 function monitorRender() {
   var content = document.getElementById('monitor-content');
   if (!content) return;
@@ -10354,6 +10462,12 @@ function monitorRender() {
       if (stA !== stB) return stA - stB;
       return colaA - colaB;
     });
+  });
+  // Ventana de visibilidad: limitar cada estación a las N OFs más urgentes
+  // (las ops activas y las OFs fijadas siempre se conservan).
+  Object.keys(byStation).forEach(function(est) {
+    var vis = _monVisibleOFsForStation(byStation[est]);
+    byStation[est] = byStation[est].filter(function(it){ return vis[it.of.of_sap]; });
   });
 
   var h = '';
@@ -16724,18 +16838,24 @@ function startSPPolling() {
     console.log('SP polling omitido — perfil no disponible o rol solo lectura');
     return;
   }
-  console.log('Iniciando SP polling cada 30s...');
-  var _fullReloadCount = 0;
+  console.log('Iniciando SP polling adaptativo...');
   _spPollTimer = setInterval(async function() {
     if (!appSiteId || !appToken) return;
+    // Refresco adaptativo: Graph (sin costo Power Automate) → corto; flujo → como antes.
+    var _g = !!(window._appGraphCap && window._appGraphCap['FT_Operaciones'] === true);
+    var _lightEvery = _g ? 10000 : 45000;
+    var _fullEvery  = _g ? 60000 : 90000;
+    var _now = Date.now();
     try {
-      _fullReloadCount++;
-      // Every 2nd poll (60s), do a full reload to pick up tecnico/ayudantes changes
-      if (_fullReloadCount % 2 === 0) {
+      if (!window._spLastFull || (_now - window._spLastFull) >= _fullEvery) {
+        window._spLastFull = _now; window._spLastLight = _now;
         await appLoadDataFromSP();
         renderApp();
-      } else {
+      } else if (!window._spLastLight || (_now - window._spLastLight) >= _lightEvery) {
+        window._spLastLight = _now;
         await spPollCheck();
+      } else {
+        return; // nada pendiente este tick
       }
     } catch(e) {
       // Silently ignore 404 (list not found for this user) and network errors
@@ -16743,7 +16863,7 @@ function startSPPolling() {
         console.warn('SP poll error:', e.message);
       }
     }
-  }, 45000); // cada 45s — reducido de 20s para ahorrar Flow actions (SP Leer)
+  }, 10000); // tick 10s — la cadencia real la fija el gate adaptativo (Graph corto / flujo como antes)
 }
 
 // ── Page Visibility — pausar poll cuando pantalla se bloquea ─────
