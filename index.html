@@ -1448,7 +1448,7 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div class="coord-modal-actions" style="margin-top:16px;">
       <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-art-edit')">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="ftAdmArtSave()">💾 Guardar</button>
+      <button id="art-save-btn" class="btn btn-primary btn-sm" onclick="ftAdmArtSave()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -1480,7 +1480,7 @@ tr:last-child td{border-bottom:none;}
     </div>
     <div class="coord-modal-actions" style="margin-top:16px;">
       <button class="btn btn-ghost btn-sm" onclick="closeCModal('modal-op-edit')">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="ftAdmOpSave()">💾 Guardar</button>
+      <button id="opcat-save-btn" class="btn btn-primary btn-sm" onclick="ftAdmOpSave()">💾 Guardar</button>
     </div>
   </div>
 </div>
@@ -4515,6 +4515,23 @@ function ftAdmArtOpenEdit(num,desc){
   document.getElementById('art-edit-desc').value=desc;
   openCModal('modal-art-edit');
 }
+// Spinner en botones de Guardar (deshabilita + muestra "Guardando…")
+function _btnSpinner(btn, on){
+  if(!btn) return;
+  if(!document.getElementById('idx-spin-style')){
+    var st=document.createElement('style'); st.id='idx-spin-style';
+    st.textContent='@keyframes idxspin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  if(on){
+    if(btn._idleHtml===undefined) btn._idleHtml=btn.innerHTML;
+    btn.disabled=true;
+    btn.innerHTML='<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:idxspin .7s linear infinite;vertical-align:middle;margin-right:6px;"></span>Guardando…';
+  } else {
+    btn.disabled=false;
+    if(btn._idleHtml!==undefined) btn.innerHTML=btn._idleHtml;
+  }
+}
 async function ftAdmArtSave(){
   var num=document.getElementById('art-edit-num').value.trim().toUpperCase();
   var desc=document.getElementById('art-edit-desc').value.trim();
@@ -4522,6 +4539,7 @@ async function ftAdmArtSave(){
   // Verificar duplicado (solo al crear)
   var isNew=!document.getElementById('art-edit-num').readOnly;
   if(isNew && DB.articles[num]){alert('El artículo '+num+' ya existe.');return;}
+  var _b=document.getElementById('art-save-btn'); _btnSpinner(_b,true);
   try {
     // Buscar si existe en SP
     var existRes=await flowGet('FT_Articulos','',2000);
@@ -4534,6 +4552,7 @@ async function ftAdmArtSave(){
     closeCModal('modal-art-edit');
     ftAdmArtRender();
   } catch(e){alert('Error al guardar: '+e.message);}
+  finally { _btnSpinner(_b,false); }
 }
 async function ftAdmArtDelete(num){
   if(!confirm('¿Eliminar el artículo '+num+'?'))return;
@@ -4704,6 +4723,7 @@ async function ftAdmOpSave(){
   // Verificar duplicado
   var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
   if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
+  var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
     if(artKey) fields.Articulo_Key=artKey;
@@ -4722,6 +4742,7 @@ async function ftAdmOpSave(){
     closeCModal('modal-op-edit');
     ftAdmOpRender();
   }catch(e){alert('Error al guardar: '+e.message);}
+  finally { _btnSpinner(_b,false); }
 }
 async function ftAdmOpDelete(nombre,spId){
   if(!confirm('¿Eliminar la operación "'+nombre+'"?'))return;
