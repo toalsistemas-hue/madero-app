@@ -1226,6 +1226,7 @@ tr:last-child td{border-bottom:none;}
       <div class="page-hdr">
         <div><div class="page-title">🔀 Flujos en proceso</div></div>
       </div>
+      <input id="flujos-search" type="text" oninput="(window.renderCoordFlujos||function(){})()" placeholder="🔍 Buscar por pedido, cliente, OF, artículo o descripción..." style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:9px 12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;color:var(--text,#e6edf3);font-size:.85rem;outline:none;">
       <div id="coord-flujos-body" style="padding:8px 0;"></div>
     </div>
 
@@ -7882,8 +7883,22 @@ function renderCoordFlujos() {
     if(!ofRec || ofRec.programadoHoy !== true) return;
     _ofsShow.push({aof:aof, ofRec:ofRec});
   });
+  // Filtro de búsqueda (pedido, cliente, OF, artículo o descripción)
+  var _fq = ((document.getElementById('flujos-search')||{}).value||'').trim().toLowerCase();
+  if(_fq){
+    _ofsShow = _ofsShow.filter(function(x){
+      var o=x.ofRec, a=x.aof;
+      return String(o.pedido||'').toLowerCase().indexOf(_fq)>=0
+        || String(o.cliente||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.of_sap||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.articulo||'').toLowerCase().indexOf(_fq)>=0
+        || String(a.descripcion||'').toLowerCase().indexOf(_fq)>=0;
+    });
+  }
   if(!_ofsShow.length){
-    body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas para hoy.</div>';
+    body.innerHTML = _fq
+      ? '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin resultados para “'+esc(_fq)+'”.</div>'
+      : '<div style="text-align:center;padding:40px;color:var(--text-dim);font-size:.85rem;">Sin OFs programadas para hoy.</div>';
     return;
   }
   var _groups = {}, _order = [];
@@ -7898,7 +7913,17 @@ function renderCoordFlujos() {
   _order.sort(function(a,b){ return _grpUrg(a) - _grpUrg(b); });
   _order.forEach(function(ped){ _groups[ped].items.sort(function(x,y){ return _feMs(x.ofRec.fecha_entrega) - _feMs(y.ofRec.fecha_entrega); }); });
 
+  // Leyenda arriba (fija, siempre visible)
   var html = '';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;font-size:.6rem;color:var(--text-dim);align-items:center;">';
+  html += '<span>⬜ Pendiente</span>';
+  html += '<span style="color:var(--accent-l);">▶ Activa</span>';
+  html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
+  html += '<span style="color:#a78bfa;">🔍 Cal</span>';
+  html += '<span style="color:var(--green);">✓ OK</span>';
+  html += '<span style="color:#d29922;">🏁 Omitida (contorno ámbar punteado)</span>';
+  html += '</div>';
+
   _order.forEach(function(ped){
     var g = _groups[ped];
     // Encabezado de pedido + cliente
@@ -8005,16 +8030,6 @@ function renderCoordFlujos() {
     html += '</div>'; // group body
     html += '</div>'; // group wrapper
   });
-
-  // Leyenda (una sola vez, al final)
-  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;font-size:.6rem;color:var(--text-dim);">';
-  html += '<span>⬜ Pendiente</span>';
-  html += '<span style="color:var(--accent-l);">▶ Activa</span>';
-  html += '<span style="color:var(--yellow);">⏸ Pausa</span>';
-  html += '<span style="color:#a78bfa;">🔍 Cal</span>';
-  html += '<span style="color:var(--green);">✓ OK</span>';
-  html += '<span style="color:#d29922;">🏁 Omitida (contorno ámbar punteado)</span>';
-  html += '</div>';
 
   // Preservar la posición de scroll horizontal de cada diagrama entre refrescos
   var _scPrev = {};
