@@ -8429,10 +8429,17 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
+  var _tecFound=false;
   (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
+    if(n===(tecnico||'')) _tecFound=true;
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
+  // Si el técnico asignado no está en el caché (aún no cargado o inactivo), agregarlo
+  // igualmente para NO perder la asignación al guardar.
+  if((tecnico||'') && !_tecFound){
+    _tecOpts+='<option value="'+String(tecnico).replace(/"/g,'&quot;')+'" selected>'+tecnico+'</option>';
+  }
 
   // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
   var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
@@ -8483,7 +8490,7 @@ function addTplOpRow(nombre,estacion,tipo,locked,tecnico,ayudantes,cantidad){
   // Técnico — dropdown from FT_Tecnicos
   h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
   h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
-  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" data-tecnico="'+String(tecnico||'').replace(/"/g,'&quot;')+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
   h+=_tecOpts;
   h+='</select>';
   h+='</div>';
@@ -8663,14 +8670,20 @@ function _tplRefreshTecnicoDropdowns() {
   var tecList = (window._ftTecnicosCache||[]).filter(function(t){ return t.Activo; });
   // Update all Técnico selects in the modal
   document.querySelectorAll('#tpl-ops-list select[id^="top-tec-"]').forEach(function(sel) {
-    var currentVal = sel.value;
+    // Valor deseado: el actual si existe, si no el guardado en data-tecnico
+    // (evita perder la asignación cuando el caché de técnicos cargó DESPUÉS de armar la fila).
+    var want = sel.value || sel.getAttribute('data-tecnico') || '';
     var newOpts = '<option value="">— Sin técnico —</option>';
+    var found = false;
     tecList.forEach(function(t){
       var n = t.Nombre||t.Title||'';
-      newOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===currentVal?' selected':'')+'>'+n+'</option>';
+      if(n===want) found = true;
+      newOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===want?' selected':'')+'>'+n+'</option>';
     });
+    // Conservar el técnico asignado aunque no esté en la lista activa (inactivo/eliminado)
+    if(want && !found){ newOpts += '<option value="'+want.replace(/"/g,'&quot;')+'" selected>'+want+'</option>'; }
     sel.innerHTML = newOpts;
-    if (currentVal) sel.value = currentVal;
+    if (want) sel.value = want;
   });
   // Update all Ayudantes input placeholders (input exists, dropdown populated on demand)
 }
@@ -11996,10 +12009,14 @@ function saveTplModal(){
   DB.activeOFs.forEach(function(aof){
     var artKey = getOfArticuloKey(DB.ofs.find(function(o){return o.of_sap===aof.of_sap;})||{});
     if(artKey !== art) return;
-    // Actualizar ops
+    // Actualizar ops — emparejar por nombre+estación y, si no, por nombre (cubre
+    // cambio de estación) para NO perder técnico/estado de la op existente.
+    var _usedIdx = {};
     var newOps = ops.map(function(op,i){
-      var existing = aof.ops.find(function(o){return o.nombre===op.nombre && o.estacion===op.estacion;});
-      return existing || {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
+      var idxMatch = aof.ops.findIndex(function(o,k){ return !_usedIdx[k] && o.nombre===op.nombre && o.estacion===op.estacion; });
+      if(idxMatch < 0) idxMatch = aof.ops.findIndex(function(o,k){ return !_usedIdx[k] && o.nombre===op.nombre; });
+      if(idxMatch >= 0){ _usedIdx[idxMatch]=true; var ex=aof.ops[idxMatch]; ex.estacion=op.estacion; return ex; }
+      return {id:'op_'+aof.of_sap+'_'+i, nombre:op.nombre, estacion:op.estacion,
         tipo:op.tipo, tecnico:'', qty_total:1, qty_ok:0, qty_def:0, qty_rej:0,
         status:'pending', inicio:null, fin:null, mins:0, isTemplate:true,
         pauseReason:null, valcalNote:null, needsCal:false, calResult:null, calComment:null};
@@ -12736,10 +12753,17 @@ appConfirmValCal = function(){
 
   // ── Build technician options for Técnico select ───────────────────────────
   var _tecOpts='<option value="">— Sin técnico —</option>';
+  var _tecFound=false;
   (window._ftTecnicosCache||[]).filter(function(t){return t.Activo;}).forEach(function(t){
     var n=t.Nombre||t.Title||'';
+    if(n===(tecnico||'')) _tecFound=true;
     _tecOpts+='<option value="'+n.replace(/"/g,'&quot;')+'"'+(n===(tecnico||'')?' selected':'')+'>'+n+'</option>';
   });
+  // Si el técnico asignado no está en el caché (aún no cargado o inactivo), agregarlo
+  // igualmente para NO perder la asignación al guardar.
+  if((tecnico||'') && !_tecFound){
+    _tecOpts+='<option value="'+String(tecnico).replace(/"/g,'&quot;')+'" selected>'+tecnico+'</option>';
+  }
 
   // ── Outer wrapper: column container (NOT op-drag-row so CSS doesn't conflict)
   var h='<div id="tpl-op-'+idx+'" style="border:1px solid var(--border);border-radius:5px;margin-bottom:4px;overflow:hidden;'+_rowBg+'">';
@@ -12790,7 +12814,7 @@ appConfirmValCal = function(){
   // Técnico — dropdown from FT_Tecnicos
   h+='<div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:130px;">';
   h+='<label style="font-size:.62rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;">👷 Técnico</label>';
-  h+='<select class="form-select-sm" id="top-tec-'+idx+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
+  h+='<select class="form-select-sm" id="top-tec-'+idx+'" data-tecnico="'+String(tecnico||'').replace(/"/g,'&quot;')+'" style="width:100%;font-size:.75rem;'+_dop+'"'+_dis+' title="Técnico por defecto">';
   h+=_tecOpts;
   h+='</select>';
   h+='</div>';
