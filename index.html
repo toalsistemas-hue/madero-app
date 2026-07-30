@@ -5912,14 +5912,17 @@ async function _spGraphLeerLista(lista, top){
   const sid = await getSiteId();
   const token = await getToken();
   var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
-  var out=[], guard=0;
+  var out=[], guard=0, retries=0;
   while(url && guard<500){
     guard++;
     var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
     // 404 = SharePoint oculta la lista a usuarios sin permiso (no siempre devuelve 403).
     // Tratamos 401/403/404 como "sin acceso Graph" → usar flujo y cachear la decisión.
     if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    // 429/503 = throttling de SharePoint → esperar (Retry-After) y reintentar la misma página.
+    if((res.status===429||res.status===503) && retries<4){ retries++; var _ra=parseInt(res.headers.get('Retry-After')||'',10); if(isNaN(_ra))_ra=retries*2; await new Promise(function(r){setTimeout(r,Math.min(_ra,15)*1000);}); continue; }
     if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    retries=0;
     var data=await res.json();
     (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
     url = data['@odata.nextLink'] || null;
@@ -6159,6 +6162,14 @@ async function ftLoadDataFromSP() {
     console.info('ftLoadDataFromSP: omitido (modo demo o sin token)');
     return;
   }
+  // Guarda anti-reentrada: evita cargas solapadas (cada carga lee varias listas
+  // paginadas; solaparlas dispara cientos de solicitudes → 429/agotamiento).
+  if (window._fabLoadInProgress && (Date.now() - (window._fabLoadStart||0)) < 30000) {
+    console.log('[ftLoadData] Omitido — ya hay una carga en curso');
+    return;
+  }
+  window._fabLoadInProgress = true;
+  window._fabLoadStart = Date.now();
   window._fabLoading = true;
   // Overlay "Cargando…" solo en la PRIMERA carga y estando en la pantalla de Fabricaciones
   if (!window._fabDatosCargados) { var _fpPg=document.getElementById('page-Fabricaciones'); if(_fpPg && _fpPg.classList.contains('active') && typeof _fabShowLoadOverlay==='function') _fabShowLoadOverlay(); }
@@ -7105,23 +7116,31 @@ async function ftLoadDataFromSP() {
   // Cuando el usuario cambia de pestaña del SO o minimiza el navegador,
   // document.hidden=true y los ticks del poll hacen return arriba.
   // Al volver a la ventana, hacemos refresh inmediato sin esperar el próximo tick.
-  document.addEventListener('visibilitychange', async function() {
-    if (!document.hidden && state.token && FT_SITE_ID && !window._confirmProgRunning) {
-      // Ventana visible de nuevo — refresh inmediato
-      console.log('[Coord] Ventana visible — refresh inmediato');
-      window._coordSlowTick = 0; // reset slow-poll counter
-      try {
-        // Al volver a la ventana recargamos datos frescos (una sola vez, no es un poll repetido)
-        await ftLoadDataFromSP();
-        if (C.currentPage === 'seguimiento') renderSeg();
-        else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
-      } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
-    }
-  });
+  // IMPORTANTE: registrar el listener UNA SOLA VEZ. Antes se registraba dentro de
+  // ftLoadDataFromSP en cada carga, acumulando decenas de listeners → cada cambio de
+  // foco disparaba N recargas simultáneas → 429 y agotamiento de recursos del navegador.
+  if (!window._coordVisBound) {
+    window._coordVisBound = true;
+    document.addEventListener('visibilitychange', async function() {
+      if (!document.hidden && state.token && FT_SITE_ID && !window._confirmProgRunning) {
+        // Evitar refrescos en ráfaga: máximo uno cada 10s
+        if (window._coordLastVisRefresh && (Date.now() - window._coordLastVisRefresh) < 10000) return;
+        window._coordLastVisRefresh = Date.now();
+        console.log('[Coord] Ventana visible — refresh inmediato');
+        window._coordSlowTick = 0;
+        try {
+          await ftLoadDataFromSP();
+          if (C.currentPage === 'seguimiento') renderSeg();
+          else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
+        } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
+      }
+    });
+  }
   } catch(e) {
     console.warn('ftLoadDataFromSP error (usando DB en memoria como fallback):', e);
   } finally {
     window._fabLoading = false;
+    window._fabLoadInProgress = false;
     window._fabDatosCargados = true;
     if (typeof _fabHideLoadOverlay==='function') _fabHideLoadOverlay();
     if (C && C.currentPage === 'programacion') { try { (window.renderProg||renderProg)(); } catch(_e){} }

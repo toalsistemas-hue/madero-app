@@ -8012,12 +8012,14 @@ function _appGraphCapSave(){ try{ localStorage.setItem(_appGraphCapKey(), JSON.s
 async function _appSpGraphLeerLista(lista, top){
   var sid=await appGetSiteId(); var token=await appGetToken();
   var url='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=200';
-  var out=[], guard=0;
+  var out=[], guard=0, retries=0;
   while(url && guard<500){
     guard++;
     var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
     if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+    if((res.status===429||res.status===503) && retries<4){ retries++; var _ra=parseInt(res.headers.get('Retry-After')||'',10); if(isNaN(_ra))_ra=retries*2; await new Promise(function(r){setTimeout(r,Math.min(_ra,15)*1000);}); continue; }
     if(!res.ok) throw new Error('Graph GET '+lista+' '+res.status);
+    retries=0;
     var data=await res.json();
     (data.value||[]).forEach(function(it){ out.push({ id:String(it.id||''), fields: it.fields||{} }); });
     url=data['@odata.nextLink']||null;
