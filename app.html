@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.62</title>
+<title>FabTracker App v2.63</title>
 
 <!-- MSAL Browser -->
 
@@ -10589,12 +10589,16 @@ function monitorRenderOp(of, op) {
   // Action buttons
   var ofSap = of.of_sap, opId = op.id;
 
-  // Inicio/Fin times (full date+time)
+  // Inicio/Fin times (full date+time) — usar la fecha REAL guardada en SP
+  // (Fecha_Inicio / Fecha_Fin → op.fecha_inicio_real / op.fecha_fin_real, formato "DD/MM/AAAA HH:MM").
+  // Antes se usaba op.fechaInicio (campo inexistente) y caía a la fecha de HOY, mostrando
+  // siempre el día actual en operaciones en proceso/pausadas.
   if (op.inicio || op.fin) {
     card += '<div style="display:flex;gap:12px;margin-bottom:8px;font-size:.68rem;color:#8b949e;flex-wrap:wrap;">';
-    var _today = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
-    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(op.fechaInicio||_today)+' '+esc(op.inicio)+'</span></span>';
-    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(op.fechaFin||_today)+' '+esc(op.fin)+'</span></span>';
+    var _fIni = op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '';
+    var _fFin = op.fecha_fin_real    ? String(op.fecha_fin_real).split(' ')[0]    : '';
+    if (op.inicio) card += '<span>INICIO: <span style="color:#58a6ff;">'+(_fIni?_fIni+' ':'')+esc(op.inicio)+'</span></span>';
+    if (op.fin)    card += '<span>FIN: <span style="color:#22c55e;">'+(_fFin?_fFin+' ':'')+esc(op.fin)+'</span></span>';
     card += '</div>';
   }
 
@@ -10613,6 +10617,13 @@ function monitorRenderOp(of, op) {
   }
 
   card += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+
+  // Solicitar soporte — disponible en cualquier estado de la operación
+  card += '<button data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
+    'onclick="var b=this;monitorSoporteOpen(b.dataset.monOf,b.dataset.monOp)" '+
+    'style="background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);border-radius:8px;'+
+    'padding:9px 14px;color:#f87171;font-size:.78rem;font-weight:600;cursor:pointer;">'+
+    '🆘 Solicitar soporte</button>';
 
   if (isPending) {
     card += '<button data-mon-accion="iniciar" data-mon-of="'+ofSap+'" data-mon-op="'+opId+'" '+
@@ -10913,6 +10924,30 @@ async function monitorPinSubmit() {
       return;
     }
     if (pin !== tec.pin) {
+      // ¿El NIP pertenece a OTRO operador válido? Solo al INICIAR: permitir iniciar
+      // con otro operador (reasignando la operación) previa confirmación Sí/No.
+      var _otro = _MON.technicians.find(function(t){
+        return t.pin && t.pin === pin && t.nombre.trim().toUpperCase() !== op.tecnico.trim().toUpperCase();
+      });
+      if (_otro && ctx.accion === 'iniciar') {
+        var _sOf = ctx.ofSap, _sOp = ctx.opId, _sAcc = ctx.accion, _otroNombre = _otro.nombre, _asignado = op.tecnico;
+        errEl.textContent = '';
+        document.getElementById('monitor-pin-modal').style.display = 'none';
+        _MON.pinDigits = ''; _MON.pinCtx = null;
+        monitorShowConfirm(
+          '⚠ Operador distinto',
+          'Está a punto de iniciar la operación con otro operador ('+_otroNombre+') en lugar de '+_asignado+'.\n\n¿Desea continuar?',
+          function(){
+            var lo = DB.activeOFs.find(function(o){ return o.of_sap===_sOf; });
+            var lop = lo ? lo.ops.find(function(o){ return o.id===_sOp; }) : null;
+            if(!lop){ if(typeof showAppNotif==='function') showAppNotif('info','Operación no encontrada. Actualiza e intenta de nuevo.'); return; }
+            lop.tecnico = _otroNombre; // reasignar al operador que ingresó su NIP
+            monitorExecuteAction(_sAcc, lo, lop, _otroNombre);
+          },
+          'Sí', 'No'
+        );
+        return;
+      }
       errEl.textContent = 'PIN incorrecto. Intenta de nuevo.';
       _MON.pinDigits = ''; monitorPinRefresh(); return;
     }
@@ -10948,9 +10983,11 @@ async function monitorSavePin(tec, pin) {
 }
 
 // ── Execute actions after PIN validated ───────────────────────────
-function monitorShowConfirm(title, msg, onOk) {
+function monitorShowConfirm(title, msg, onOk, okLabel, cancelLabel) {
   var existing = document.getElementById('monitor-confirm-modal');
   if (existing) existing.remove();
+  var _ok = okLabel || '▶ Iniciar de todas formas';
+  var _cancel = cancelLabel || 'Cancelar';
   var d = document.createElement('div');
   d.id = 'monitor-confirm-modal';
   d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:700;display:flex;align-items:center;justify-content:center;';
@@ -10959,15 +10996,161 @@ function monitorShowConfirm(title, msg, onOk) {
     '<div style="font-size:.8rem;color:#e6edf3;line-height:1.6;white-space:pre-line;margin-bottom:18px;">'+msg+'</div>' +
     '<div style="display:flex;gap:10px;">' +
     '<button onclick="document.getElementById(\'monitor-confirm-modal\').remove()" ' +
-      'style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">Cancelar</button>' +
+      'style="flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;color:#8b949e;font-size:.8rem;cursor:pointer;">'+_cancel+'</button>' +
     '<button id="monitor-confirm-ok" ' +
-      'style="flex:1;background:#1565C0;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">▶ Iniciar de todas formas</button>' +
+      'style="flex:1;background:#1565C0;border:none;border-radius:8px;padding:10px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;">'+_ok+'</button>' +
     '</div></div>';
   document.body.appendChild(d);
   document.getElementById('monitor-confirm-ok').onclick = function() {
     d.remove();
     onOk();
   };
+}
+
+// ── Monitor: Solicitar soporte (envío a ntfy → madero-soporte-monitor) ──
+var MON_SOPORTE_TOPIC = 'madero-soporte-monitor';
+// Convierte un texto a ASCII seguro para usarlo en ENCABEZADOS HTTP (ntfy Title).
+function _ntfyAsciiSafe(s){
+  try{ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7E]/g,'').trim(); }
+  catch(e){ return String(s||'').replace(/[^\x20-\x7E]/g,'').trim(); }
+}
+// Estado del chat de soporte en curso
+var _MON_SOP = null; // { ofSap, opId, topic, es, seen }
+
+function _monSopTopic(ofSap, opId){
+  var base = ('madero-sop-'+ofSap+'-'+opId).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+  var rand = Math.random().toString(36).slice(2,6);
+  return (base+'-'+rand).slice(0,64);
+}
+
+function monitorSoporteClose(){
+  if(_MON_SOP && _MON_SOP.es){ try{ _MON_SOP.es.close(); }catch(e){} }
+  _MON_SOP = null;
+  var m = document.getElementById('mon-soporte-modal'); if(m) m.remove();
+}
+
+function _monSopAddMsg(texto, quien){ // quien: 'op' (operador) | 'sop' (asistente)
+  var cont = document.getElementById('mon-soporte-chat'); if(!cont) return;
+  var hint = document.getElementById('mon-soporte-hint'); if(hint) hint.remove();
+  var mine = (quien === 'op');
+  var b = document.createElement('div');
+  b.style.cssText = 'max-width:82%;margin:4px 0;padding:8px 11px;border-radius:12px;font-size:.82rem;line-height:1.35;white-space:pre-wrap;word-break:break-word;'+
+    (mine
+      ? 'align-self:flex-end;background:#1565C0;color:#fff;border-bottom-right-radius:4px;'
+      : 'align-self:flex-start;background:rgba(255,255,255,.09);color:#e6edf3;border-bottom-left-radius:4px;');
+  b.textContent = texto;
+  cont.appendChild(b);
+  cont.scrollTop = cont.scrollHeight;
+}
+
+function _monSopSubscribe(topic){
+  try{
+    var es = new EventSource('https://ntfy.sh/'+encodeURIComponent(topic)+'/sse');
+    es.onmessage = function(ev){
+      try{
+        var d = JSON.parse(ev.data);
+        if(!d || d.event !== 'message') return;      // ignorar open/keepalive
+        if(d.id && _MON_SOP && _MON_SOP.seen[d.id]) return; // eco de nuestro propio mensaje
+        _monSopAddMsg(d.message || '', 'sop');        // mensaje entrante del asistente
+      }catch(e){}
+    };
+    es.onerror = function(){ /* EventSource reintenta solo */ };
+    if(_MON_SOP) _MON_SOP.es = es;
+  }catch(e){ console.warn('[Soporte] SSE error:', e.message); }
+}
+
+function monitorSoporteOpen(ofSap, opId){
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if(!op){ return; }
+  monitorSoporteClose(); // cerrar cualquier chat previo
+  _MON_SOP = { ofSap:ofSap, opId:opId, topic:null, es:null, seen:{} };
+  var articulo = of.articulo || of.articulo_padre || '';
+  var d = document.createElement('div');
+  d.id = 'mon-soporte-modal';
+  d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:730;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML =
+    '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(420px,95vw);display:flex;flex-direction:column;max-height:90vh;">'+
+      '<div style="padding:16px 18px 10px 18px;border-bottom:1px solid rgba(255,255,255,.08);">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">'+
+          '<div style="font-weight:700;font-size:1rem;color:#f87171;">🆘 Soporte</div>'+
+          '<button onclick="monitorSoporteClose()" style="background:none;border:none;color:#8b949e;font-size:1.1rem;cursor:pointer;line-height:1;">✕</button>'+
+        '</div>'+
+        '<div style="font-size:.72rem;color:#8b949e;margin-top:4px;line-height:1.4;">OF '+esc(of.of_sap)+(articulo?' · '+esc(articulo):'')+'<br><strong style="color:#e6edf3;">'+esc(op.nombre)+'</strong>'+(op.estacion?' · '+esc(op.estacion):'')+'</div>'+
+      '</div>'+
+      '<div id="mon-soporte-chat" style="flex:1;overflow-y:auto;min-height:150px;max-height:44vh;padding:12px 14px;display:flex;flex-direction:column;">'+
+        '<div id="mon-soporte-hint" style="text-align:center;color:#6e7681;font-size:.78rem;margin:auto 0;">Escribe tu solicitud y pulsa Enviar.<br>Un asistente podrá responderte aquí mismo.</div>'+
+      '</div>'+
+      '<div id="mon-soporte-msg" style="font-size:.74rem;min-height:16px;padding:0 14px;"></div>'+
+      '<div style="display:flex;gap:8px;padding:10px 14px 14px 14px;border-top:1px solid rgba(255,255,255,.08);">'+
+        '<input id="mon-soporte-txt" type="text" placeholder="Escribe un mensaje..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();monitorSoporteEnviar();}" style="flex:1;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:11px;color:#e6edf3;font-size:.85rem;">'+
+        '<button id="mon-soporte-enviar" onclick="monitorSoporteEnviar()" style="background:#dc2626;border:none;border-radius:8px;padding:11px 18px;color:#fff;font-size:.82rem;font-weight:700;cursor:pointer;">Enviar</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(d);
+  setTimeout(function(){ var t=document.getElementById('mon-soporte-txt'); if(t) t.focus(); }, 120);
+}
+
+async function monitorSoporteEnviar(){
+  var st = _MON_SOP; if(!st) return;
+  var txtEl = document.getElementById('mon-soporte-txt');
+  var msgEl = document.getElementById('mon-soporte-msg');
+  var btn   = document.getElementById('mon-soporte-enviar');
+  var texto = ((txtEl && txtEl.value) || '').trim();
+  if(!texto){ if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='Escribe tu mensaje.'; } return; }
+
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===st.ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===st.opId; }) : null;
+  var articulo = of ? (of.articulo||of.articulo_padre||'') : '';
+  var estacion = op ? (op.estacion||'') : '';
+  var opNombre = op ? (op.nombre||'') : '';
+
+  // Pintar de inmediato el mensaje del operador
+  _monSopAddMsg(texto, 'op');
+  if(txtEl) txtEl.value='';
+  if(btn){ btn.disabled = true; btn.textContent = '...'; }
+
+  var esPrimero = !st.topic;
+  if(esPrimero){
+    st.topic = _monSopTopic(st.ofSap, st.opId);
+    _monSopSubscribe(st.topic);
+    // Aviso al canal principal con el contexto + el tópico donde responder al operador.
+    var cuerpo =
+      '🆘 Solicitud de soporte\n'+
+      'Detalles: '+texto+'\n'+
+      'Operación: '+opNombre+'\n'+
+      'OF: '+st.ofSap+'\n'+
+      'Artículo: '+articulo+'\n'+
+      'Estación: '+estacion+
+      (op && op.tecnico ? '\nOperador: '+op.tecnico : '')+
+      '\n\nResponder al operador en el tópico: '+st.topic;
+    try{
+      await fetch('https://ntfy.sh/'+MON_SOPORTE_TOPIC, {
+        method: 'POST',
+        headers: {
+          'Title':    _ntfyAsciiSafe('Soporte Monitor' + (estacion ? ' - ' + estacion : '')),
+          'Priority': 'high',
+          'Tags':     'sos,factory',
+          'Actions':  'view, Responder al operador, https://ntfy.sh/'+st.topic
+        },
+        body: cuerpo
+      });
+      if(msgEl){ msgEl.style.color='#22c55e'; msgEl.textContent='✅ En breve un asistente atenderá su solicitud.'; }
+    }catch(e){ console.warn('[Soporte] Error aviso principal:', e.message); if(msgEl){ msgEl.style.color='#f59e0b'; msgEl.textContent='⚠ Falla de conexión al enviar.'; } }
+  }
+
+  // Publicar el mensaje del operador en el tópico de la conversación (para el asistente)
+  try{
+    var r = await fetch('https://ntfy.sh/'+encodeURIComponent(st.topic), {
+      method: 'POST',
+      headers: { 'Title': _ntfyAsciiSafe('Operador'+(opNombre?' '+opNombre:'')), 'Tags':'bust_in_silhouette' },
+      body: texto
+    });
+    var j = await r.json().catch(function(){ return null; });
+    if(j && j.id && _MON_SOP) _MON_SOP.seen[j.id] = true; // evitar duplicar por el eco del SSE
+  }catch(e){ console.warn('[Soporte] Error enviar msg:', e.message); }
+
+  if(btn){ btn.disabled = false; btn.textContent = 'Enviar'; }
 }
 
 // ── Monitor: Fin de Turno (operador termina su turno con PIN) ──────
