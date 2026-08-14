@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.66</title>
+<title>FabTracker App v2.75</title>
 
 <!-- MSAL Browser -->
 
@@ -620,6 +620,11 @@ tr:last-child td{border-bottom:none;}
              padding:9px;font-size:.78rem;color:#8b949e;cursor:pointer;">
       ✅ Terminadas hoy
     </button>
+  </div>
+
+  <!-- Escanear QR de operación -->
+  <div style="padding:8px 12px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;">
+    <button onclick="monitorScanOpen()" style="width:100%;background:linear-gradient(135deg,#7c3aed,#6c3483);border:none;border-radius:8px;padding:11px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;">📷 Escanear operación (QR)</button>
   </div>
 
   <!-- Filter bar -->
@@ -3615,12 +3620,15 @@ function updateAppBadge(){
 function renderAppHoy(){
   var now=new Date();
   var days=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],months=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
+  // Ocultar en FabTracker (Supervisor / Calidad de Línea / Analista) las OFs cerradas
+  // individualmente por el Coordinador — se depuran igual que en Tiempo Real.
+  var _visOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  var allOps=[];_visOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
   var doneOps=allOps.filter(function(o){return o.status==="done";}).length;
   var runOps=allOps.filter(function(o){return o.status==="running"||o.status==="paused";}).length;
 
   var h="<div class='app-ds'><div><div class='app-ds-time'>"+now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})+"</div><div class='app-ds-day'>"+days[now.getDay()]+" "+now.getDate()+" "+months[now.getMonth()]+"</div></div>";
-  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+DB.activeOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
+  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+_visOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
@@ -3632,6 +3640,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -3643,13 +3652,13 @@ function renderAppHoy(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>🔍 OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='color:var(--adim);font-size:.68rem'>"+esc(n.note||"")+"</span></div><div style='display:flex;gap:5px;margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0){
+  if(_visOFs.length===0){
     h+="<div class='app-empty'><p>Sin OFs asignadas para hoy.</p><p style='margin-top:5px;color:var(--adim);font-size:.7rem'>El Coordinador programa las OFs desde la plataforma web.</p></div>";
     return h;
   }
-  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
+  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
-  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
@@ -3673,6 +3682,7 @@ function renderAppHoy(){
       h+="<div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc(of.descripcion.substring(0,54))+"</div>";
       h+="<div class='app-of-meta'>";
+      if(of.grupo)h+="<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(of.grupo)+"'>🔗 "+(of.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>";
       if(runC>0)h+="<span class='app-chip app-c-ep'><span class='app-c-dot'></span>"+runC+" activa"+(runC>1?"s":"")+"</span>";
       if(valC>0)h+="<span class='app-chip app-c-pur'>🔍 "+valC+"</span>";
       h+="<span class='app-chip app-c-plan'>"+done+"/"+of.ops.length+"</span>";
@@ -3894,7 +3904,7 @@ function renderAppOFs(){
       h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
       h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
-      h+="<div class='app-of-meta'><span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span></div>";
+      h+="<div class='app-of-meta'>"+(o.grupo?"<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(o.grupo)+"'>🔗 "+(o.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>":"")+"<span class='app-chip app-c-ep'><span class='app-c-dot'></span>En Día</span></div>";
       h+="</div></div></div>";
     });
     h+="</div>";
@@ -3911,7 +3921,7 @@ function renderAppOFs(){
       h+="<div class='app-ofc'><div class='app-ofc-hdr' style='cursor:default;'><div style='flex:1;'>";
       h+="<div class='app-of-num'>OF "+esc(o.of_sap)+(o.articulo?"<span class='app-of-art'> · "+esc(o.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc((o.descripcion||'').substring(0,50))+"</div>";
-      h+="<div class='app-of-meta'><span class='app-chip app-c-plan'>PLANEACIÓN</span></div>";
+      h+="<div class='app-of-meta'>"+(o.grupo?"<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(o.grupo)+"'>🔗 "+(o.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>":"")+"<span class='app-chip app-c-plan'>PLANEACIÓN</span></div>";
       h+="</div></div></div>";
     });
     h+="</div>";
@@ -8408,6 +8418,8 @@ async function _appLoadDataFromSP_impl() {
       rotacion: f.Rotacion||'', sub_articulos: f.Sub_Articulos?f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean):[],
       programadoHoy: f.Programado_Hoy===true || f.Programado_Hoy==='true' || f.Programado_Hoy===1 || f.Programado_Hoy==='1',
       status: f.Status||'Sin programar',
+      grupo:     String(f.Grupo_Fabricacion||f.GrupoFabricacion||'').trim(),
+      grupoModo: String(f.Grupo_Modo||f.GrupoModo||'').toLowerCase().trim(),
     }));
     // Deduplicar ops de SP: si hay duplicados por OF_SAP+Op_ID,
     // priorizar: running > paused > validating > done > pending
@@ -8501,6 +8513,7 @@ async function _appLoadDataFromSP_impl() {
       monitor_override: String(f.Monitor_Override||f.MonitorOverride||'').toLowerCase().trim(),
       grupo:     String(f.Grupo_Fabricacion||f.GrupoFabricacion||'').trim(),
       grupoModo: String(f.Grupo_Modo||f.GrupoModo||'').toLowerCase().trim(),
+      ofCerrada: (f.OF_Cerrada===true)||(String(f.OF_Cerrada||'').toLowerCase()==='true')||(String(f.OF_Cerrada||'').toLowerCase()==='si')||(String(f.OF_Cerrada||'')==='1'),
       sub_articulos: f.Sub_Articulos ? f.Sub_Articulos.split(',').map(s=>s.trim()).filter(Boolean) : [],
       ops: allOps.filter(o=>o.OF_SAP===(f.OF_SAP||f.Title)).sort((a,b)=>(a.Secuencia||0)-(b.Secuencia||0)).map(o => ({
         id: o.Op_ID||('op_'+(o.ID||'')),
@@ -10554,6 +10567,272 @@ function monitorRender() {
   if (sub) sub.textContent = estaciones.join(' · ');
 }
 
+// ── Escaneo de QR de operación → acciones rápidas ────────────────────────
+var _monScanner = null;
+function monitorScanOpen(){
+  function go(){
+    var ex=document.getElementById('mon-scan-modal'); if(ex) ex.remove();
+    var d=document.createElement('div'); d.id='mon-scan-modal';
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:745;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    d.innerHTML='<div style="width:min(360px,94vw);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-weight:700;font-size:1rem;color:#fff;">📷 Escanear operación</div>'+
+        '<button onclick="monitorScanClose()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div id="mon-scan-reader" style="width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:230px;"></div>'+
+      '<div id="mon-scan-msg" style="color:#8b949e;font-size:.8rem;text-align:center;margin-top:10px;min-height:18px;">Apunta la cámara al código QR de la operación</div>'+
+    '</div>';
+    document.body.appendChild(d);
+    try{
+      _monScanner=new Html5Qrcode("mon-scan-reader");
+      _monScanner.start({ facingMode:"environment" }, { fps:10, qrbox:{ width:230, height:230 } },
+        function(txt){ monitorScanHandle(txt); },
+        function(){ /* ignorar errores por frame */ }
+      ).catch(function(e){ var m=document.getElementById('mon-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='No se pudo abrir la cámara: '+(e&&e.message||e); } });
+    }catch(e){ var m2=document.getElementById('mon-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='No se pudo iniciar el escáner: '+e.message; } }
+  }
+  if(window.Html5Qrcode){ go(); }
+  else{ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar el escáner QR.'); }; document.head.appendChild(s); }
+}
+function monitorScanClose(){
+  try{
+    if(_monScanner){ _monScanner.stop().then(function(){ try{_monScanner.clear();}catch(e){} _monScanner=null; }).catch(function(){ _monScanner=null; }); }
+  }catch(e){ _monScanner=null; }
+  var m=document.getElementById('mon-scan-modal'); if(m) m.remove();
+}
+function monitorScanHandle(txt){
+  var parts=String(txt||'').split('|');
+  if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('mon-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
+  var ofSap=parts[1], opId=parts[2];
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!of || !op){ var m2=document.getElementById('mon-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='Operación no encontrada o no activa en esta tablet.'; } return; }
+  // Validar que la estación de la operación esté asignada a este monitor.
+  if(_MON.estaciones && _MON.estaciones.length && op.estacion && _MON.estaciones.indexOf(op.estacion)<0){
+    var m4=document.getElementById('mon-scan-msg');
+    if(m4){ m4.style.color='#f59e0b'; m4.textContent='⚠ La operación "'+op.nombre+'" es de la estación "'+op.estacion+'", que no está asignada a este monitor.'; }
+    return;
+  }
+  monitorScanClose();
+  monitorQuickActions(ofSap, opId);
+}
+
+// ── Escaneo de QR en FabTracker (Supervisor / Calidad de Línea) ──────────
+var _ftScanner=null;
+function ftScanOpen(){
+  function go(){
+    var ex=document.getElementById('ft-scan-modal'); if(ex) ex.remove();
+    var d=document.createElement('div'); d.id='ft-scan-modal';
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:745;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    d.innerHTML='<div style="width:min(360px,94vw);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-weight:700;font-size:1rem;color:#fff;">📷 Escanear operación</div>'+
+        '<button onclick="ftScanClose()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div id="ft-scan-reader" style="width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:230px;"></div>'+
+      '<div id="ft-scan-msg" style="color:#8b949e;font-size:.8rem;text-align:center;margin-top:10px;min-height:18px;">Apunta la cámara al código QR de la operación</div>'+
+    '</div>';
+    document.body.appendChild(d);
+    try{
+      _ftScanner=new Html5Qrcode("ft-scan-reader");
+      _ftScanner.start({ facingMode:"environment" }, { fps:10, qrbox:{ width:230, height:230 } },
+        function(txt){ ftScanHandle(txt); },
+        function(){ /* ignorar errores por frame */ }
+      ).catch(function(e){ var m=document.getElementById('ft-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='No se pudo abrir la cámara: '+(e&&e.message||e); } });
+    }catch(e){ var m2=document.getElementById('ft-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='No se pudo iniciar el escáner: '+e.message; } }
+  }
+  if(window.Html5Qrcode){ go(); }
+  else{ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar el escáner QR.'); }; document.head.appendChild(s); }
+}
+function ftScanClose(){
+  try{ if(_ftScanner){ _ftScanner.stop().then(function(){ try{_ftScanner.clear();}catch(e){} _ftScanner=null; }).catch(function(){ _ftScanner=null; }); } }catch(e){ _ftScanner=null; }
+  var m=document.getElementById('ft-scan-modal'); if(m) m.remove();
+}
+function ftScanHandle(txt){
+  var parts=String(txt||'').split('|');
+  if(parts[0]!=='FT' || parts.length<3){ var m=document.getElementById('ft-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='Código no reconocido. Escanea un QR generado por el sistema.'; } return; }
+  var ofSap=parts[1], opId=parts[2];
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!of || !op){ var m2=document.getElementById('ft-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='Operación no encontrada o no activa hoy.'; } return; }
+  ftScanClose();
+  ftScanQuickActions(ofSap, opId);
+}
+function ftScanQAClose(){ var m=document.getElementById('ft-qa-modal'); if(m) m.remove(); }
+function ftScanQuickActions(ofSap, opId){
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!op) return;
+  var role = APP.role || 'readonly';
+  var _isAdmin = !!(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin);
+  // El Administrador General siempre opera con los accesos de Supervisor en el escáner.
+  var _rr  = (role==='readonly' || _isAdmin) ? 'supervisor' : role;
+  var _q="'"+ofSap+"','"+opId+"'";
+  var _b=function(bg,label,act){ return '<button onclick="ftScanQAClose();'+act+'" style="width:100%;background:'+bg+';border:none;border-radius:8px;padding:12px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px;">'+label+'</button>'; };
+  var _note=function(col,txt){ return '<div style="color:'+col+';font-size:.82rem;text-align:center;padding:10px;">'+txt+'</div>'; };
+  var body='', st=op.status;
+  var canFinish = (_isAdmin || (typeof appCan==='function' && appCan('finish'))) && (op.calResult==='liberado' || (st!=='validating' && !op.needsCal));
+  if(role==='calidad_lin' && !_isAdmin && (typeof appCan!=='function' || appCan('cal'))){
+    // Calidad de Línea (encargado de calidad de piso) — liberar / rechazar validaciones.
+    if(st==='validating') body += _b('#8b5cf6','🏭 Responder validación (liberar / rechazar)','openCalResp('+_q+')');
+    else if(op.calResult) body += _note('#22c55e','✅ Validación ya respondida: '+esc(op.calResult));
+    else body += _note('#8b949e','Esta operación no está en validación de calidad.');
+  } else if(_isAdmin || (typeof appCan==='function' && appCan('start')) || _rr==='supervisor'){
+    // Supervisor (y Administrador General) — mismas acciones que en el panel de FabTracker.
+    if(st==='omitida'){ body += _note('#8b949e','⊘ Operación omitida'); }
+    else if(st==='pending'){
+      body += _b('#1565C0','▶ Iniciar','appStartOp('+_q+')');
+      body += _b('#6b7280','⊘ Omitir','appOmitirOp('+_q+')');
+      body += _b('rgba(255,255,255,.10)','👷 Asignar técnico','appOpenQuickAssign('+_q+')');
+    } else if(st==='running'){
+      if(_isAdmin||typeof appCan!=='function'||appCan('pause')) body += _b('#f59e0b','⏸ Pausar','appOpenPause('+_q+')');
+      if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+    } else if(st==='paused'){
+      if(_isAdmin||typeof appCan!=='function'||appCan('resume')) body += _b('#16a34a','▶ Reanudar','appResumeOp('+_q+')');
+      if(canFinish) body += _b('#22c55e','✓ Terminar','appOpenFinish('+_q+')');
+      if(_isAdmin||typeof appCan!=='function'||appCan('requestCal')) body += _b('#8b5cf6','🔍 Val.Cal.','appOpenValCal('+_q+')');
+    } else if(st==='op_concluded'){
+      if(_isAdmin || _rr==='supervisor' || (typeof appCan==='function'&&appCan('finish'))){
+        body += _b('#22c55e','✓ Confirmar conclusión','monitorConfirmOp('+_q+')');
+        body += _b('#ef4444','↩ Devolver a activa','monitorRevertOp('+_q+')');
+      } else body += _note('#f59e0b','⏳ Aguarda confirmación del Supervisor');
+    } else if(st==='validating'){
+      body += _note('#a78bfa','🔍 En validación de Calidad');
+    } else if(st==='retrabajo'){
+      body += _b('#1565C0','▶ Reiniciar','appStartOp('+_q+')');
+    } else if(st==='done'){
+      body += _note('#22c55e','✓ Operación terminada');
+    } else body += _note('#8b949e','Sin acciones disponibles ('+esc(st)+')');
+  } else {
+    body += _note('#8b949e','Sin acciones disponibles para tu rol.');
+  }
+  var _stLbl={pending:'PENDIENTE',running:'EN PROCESO',paused:'PAUSADA',validating:'VALIDACIÓN CALIDAD',op_concluded:'CONCLUIDA — aguarda Supervisor',done:'TERMINADA',omitida:'OMITIDA'}[st]||String(st||'').toUpperCase();
+  var _desc = of.descripcion_padre || of.descripcion || '';
+  var _ayud = (op.ayudantes||[]).filter(Boolean);
+  var ex=document.getElementById('ft-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='ft-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(op.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(op.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(op.qty_total||0)+'</strong> pzas'+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+    (_ayud.length?'<div style="font-size:.7rem;color:#8b949e;margin-top:2px;">🤝 Ayudantes: '+esc(_ayud.join(', '))+'</div>':'')+
+    '<div style="font-size:.66rem;color:#8b949e;margin-top:4px;">Estado: <strong style="color:#c9d1d9;">'+esc(_stLbl)+'</strong></div>'+
+    '<div style="height:14px;"></div>'+
+    body+
+    '<button onclick="ftScanQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+function monitorQAClose(){ var m=document.getElementById('mon-qa-modal'); if(m) m.remove(); }
+function monitorQAReanudarTurno(ofSap,opId){ var _o=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;}); var _p=_o?_o.ops.find(function(o){return o.id===opId;}):null; if(_o&&_p && typeof monTurnoOpen==='function') monTurnoOpen(_o,_p); }
+function monitorQuickActions(ofSap, opId){
+  var of=(DB.activeOFs||[]).find(function(o){return o.of_sap===ofSap;});
+  var op=of?of.ops.find(function(o){return o.id===opId;}):null;
+  if(!op) return;
+  var isLote = of.grupo && of.grupoModo==='lote';
+  var _q="'"+ofSap+"','"+opId+"'";
+  var _b=function(bg,label,act){ return '<button onclick="monitorQAClose();'+act+'" style="width:100%;background:'+bg+';border:none;border-radius:8px;padding:12px;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px;">'+label+'</button>'; };
+  var body='', st=op.status;
+  if(st==='pending'){
+    body += isLote ? _b('#7c3aed','▶ Iniciar lote','monitorAskPin(\'iniciar_lote\','+_q+')')
+                   : _b('#1565C0','▶ Iniciar','monitorCheckQueueThenAskPin('+_q+')');
+  } else if(st==='running'){
+    if(isLote){
+      body += _b('#dc2626','⏹ Concluir lote','monitorAskPin(\'concluir_lote\','+_q+')');
+      body += _b('#8b5cf6','🔍 Val.Cal. del lote','monitorAskPin(\'valcal_lote\','+_q+')');
+      body += _b('#f59e0b','🌙 Fin de Turno del lote','monitorAskPin(\'finturno_lote\','+_q+')');
+      body += _b('#0891b2','🍽 Comida del lote','monitorAskPin(\'comida_lote\','+_q+')');
+    } else {
+      body += _b('#dc2626','⏹ Concluir','monitorAskPin(\'concluir\','+_q+')');
+      body += _b('#8b5cf6','🔍 Val.Cal.','monitorAskPin(\'valcal\','+_q+')');
+      body += _b('#f59e0b','🌙 Fin de Turno','monitorAskPin(\'finturno\','+_q+')');
+      body += _b('#0891b2','🍽 Iniciar Comida','monitorAskPin(\'comida\','+_q+')');
+    }
+  } else if(st==='paused'){
+    var isTurno = (op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('Fin de turno')>=0) || ((op.pauseReason||'').indexOf('🌙')>=0);
+    if(isLote){ body += _b('#16a34a','▶ Reanudar lote','monitorAskPin(\'reanudar_lote\','+_q+')'); }
+    else if(isTurno){ body += _b('#f59e0b','🔄 Reanudar turno','monitorQAReanudarTurno('+_q+')'); }
+    else { body += _b('#f59e0b','▶ Reanudar','monitorAskPin(\'reanudar\','+_q+')'); }
+  } else if(st==='op_concluded'){
+    body += '<div style="color:#f59e0b;font-size:.82rem;text-align:center;padding:10px;">⏳ Aguardando confirmación del Supervisor</div>';
+  } else if(st==='validating'){
+    body += '<div style="color:#a78bfa;font-size:.82rem;text-align:center;padding:10px;">🔍 En validación de Calidad</div>';
+  } else {
+    body += '<div style="color:#8b949e;font-size:.82rem;text-align:center;padding:10px;">Sin acciones disponibles ('+esc(st)+')</div>';
+  }
+  // Info adicional: descripción, piezas, ayudantes y (si es grupo) resumen del lote
+  var _desc = of.descripcion_padre || of.descripcion || '';
+  var _ayud = (op.ayudantes||[]).filter(Boolean);
+  var _grpHtml='';
+  if(of.grupo){
+    var _gn=0, _gTot=0;
+    (DB.activeOFs||[]).forEach(function(aof2){
+      if(aof2.grupo!==of.grupo) return;
+      (aof2.ops||[]).forEach(function(o2){
+        if(o2.nombre===op.nombre && o2.estacion===op.estacion){ _gn++; _gTot+=(o2.qty_total||0); }
+      });
+    });
+    _grpHtml='<div style="font-size:.72rem;color:#c084fc;margin-top:8px;background:rgba(147,51,234,.1);border:1px solid rgba(147,51,234,.3);border-radius:6px;padding:6px 9px;line-height:1.5;">'+
+      '🔗 '+(isLote?'Lote único':'Serie')+' '+esc(of.grupo||'')+' · <strong>'+_gn+'</strong> órdenes<br>'+
+      'Piezas de esta orden: <strong>'+(op.qty_total||0)+'</strong> · Total del grupo: <strong>'+_gTot+'</strong> pzas</div>';
+  }
+  var ex=document.getElementById('mon-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='mon-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;">OF '+esc(ofSap)+((of.articulo||of.articulo_padre)?' · '+esc(of.articulo||of.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(op.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(op.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(op.qty_total||0)+'</strong> pzas'+(op.tecnico?' · 👷 '+esc(op.tecnico):'')+'</div>'+
+    (_ayud.length?'<div style="font-size:.7rem;color:#8b949e;margin-top:2px;">🤝 Ayudantes: '+esc(_ayud.join(', '))+'</div>':'')+
+    _grpHtml+
+    '<div style="height:14px;"></div>'+
+    body+
+    '<button onclick="monitorQAClose()" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Cerrar</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+
+// ── Serie por QR: tras concluir, tarjeta con la SIGUIENTE operación del grupo ──
+function monitorSerieStartNext(){
+  var n = window._monSerieNext; window._monSerieNext = null;
+  monitorQAClose();
+  if(!n) return;
+  var of = (DB.activeOFs||[]).find(function(o){ return o.of_sap===n.ofSap; });
+  var op = of ? of.ops.find(function(o){ return o.id===n.opId; }) : null;
+  // Iniciar la siguiente op de la serie CON NIP (mismo flujo que "Iniciar" normal).
+  if(of && op && op.status==='pending'){ monitorCheckQueueThenAskPin(n.ofSap, n.opId); }
+  else if(typeof showAppNotif==='function'){ showAppNotif('info','La siguiente operación ya no está disponible. Actualiza el Monitor.'); }
+}
+function monitorSerieNextCard(nextOf, nextOp, tecNombre, prevOp){
+  window._monSerieNext = { ofSap: nextOf.of_sap, opId: nextOp.id, tec: tecNombre };
+  var _mem=[];
+  (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==nextOf.grupo) return;
+    (aof2.ops||[]).forEach(function(o2){ if(o2.nombre===nextOp.nombre && o2.estacion===nextOp.estacion) _mem.push(o2); }); });
+  var _tot=_mem.length;
+  var _hechas=_mem.filter(function(o2){ return o2.status!=='pending'; }).length;
+  var _totPz=_mem.reduce(function(s,o2){ return s+(o2.qty_total||0); },0);
+  var _desc = nextOf.descripcion_padre || nextOf.descripcion || '';
+  var ex=document.getElementById('mon-qa-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='mon-qa-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:745;display:flex;align-items:center;justify-content:center;padding:16px;';
+  d.innerHTML='<div style="background:#1a2332;border:1px solid rgba(34,197,94,.45);border-radius:14px;width:min(360px,94vw);padding:18px;max-height:92vh;overflow:auto;">'+
+    '<div style="font-size:.74rem;color:#22c55e;font-weight:700;">✓ Concluida: '+esc(prevOp.nombre)+'</div>'+
+    '<div style="font-size:.66rem;color:#c084fc;font-weight:700;margin-top:10px;letter-spacing:.03em;">🔗 SERIE '+esc(nextOf.grupo||'')+' · siguiente '+(_hechas+1)+' de '+_tot+'</div>'+
+    '<div style="font-size:.66rem;color:#58a6ff;font-family:monospace;margin-top:6px;">OF '+esc(nextOf.of_sap)+((nextOf.articulo||nextOf.articulo_padre)?' · '+esc(nextOf.articulo||nextOf.articulo_padre):'')+'</div>'+
+    (_desc?'<div style="font-size:.74rem;color:#c9d1d9;margin-top:1px;line-height:1.35;">'+esc(_desc)+'</div>':'')+
+    '<div style="font-weight:700;font-size:.95rem;color:#e6edf3;margin:5px 0 2px;">'+esc(nextOp.nombre)+'</div>'+
+    '<div style="font-size:.72rem;color:#8b949e;">'+esc(nextOp.estacion||'')+' · 📦 <strong style="color:#c9d1d9;">'+(nextOp.qty_total||0)+'</strong> pzas · Total serie: <strong style="color:#c9d1d9;">'+_totPz+'</strong> pzas</div>'+
+    '<div style="height:16px;"></div>'+
+    '<button onclick="monitorSerieStartNext()" style="width:100%;background:#7c3aed;border:none;border-radius:8px;padding:13px;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer;margin-bottom:8px;">▶ Iniciar de inmediato</button>'+
+    '<button onclick="window._monSerieNext=null;monitorQAClose();" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:11px;color:#8b949e;font-size:.82rem;cursor:pointer;">Ahora no</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+
 // Recuerda qué lotes están desplegados para no colapsarlos en el auto-refresh
 function _monGrpToggle(el){
   window._monGrpOpen = window._monGrpOpen || {};
@@ -10604,7 +10883,7 @@ function monitorRenderGrupo(items, est){
     // Serie: iniciar la siguiente pendiente (avanza automáticamente al concluir).
     if (pendientes.length) {
       var next = pendientes[0];
-      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" style="'+_bS('#7c3aed')+'padding:10px 16px;font-size:.8rem;">▶ Iniciar lote (siguiente)</button>';
+      card += '<button onclick="monitorCheckQueueThenAskPin(\''+esc(next.of.of_sap)+'\',\''+esc(next.op.id)+'\')" style="'+_bS('#7c3aed')+'padding:10px 16px;font-size:.78rem;">▶ Iniciar fabricación en serie (siguiente)</button>';
     } else {
       card += '<span style="font-size:.72rem;color:#22c55e;font-weight:600;white-space:nowrap;">✓ Sin pendientes</span>';
     }
@@ -11637,8 +11916,9 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
       tecnico: tecNombre, operador: tecNombre
     }).catch(function(){});
     console.log('[Monitor] Concluida:', op.nombre, 'por', tecNombre);
-    // Avance automático de LOTE EN SERIE: al concluir, iniciar la siguiente OF pendiente
-    // del mismo grupo + misma operación + misma estación, con el mismo operador (sin re-PIN).
+    // LOTE EN SERIE: al concluir, ofrecer la SIGUIENTE OF pendiente del grupo
+    // (misma operación + estación) con una tarjeta para iniciar de inmediato,
+    // sin re-teclear el NIP (mismo operador continúa la serie).
     try {
       if (of.grupo && of.grupoModo === 'serie') {
         var _sig = null;
@@ -11651,11 +11931,13 @@ async function monitorExecuteAction(accion, of, op, tecNombre) {
           });
         });
         if (_sig) {
-          console.log('[Lote] Auto-avance en serie →', _sig.of.of_sap, op.nombre);
-          monitorDoIniciar(_sig.of, _sig.op, tecNombre);
+          console.log('[Lote] Serie — ofrecer siguiente →', _sig.of.of_sap, op.nombre);
+          monitorSerieNextCard(_sig.of, _sig.op, tecNombre, op);
+        } else {
+          if (typeof showAppNotif === 'function') showAppNotif('success', '✓ Serie completada: ' + op.nombre + ' en todas las órdenes del grupo.');
         }
       }
-    } catch(e){ console.warn('[Lote] auto-avance error:', e.message); }
+    } catch(e){ console.warn('[Lote] serie-siguiente error:', e.message); }
 
   } else if (accion === 'valcal') {
     op.status   = 'validating';
@@ -13217,12 +13499,15 @@ function updateAppBadge(){
 function renderAppHoy(){
   var now=new Date();
   var days=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"],months=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  var allOps=[];DB.activeOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
+  // Ocultar en FabTracker (Supervisor / Calidad de Línea / Analista) las OFs cerradas
+  // individualmente por el Coordinador — se depuran igual que en Tiempo Real.
+  var _visOFs=DB.activeOFs.filter(function(o){return !o.ofCerrada;});
+  var allOps=[];_visOFs.forEach(function(o){allOps=allOps.concat(o.ops);});
   var doneOps=allOps.filter(function(o){return o.status==="done";}).length;
   var runOps=allOps.filter(function(o){return o.status==="running"||o.status==="paused";}).length;
 
   var h="<div class='app-ds'><div><div class='app-ds-time'>"+now.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"})+"</div><div class='app-ds-day'>"+days[now.getDay()]+" "+now.getDate()+" "+months[now.getMonth()]+"</div></div>";
-  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+DB.activeOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
+  h+="<div class='app-ds-kpis'><div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--aaccent)'>"+_visOFs.length+"</div><div class='app-ds-kl'>OFs</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--agreen)'>"+doneOps+"</div><div class='app-ds-kl'>OK</div></div>";
   h+="<div class='app-ds-kpi'><div class='app-ds-kv' style='color:var(--ayellow)'>"+runOps+"</div><div class='app-ds-kl'>Act.</div></div></div></div>";
 
@@ -13234,6 +13519,7 @@ function renderAppHoy(){
   if(_renderRole==="calidad_tiem")h+="<div class='app-role-banner app-rb-cal'>⏱ Analista — Captura de tiempos habilitada.</div>";
   else if(_renderRole==="calidad_lin")h+="<div class='app-role-banner app-rb-lin'>🏭 Inspector de Calidad de Línea — Liberar/rechazar operaciones.</div>";
   if(_isReadonly&&!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<div class='app-role-banner' style='background:rgba(100,116,139,.15);color:#94a3b8;border:1px solid rgba(100,116,139,.2);'>👁 Solo lectura — Sin acciones disponibles.</div>";
+  if(_appRole==='supervisor'||_appRole==='calidad_lin'||(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin))h+="<button onclick='ftScanOpen()' style='width:100%;margin:2px 0 12px;background:linear-gradient(135deg,#1f6feb,#0d47a1);border:none;border-radius:10px;padding:12px;color:#fff;font-weight:700;font-size:.85rem;cursor:pointer;'>📷 Escanear operación (QR)</button>";
 
   // Notif pendientes para calidad_lin
   var calPending=DB.notifications.filter(function(n){return n.type==="calidad"&&!n.read;});
@@ -13245,13 +13531,13 @@ function renderAppHoy(){
       h+="<div class='app-notif-b'><div class='app-ndot'></div><div style='flex:1'><div class='app-ntxt'><strong>🔍 OF "+esc(n.of_sap)+"</strong> — "+esc(op.nombre)+"<br><span style='color:var(--adim);font-size:.68rem'>"+esc(n.note||"")+"</span></div><div style='display:flex;gap:5px;margin-top:6px;'><button class='app-ob app-ob-lib' onclick='openCalResp(\""+n.of_sap+"\",\""+n.op_id+"\")'>Responder</button></div></div></div>";
     });
   }
-  if(DB.activeOFs.length===0){
+  if(_visOFs.length===0){
     h+="<div class='app-empty'><p>Sin OFs asignadas para hoy.</p><p style='margin-top:5px;color:var(--adim);font-size:.7rem'>El Coordinador programa las OFs desde la plataforma web.</p></div>";
     return h;
   }
-  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+DB.activeOFs.length+"</span></div>";
+  h+="<div class='app-sh'>Fabricaciones del día <span class='app-sbadge'>"+_visOFs.length+"</span></div>";
   h+=_appFiltroBarHTML(true);
-  var _hoySrc=(DB.activeOFs||[]).filter(Boolean);
+  var _hoySrc=(_visOFs||[]).filter(Boolean);
   var _fOF=(APP.searchOF||'').trim().toLowerCase(), _fTec=(APP.searchTec||'').trim().toLowerCase(), _fEst=(APP.searchEst||'').trim().toLowerCase();
   if(_fOF)  _hoySrc=_hoySrc.filter(function(o){return String(o.of_sap||'').toLowerCase().indexOf(_fOF)>=0;});
   if(_fTec) _hoySrc=_hoySrc.filter(function(o){return (o.ops||[]).some(function(op){return (op.tecnico||'').toLowerCase().indexOf(_fTec)>=0;});});
@@ -13275,6 +13561,7 @@ function renderAppHoy(){
       h+="<div class='app-of-num'>OF "+esc(of.of_sap)+(of.articulo?"<span class='app-of-art'> · "+esc(of.articulo)+"</span>":"")+"</div>";
       h+="<div class='app-of-desc'>"+esc(of.descripcion.substring(0,54))+"</div>";
       h+="<div class='app-of-meta'>";
+      if(of.grupo)h+="<span class='app-chip' style='background:rgba(147,51,234,.15);border:1px solid rgba(147,51,234,.4);color:#c084fc;font-weight:700;' title='Grupo "+esc(of.grupo)+"'>🔗 "+(of.grupoModo==='lote'?'LOTE ÚNICO':'SERIE')+"</span>";
       if(runC>0)h+="<span class='app-chip app-c-ep'><span class='app-c-dot'></span>"+runC+" activa"+(runC>1?"s":"")+"</span>";
       if(valC>0)h+="<span class='app-chip app-c-pur'>🔍 "+valC+"</span>";
       h+="<span class='app-chip app-c-plan'>"+done+"/"+of.ops.length+"</span>";

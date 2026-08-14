@@ -1237,6 +1237,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📄 Descargar PDF</button>
           <button onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📊 Excel con detalle</button>
+          <button onclick="ftRptExportPDFCodigos()" title="PDF con detalle y código QR por operación para entregar al operador" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
           <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
         </div>
       </div>
@@ -6256,6 +6257,21 @@ async function ftLoadDataFromSP() {
       _spId: f._spId!=null ? f._spId : null,
       grupo:     String(f.Grupo_Fabricacion||'').trim(),
       grupoModo: String(f.Grupo_Modo||'').toLowerCase().trim(),
+      ofCerrada: (function(){
+        var _st=f.Status||'';
+        if(_st==='Cerrado'||_st==='En proceso de cierre') return false; // el pedido ya avanzó
+        var _sap=f.OF_SAP||f.Title||'';
+        var _v=f.OF_Cerrada;
+        var _sp=(_v===true)||(String(_v||'').toLowerCase()==='true')||(String(_v||'').toLowerCase()==='si')||(String(_v||'')==='1');
+        // Guarda local (TTL 120s) para no revertir mientras SP confirma el cambio.
+        var _g=window._ofcLocal && window._ofcLocal[_sap];
+        if(_g){
+          if(_g.val===_sp){ delete window._ofcLocal[_sap]; return _sp; }
+          if(Date.now()-_g.at < 120000) return _g.val;
+          delete window._ofcLocal[_sap];
+        }
+        return _sp;
+      })(),
     }));
     // Restaurar pedidos cerrados desde localStorage
     // SOLO aplicar a OFs cuyo status en SP NO es activo (evita ocultar OFs recién cargadas)
@@ -7803,14 +7819,40 @@ function groupByPedido(ofs){
   arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
   return arr;
 }
-function pedidoIsComplete(pedido){
-  var ofs=DB.ofs.filter(function(o){return o.pedido===pedido;});
-  if(!ofs.length)return false;
-  return ofs.every(function(of){
-    var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
-    if(!aof||!aof.ops.length)return false;
-    return aof.ops.every(function(op){return op.status==="done"||op.status==="omitida";});
+// ¿Una OF cuenta como "completa" para poder cerrar el pedido?
+// Completa = Finalizada manualmente, o ya en cierre/cerrada, o producida al 100%
+// (todas sus operaciones done/omitida). Una OF "sin programar" NO cuenta (bloquea el cierre).
+function _ofCompletaParaCierre(of){
+  if(!of) return false;
+  if(of.ofCerrada===true) return true; // cerrada individualmente = ya completa
+  var st=of.status||'';
+  if(st==='Finalizada'||st==='Cerrado'||st==='En proceso de cierre') return true;
+  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of.of_sap;});
+  if(aof && aof.ops && aof.ops.length){ return aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';}); }
+  return false;
+}
+// El pedido puede cerrarse solo si TODAS sus OFs (excepto canceladas) están completas.
+function pedidoPuedeCerrar(pedido){
+  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  if(!ofs.length) return false;
+  return ofs.every(_ofCompletaParaCierre);
+}
+// Resumen de OFs del pedido para mostrar en Tiempo Real
+function _pedidoResumen(pedido){
+  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  var prog=0, sinProg=0, fin=0;
+  ofs.forEach(function(o){
+    var s=o.status||'';
+    if(s==='Finalizada'){ fin++; return; }
+    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===o.of_sap;});
+    var tieneOps=aof && aof.ops && aof.ops.length;
+    if(o.programadoHoy===true || tieneOps || s==='En Fabricacion' || s==='En proceso de cierre' || s==='Cerrado') prog++;
+    else sinProg++;
   });
+  return { total:ofs.length, prog:prog, sinProg:sinProg, fin:fin };
+}
+function pedidoIsComplete(pedido){
+  return pedidoPuedeCerrar(pedido);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -10698,7 +10740,7 @@ function ftRenderAgrupar(){
     html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">';
     html+='<label style="font-size:.72rem;color:var(--dim);">Modo del grupo:</label>';
     html+='<select id="agrupar-modo" class="form-select-sm"><option value="serie">Serie (una tras otra)</option><option value="lote">Lote único (una corrida)</option></select>';
-    html+='<button class="btn btn-primary btn-sm" onclick="ftCrearGrupo()">🔗 Crear grupo con seleccionadas</button>';
+    html+='<button id="agrupar-crear-btn" class="btn btn-primary btn-sm" onclick="ftCrearGrupo()">🔗 Crear grupo con seleccionadas</button>';
     html+='</div>';
     arts.forEach(function(a){
       html+='<div style="margin-bottom:10px;"><div style="font-size:.74rem;font-weight:600;color:var(--accent-l);margin-bottom:4px;">'+esc(a)+(DB.articles[a]?' · '+esc(DB.articles[a]):'')+'</div>';
@@ -10721,6 +10763,8 @@ async function ftCrearGrupo(){
   if(Object.keys(arts).length>1){ alert('Solo puedes agrupar OFs del MISMO artículo.'); return; }
   var modo=((document.getElementById('agrupar-modo')||{}).value)||'serie';
   var grupo='G'+Date.now().toString(36).slice(-5).toUpperCase();
+  var _crearBtn=document.getElementById('agrupar-crear-btn');
+  if(_crearBtn){ _crearBtn.disabled=true; _crearBtn.innerHTML='<span class="fab-spinner" style="width:12px;height:12px;border-width:2px;vertical-align:-1px;"></span> Creando grupo…'; }
   for(var i=0;i<saps.length;i++){
     var ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===saps[i];});
     if(!ofRec) continue;
@@ -10785,7 +10829,49 @@ async function ftDesagrupar(grupo){
   if(typeof renderProg==='function') renderProg();
 }
 
+// Finalizar una OF sin producir (cuenta para poder cerrar el pedido)
+async function ftFinalizarOF(of_sap){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;});
+  if(!of) return;
+  showInfoModal('Finalizar OF '+of_sap,
+    '¿Marcar la OF '+of_sap+' como FINALIZADA sin producir?\nContará como completa para poder cerrar el pedido.',
+    '✓ Finalizar',
+    async function(){
+      closeCModal('modal-info');
+      of.status='Finalizada'; of.programadoHoy=false;
+      var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;}); if(aof) aof.programadoHoy=false;
+      renderProg(); if(typeof renderSeg==='function') renderSeg();
+      try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Finalizada', Programado_Hoy:false}, of._spId); }
+      catch(e){ console.warn('[ftFinalizarOF] SP:', e.message); }
+    }
+  );
+}
+// Reabrir una OF finalizada (vuelve a "Sin programar")
+async function ftReabrirOF(of_sap){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;});
+  if(!of) return;
+  of.status='Sin programar';
+  renderProg(); if(typeof renderSeg==='function') renderSeg();
+  try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar'}, of._spId); }
+  catch(e){ console.warn('[ftReabrirOF] SP:', e.message); }
+}
+
+// renderProg con debounce + spinner: colapsa llamadas rápidas (al enfocar/navegar)
+// en una sola y muestra un loop de carga, para que la pantalla no se congele con
+// muchos registros. El trabajo pesado real está en _renderProgBody().
+var _progRenderT = null;
 function renderProg(){
+  var list = document.getElementById('prog-list');
+  // Spinner inmediato si aún no hay contenido o se está recargando
+  if (list && (window._fabLoading || !list.children.length)) {
+    list.innerHTML = '<div style="text-align:center;padding:34px 20px;color:var(--dim);font-size:.85rem"><span class="fab-spinner"></span><div style="margin-top:12px">Cargando programación…</div></div>';
+  }
+  if (_progRenderT) clearTimeout(_progRenderT);
+  _progRenderT = setTimeout(function(){ _progRenderT = null; try { _renderProgBody(); } catch(e){ console.warn('[renderProg]', e.message); } }, 45);
+}
+function _renderProgBody(){
   // Debug: verificar datos en primera OF
   if(DB.ofs && DB.ofs.length > 0){
     console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
@@ -10878,20 +10964,25 @@ function renderProg(){
       if(total>0){h+="<div style='height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:120px'><div style='height:100%;width:"+pct+"%;background:var(--green);border-radius:2px;'></div></div>";}
       h+="</div>";
       // columna derecha — status + botones
-      var _stLabel=ofCancelada?"Cancelada":ofEnCierre?"En cierre":of.programadoHoy?"Programada":"Sin programar";
-      var _stClass=ofCancelada?"c-cancel":ofEnCierre?"chip prio-media":of.programadoHoy?"c-ep":"c-plan";
+      var _finalizada = of.status==='Finalizada';
+      var _stLabel=ofCancelada?"Cancelada":ofEnCierre?"En cierre":_finalizada?"Finalizada":of.programadoHoy?"Programada":"Sin programar";
+      var _stClass=ofCancelada?"c-cancel":ofEnCierre?"chip prio-media":_finalizada?"c-done":of.programadoHoy?"c-ep":"c-plan";
       h+="<div style='display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;'>";
-      h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+_stLabel+"</span>";
-      h+="<div style='display:flex;gap:3px;'>";
+      h+="<span class='chip "+_stClass+"' style='font-size:.64rem;'>"+(_finalizada?"✓ ":"")+_stLabel+"</span>";
+      h+="<div style='display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;'>";
       if(ofCancelada){
         h+="<button onclick=\"restaurarOrden('"+esc(of.of_sap)+"')\" style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.25);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>↩ Restaurar</button>";
       } else if(ofEnCierre){
         h+="<span style='font-size:.68rem;color:var(--yellow);padding:2px 6px;'>🔒 En cierre</span>";
+      } else if(_finalizada){
+        if(_fabNivel()!=='lectura') h+="<button onclick=\"ftReabrirOF('"+esc(of.of_sap)+"')\" style='background:rgba(212,160,23,.12);border:1px solid rgba(212,160,23,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--yellow);white-space:nowrap;'>↩ Reabrir</button>";
       } else {
         if(_fabNivel()!=='lectura') h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);white-space:nowrap;'>👷 Ops</button>";
+        // Finalizar: solo para OFs SIN PROGRAMAR (no se van a producir) — cuentan para poder cerrar el pedido
+        if(!of.programadoHoy && _fabNivel()!=='lectura') h+="<button onclick=\"ftFinalizarOF('"+esc(of.of_sap)+"')\" title='Marcar como finalizada sin producir (cuenta para cerrar el pedido)' style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>✓ Finalizar</button>";
         if(_fabNivel()!=='lectura') h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       }
-      if(!ofEnCierre && _fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
+      if(!ofEnCierre && !_finalizada && _fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
       h+="</div></div>";
       h+="</div>"; // cierre prog-of-row
 
@@ -13185,6 +13276,8 @@ appConfirmValCal = function(){
 // Se puede fijar aquí, o sobrescribir con localStorage 'madero_camara_base' (pruebas).
 window.CAMARA_BASE_URL = window.CAMARA_BASE_URL || '';
 window.CAMARA_CANALES  = window.CAMARA_CANALES || {}; // { 'Nombre Estación': canal }
+// Badge compacto de grupo/lote para las filas de "Carga por estación"
+function _grpBadgeCarga(aof){ return (aof&&aof.grupo)?' <span style="background:rgba(147,51,234,.18);border:1px solid rgba(147,51,234,.4);color:#c084fc;border-radius:4px;padding:0 5px;font-size:.58rem;font-weight:700;white-space:nowrap;">🔗 '+esc(aof.grupo)+(aof.grupoModo==="lote"?" · Lote":" · Serie")+'</span>':""; }
 function _camaraBase(){ try{ return (localStorage.getItem('madero_camara_base')||'').trim() || window.CAMARA_BASE_URL || ''; }catch(e){ return window.CAMARA_BASE_URL||''; } }
 function _camaraCanal(estacion){
   if(!estacion) return null;
@@ -13332,15 +13425,18 @@ function renderSeg(){
 
   // -- 12: Filtro de estado --
   h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">';
-  ['activos','cierre','cerrados'].forEach(function(f){
-    var labels={activos:'🟢 En proceso',cierre:'🟡 En proceso de cierre',cerrados:'✅ Cerrados'};
-    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+'</button>';
+  ['activos','ofcerradas','cierre','cerrados'].forEach(function(f){
+    var labels={activos:'🟢 En proceso',ofcerradas:'🔒 OF Cerradas',cierre:'🟡 En proceso de cierre',cerrados:'✅ Cerrados'};
+    var _cnt = (f==='ofcerradas') ? DB.ofs.filter(function(o){return o.ofCerrada && !o.pedidoCerrado && !o.pedidoCierre;}).length : 0;
+    h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+(f==='ofcerradas'&&_cnt>0?' ('+_cnt+')':'')+'</button>';
   });
   h+='</div>';
 
   var pedidos_to_show;
   if(filterStatus==='activos'){
-    pedidos_to_show = DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre;});
+    pedidos_to_show = DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre && !o.ofCerrada;});
+  } else if(filterStatus==='ofcerradas'){
+    pedidos_to_show = DB.ofs.filter(function(o){return o.ofCerrada && !o.pedidoCerrado && !o.pedidoCierre;});
   } else if(filterStatus==='cierre'){
     pedidos_to_show = DB.ofs.filter(function(o){return o.pedidoCierre && !o.pedidoCerrado;});
   } else {
@@ -13420,14 +13516,16 @@ function renderSeg(){
       'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer;'+
       'user-select:none;">';
     h+='<div><div style="font-family:\'DM Mono\',monospace;font-size:.78rem;color:var(--accent-l);font-weight:600;">Pedido '+esc(g.pedido)+'</div>';
-    h+='<div style="font-size:.82rem;font-weight:600;">'+esc(g.cliente)+'</div></div>';
+    h+='<div style="font-size:.82rem;font-weight:600;">'+esc(g.cliente)+'</div>';
+    h+=(function(){var r=_pedidoResumen(g.pedido);return '<div style="font-size:.66rem;color:var(--dim);margin-top:2px;">📦 <strong style="color:var(--text);">'+r.prog+'</strong> programada'+(r.prog!==1?'s':'')+' · <strong style="color:'+(r.sinProg>0?'var(--yellow)':'var(--text)')+';">'+r.sinProg+'</strong> sin programar'+(r.fin?' · <strong style="color:var(--green);">'+r.fin+'</strong> finalizada'+(r.fin!==1?'s':''):'')+'</div>';})();
+    h+='</div>';
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
     h+='<span class="'+pC[g.prioridad]+'">'+pL[g.prioridad]+'</span>';
     h+='<div style="text-align:right;"><div style="font-family:\'DM Mono\',monospace;font-size:.76rem;color:var(--green);">'+grpDone+'/'+grpTotal+' ops · '+grpPct+'%</div>';
     h+='<div style="width:120px;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:3px;"><div style="height:100%;width:'+grpPct+'%;background:var(--green);border-radius:3px;"></div></div></div>';
     h+='<span style="color:var(--dim);font-size:.9rem;transition:.2s;transform:rotate('+(isExpanded?'0':'180')+'deg);display:inline-block;">▲</span>';
-    // -- 12: Botones de cierre --
-    if(filterStatus==='activos' && allDone){
+    // -- 12: Botones de cierre -- (solo si TODAS las OFs del pedido están completas)
+    if((filterStatus==='activos' || filterStatus==='ofcerradas') && pedidoPuedeCerrar(g.pedido)){
       h+='<div style="display:flex;gap:5px;">';
       if(_fabNivel()!=='lectura') h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\''+g.pedido+'\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
       h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
@@ -13492,6 +13590,14 @@ function renderSeg(){
         h+=' <button onclick="event.stopPropagation();ftCycleMonitorVis(\''+esc(of.of_sap)+'\')" title="Cambiar visibilidad en Monitor (auto → fijar → ocultar)" style="font-size:.66rem;padding:2px 7px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:'+_mCol+';cursor:pointer;white-space:nowrap;">'+_mLbl+'</button>';
       } else {
         h+=' <span style="font-size:.66rem;color:'+_mCol+';white-space:nowrap;">'+_mLbl+'</span>';
+      }
+      // Cerrar / Reabrir orden individual (depuración de OFs finalizadas del pedido)
+      if(typeof _fabNivel==='function' && _fabNivel()!=='lectura'){
+        if(filterStatus==='activos' && !of.ofCerrada && _ofCompletaParaCierre(of)){
+          h+=' <button onclick="event.stopPropagation();cerrarOrdenIndividual(\''+esc(of.of_sap)+'\')" title="Cerrar esta orden y moverla a OF Cerradas" style="font-size:.66rem;padding:2px 8px;border-radius:6px;border:1px solid rgba(46,160,67,.4);background:rgba(46,160,67,.14);color:var(--green);cursor:pointer;white-space:nowrap;">🔒 Cerrar Orden</button>';
+        } else if(filterStatus==='ofcerradas'){
+          h+=' <button onclick="event.stopPropagation();reabrirOrdenIndividual(\''+esc(of.of_sap)+'\')" title="Reabrir esta orden (regresar a En proceso)" style="font-size:.66rem;padding:2px 8px;border-radius:6px;border:1px solid rgba(212,160,23,.4);background:rgba(212,160,23,.14);color:var(--yellow);cursor:pointer;white-space:nowrap;">↩ Reabrir</button>';
+        }
       }
       h+='</div>';
       h+='<span style="font-size:.72rem;color:var(--dim);font-family:\'DM Mono\',monospace;">'+done+'/'+_nOm+' · '+pct+'%</span></div>';
@@ -13603,7 +13709,7 @@ function renderSeg(){
   });
   if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
-      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.')))+'</div>';
+      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
   // Update Carga por Estacion in historial page too
@@ -13620,11 +13726,49 @@ function renderSeg(){
   document.getElementById('seg-kpi-val').textContent=allOps.filter(function(o){return o.status==='validating';}).length;
 }
 
+// -- Cierre INDIVIDUAL de OF (depuración) — persistido en SP col. OF_Cerrada
+async function _ofCerradaSetSP(of, val){
+  window._ofcLocal = window._ofcLocal || {};
+  window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // guard anti-revert
+  var prev = of.ofCerrada;
+  of.ofCerrada = val;                       // optimista
+  (window.renderSeg||renderSeg)();
+  try{
+    await spEscribir('FT_OrdenesFabricacion', { OF_Cerrada: val }, of._spId);
+    window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // refrescar TTL tras confirmar
+    fireSync('coord', val ? 'of_cerrada' : 'of_reabierta', { of_sap: of.of_sap });
+  }catch(e){
+    of.ofCerrada = prev;                    // revertir en error
+    if(window._ofcLocal) delete window._ofcLocal[of.of_sap];
+    if(typeof ftErrNotify==='function') ftErrNotify('_ofCerradaSetSP', e, 'FT_OrdenesFabricacion');
+    else console.warn('SP OF_Cerrada:', e.message);
+    (window.renderSeg||renderSeg)();
+  }
+}
+function cerrarOrdenIndividual(ofSap){
+  var of = DB.ofs.find(function(o){return o.of_sap===ofSap;});
+  if(!of) return;
+  if(!_ofCompletaParaCierre(of)){
+    if(typeof showInfoModal==='function') showInfoModal('No se puede cerrar la orden','La OF '+ofSap+' aún tiene operaciones pendientes. Solo puedes cerrar órdenes finalizadas.','Entendido',function(){closeCModal('modal-info');});
+    return;
+  }
+  _ofCerradaSetSP(of, true);
+}
+function reabrirOrdenIndividual(ofSap){
+  var of = DB.ofs.find(function(o){return o.of_sap===ofSap;});
+  if(!of) return;
+  _ofCerradaSetSP(of, false);
+}
+window.cerrarOrdenIndividual = cerrarOrdenIndividual;
+window.reabrirOrdenIndividual = reabrirOrdenIndividual;
+
 // -- 12: Funciones cierre de pedido ---------------------------
 async function movePedidoCierre(pedido){
   DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
     o.pedidoCierre=true;
+    o.ofCerrada=false; // las OFs cerradas se reincorporan al mover el pedido a cierre
     o.status='En proceso de cierre';
+    if(window._ofcLocal) window._ofcLocal[o.of_sap]={val:false,at:Date.now()};
   });
   (window.renderSeg||renderSeg)();
   fireSync('coord','pedido_cierre',{pedido:pedido});
@@ -13635,7 +13779,7 @@ async function movePedidoCierre(pedido){
     for(var i=0;i<ofsDelPedido.length;i++){
       var of = ofsDelPedido[i];
       var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
-      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre'}, item.id);
+      if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'En proceso de cierre', OF_Cerrada:false}, item.id);
     }
   } catch(e){ console.warn('SP movePedidoCierre:', e.message); }
 }
@@ -13649,8 +13793,9 @@ async function cerrarPedido(pedido){
       var _cerrados = JSON.parse(localStorage.getItem(_pedidosCerradosKey)||'[]');
       if(_cerrados.indexOf(pedido)<0){ _cerrados.push(pedido); localStorage.setItem(_pedidosCerradosKey, JSON.stringify(_cerrados)); }
       DB.ofs.filter(function(o){return o.pedido===pedido;}).forEach(function(o){
-        o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false;
+        o.pedidoCerrado=true; o.pedidoCierre=false; o.programadoHoy=false; o.ofCerrada=false;
         o.status='Cerrado';
+        if(window._ofcLocal) window._ofcLocal[o.of_sap]={val:false,at:Date.now()};
       });
       DB.activeOFs = DB.activeOFs.filter(function(a){
         var of=DB.ofs.find(function(o){return o.of_sap===a.of_sap;});
@@ -13665,7 +13810,7 @@ async function cerrarPedido(pedido){
         for(var i=0;i<ofsDelPedido.length;i++){
           var of = ofsDelPedido[i];
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
-          if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false}, item.id);
+          if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false,OF_Cerrada:false}, item.id);
         }
       } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }
@@ -14369,7 +14514,7 @@ function renderHist(){
     running.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(46,160,67,.08);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--green);font-weight:700;">▶</span>';
-      h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+      h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       var el2=getEl(x.aof.of_sap+'_'+x.op.id);
@@ -14379,7 +14524,7 @@ function renderHist(){
     paused2.forEach(function(x){
       h2+='<div style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:5px;margin-bottom:3px;font-size:.72rem;">';
       h2+='<span style="color:var(--yellow);font-weight:700;">⏸</span>';
-      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+      h2+='<span style="flex:1;color:var(--yellow);">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
       h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.65rem;color:var(--accent-l);">OF'+esc(x.aof.of_sap)+'</span>';
       if(x.op.tecnico) h2+='<span style="font-size:.65rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
       h2+='</div>';
@@ -14389,7 +14534,7 @@ function renderHist(){
       pending.forEach(function(x,qi2){
         h2+='<div style="display:flex;align-items:center;gap:5px;padding:3px 6px;background:rgba(255,255,255,.03);border-radius:5px;margin-bottom:2px;font-size:.7rem;">';
         h2+='<span style="min-width:18px;height:18px;background:rgba(31,111,235,.2);color:var(--accent-l);border-radius:4px;font-size:.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;">'+(qi2+1)+'</span>';
-        h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+'</span>';
+        h2+='<span style="flex:1;">'+esc(x.op.nombre)+(x.aof.articulo?' <span style="color:var(--dim);font-weight:400;">— '+esc(x.aof.articulo)+(DB.articles[x.aof.articulo]?' '+esc(DB.articles[x.aof.articulo]):'')+'</span>':'')+_grpBadgeCarga(x.aof)+'</span>';
         h2+='<span style="font-family:\'DM Mono\',monospace;font-size:.62rem;color:var(--dim);">OF'+esc(x.aof.of_sap)+'</span>';
         if(x.op.tecnico) h2+='<span style="font-size:.62rem;color:var(--dim);">👷'+esc(x.op.tecnico)+'</span>';
         h2+='</div>';
@@ -15952,6 +16097,90 @@ function ftRptExportExcel(){
   if(window.XLSX){doExcel();}
   else{var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=doExcel;document.head.appendChild(s);}
 }
+
+// ── PDF con detalle + código QR por operación (para entregar al operador) ──
+// El QR codifica "FT|OF_SAP|Op_ID" para que el Monitor lo escanee y abra acciones rápidas.
+function ftRptExportPDFCodigos(){
+  function _trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'.' : s; }
+  function build(){
+    var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    // Mismos filtros que el reporte en pantalla
+    var filtEst=(document.getElementById('rpt-filtro-estacion')||{}).value||'';
+    var filtStatus=(document.getElementById('rpt-filtro-status')||{}).value||'';
+    var filtDesde=(document.getElementById('rpt-desde')||{}).value||'';
+    var filtHasta=(document.getElementById('rpt-hasta')||{}).value||'';
+    var filtQ=((document.getElementById('rpt-buscar')||{}).value||'').toLowerCase().trim();
+    var built=ftRptBuildData(); var porEstacion=built.porEstacion;
+    var items=[];
+    Object.keys(porEstacion).forEach(function(est){
+      if(filtEst && est!==filtEst) return;
+      porEstacion[est].forEach(function(r){
+        if(filtDesde && r.fProg && r.fProg<filtDesde) return;
+        if(filtHasta && r.fProg && r.fProg>filtHasta) return;
+        if(filtStatus){var fs=filtStatus.toLowerCase();
+          if(fs==='en proceso'&&r.opStatus!=='En Proceso')return;
+          if(fs==='planeacion'&&r.opStatus!=='Planeación')return;
+          if(fs==='terminada'&&r.opStatus!=='Terminada')return;}
+        if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase(); if(hay.indexOf(filtQ)<0) return;}
+        (r.ops||[]).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);}).forEach(function(op){
+          if((op.status||'').toLowerCase()==='omitida') return;
+          items.push({est:est, of:r.of, op:op});
+        });
+      });
+    });
+    if(!items.length){ alert('No hay operaciones con los filtros seleccionados.'); return; }
+    // Generar todos los QR (QRious, síncrono → dataURL)
+    items.forEach(function(it){
+      try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
+    });
+    (function(){
+      var pageW=210, pageH=297, mL=10, mT=18, gap=6;
+      var cols=2, cardW=(pageW-mL*2-gap)/cols, cardH=64, rowGap=4;
+      var rowsPerPage=Math.max(1, Math.floor((pageH-mT-8)/(cardH+rowGap)));
+      var perPage=cols*rowsPerPage;
+      var now=new Date().toLocaleDateString('es-MX');
+      function header(){ doc.setTextColor(20);doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('Operaciones con código QR'+(filtEst?' — '+filtEst:''),mL,11); doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);doc.text('Generado: '+now+'  ·  '+items.length+' operaciones  ·  Escanea el QR en el Monitor',mL,15.5); }
+      header();
+      items.forEach(function(it,i){
+        var posInPage=i%perPage;
+        if(i>0 && posInPage===0){ doc.addPage(); header(); }
+        var col=posInPage%cols, row=Math.floor(posInPage/cols);
+        var x=mL+col*(cardW+gap), y=mT+row*(cardH+rowGap);
+        doc.setDrawColor(210);doc.setLineWidth(0.2);doc.roundedRect(x,y,cardW,cardH,2,2);
+        var qrSize=30;
+        if(it._qr){ try{ doc.addImage(it._qr,'PNG',x+3,y+4,qrSize,qrSize); }catch(e){} }
+        doc.setTextColor(20);doc.setFontSize(6.5);doc.setFont('helvetica','bold');
+        doc.text('OF '+(it.of.of_sap||'')+' · Op '+(it.op.op_id||''), x+3, y+4+qrSize+3);
+        // Datos de grupo (desde la data actual: DB.ofs / DB.activeOFs)
+        var _ofRec=(DB.ofs||[]).find(function(o){return o.of_sap===it.of.of_sap;});
+        var _grupo=_ofRec?_ofRec.grupo:'', _grupoModo=_ofRec?_ofRec.grupoModo:'';
+        var _grpN=0, _grpTot=0;
+        if(_grupo){ (DB.activeOFs||[]).forEach(function(aof2){ if(aof2.grupo!==_grupo)return; (aof2.ops||[]).forEach(function(o2){ if(o2.nombre===it.op.nombre && o2.estacion===(it.op.estacion||it.est)){ _grpN++; _grpTot+=(o2.qty_total||0); } }); }); }
+        var _feRaw=(_ofRec&&_ofRec.fecha_entrega)?_ofRec.fecha_entrega:(it.of.fecha_entrega||'');
+        var _feFmt=''; if(_feRaw){ var _fp=String(_feRaw).split('T')[0].split('-'); _feFmt=(_fp.length===3)?(_fp[2]+'/'+_fp[1]+'/'+_fp[0]):String(_feRaw); }
+        var tx=x+3+qrSize+4, tw=cardW-(qrSize+10), ty=y+7.5;
+        doc.setTextColor(20);doc.setFontSize(8.8);doc.setFont('helvetica','bold');
+        var nameLines=doc.splitTextToSize(String(it.op.nombre||'—'),tw).slice(0,2);
+        doc.text(nameLines,tx,ty); ty+=nameLines.length*4.1+1.0;
+        if(_feFmt){ doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(178,34,34); doc.text('Entrega: '+_feFmt,tx,ty); ty+=5.4; doc.setTextColor(70); }
+        doc.setFontSize(7.1);doc.setFont('helvetica','normal');doc.setTextColor(70);
+        if(it.of.descripcion){ var _dl=doc.splitTextToSize(String(it.of.descripcion),tw).slice(0,2); doc.text(_dl,tx,ty); ty+=_dl.length*3.8+0.6; }
+        doc.text('Estacion: '+_trunc(it.est||'—',30),tx,ty); ty+=3.9;
+        doc.text('Articulo: '+_trunc(it.of.articulo||'—',18)+'   Cant: '+(it.op.qty_total||it.of.cantidad||'—'),tx,ty); ty+=3.9;
+        doc.text('Cliente: '+_trunc(it.of.cliente||'—',30),tx,ty); ty+=3.9;
+        doc.text('Tecnico: '+_trunc(it.op.tecnico||'(sin asignar)',28),tx,ty); ty+=3.9;
+        var _ay=(it.op.ayudantes||[]).filter(Boolean);
+        if(_ay.length){ doc.text('Ayudantes: '+_trunc(_ay.join(', '),30),tx,ty); ty+=3.9; }
+        if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
+      });
+      doc.save('Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf');
+    })();
+  }
+  function ensureQR(cb){ if(window.QRious){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar la librería de códigos QR.'); }; document.head.appendChild(s); }
+  function ensureJsPDF(cb){ if(window.jspdf&&window.jspdf.jsPDF){ cb(); return; } var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=cb; s.onerror=function(){ alert('No se pudo cargar jsPDF.'); }; document.head.appendChild(s); }
+  ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
+}
+window.ftRptExportPDFCodigos = ftRptExportPDFCodigos;
 
 
 
