@@ -1256,7 +1256,7 @@ tr:last-child td{border-bottom:none;}
         </div>
         <input type="date" id="rpt-desde" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
         <input type="date" id="rpt-hasta" onchange="ftRptRender()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;">
-        <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
+        <input type="text" id="rpt-buscar" oninput="ftRptRender()" placeholder="🔍 OF, artículo, cliente, desc..." style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:180px;">
         <button onclick="ftRptLimpiarFiltros()" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:5px 10px;color:var(--text-dim);font-size:.75rem;cursor:pointer;">✕ Limpiar</button>
       </div>
       <div id="rpt-loading" style="text-align:center;padding:40px;color:var(--dim,#64748b);font-size:.85rem;">⏳ Cargando datos...</div>
@@ -15878,6 +15878,7 @@ async function ftRptLoad() {
     _rptData.ofs=(res[0].value||[]).map(function(i){
       var f=i.fields||{};
       return{id:i.id,of_sap:f.OF_SAP||f.Title||'',pedido:f.Numero_Pedido||f.Pedido||'',cliente:f.Cliente||'',
+        articulo:f.Numero_Articulo||'',
         descripcion:f.Descripcion_Articulo||'',cantidad:parseFloat(String(f.Cantidad||'').replace(',','.'))||0,status:f.Status||'Sin programar',
         fecha_prog:(f.Fecha_Programacion||'').split('T')[0],fecha_entrega:(f.Fecha_Entrega||'').split('T')[0],prioridad:f.Prioridad||'Normal'};
     }).filter(function(of){var s=(of.status||'').toLowerCase();return s!=='cerrado'&&s!=='pedido cancelado'&&s!=='cerrada';});
@@ -16008,7 +16009,7 @@ function _rptAplicarFiltros(){
       if(filtDesde&&r.fProg&&r.fProg<filtDesde)return false;
       if(filtHasta&&r.fProg&&r.fProg>filtHasta)return false;
       if(!_rptStatusMatch(r.opStatus))return false;
-      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
+      if(filtQ){var hay=(r.of.of_sap+' '+r.of.pedido+' '+r.of.cliente+' '+r.of.descripcion+' '+(r.of.articulo||'')+' '+r.operador).toLowerCase();if(hay.indexOf(filtQ)<0)return false;}
       return true;
     });
     if(filas.length) out[est]=filas;
