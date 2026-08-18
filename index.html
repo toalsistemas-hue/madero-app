@@ -4553,9 +4553,11 @@ async function ftAdmArtSave(){
   var num=document.getElementById('art-edit-num').value.trim().toUpperCase();
   var desc=document.getElementById('art-edit-desc').value.trim();
   if(!num||!desc){alert('Número y descripción son requeridos.');return;}
-  // Verificar duplicado (solo al crear)
+  // Verificar duplicado (solo al crear) — SOLO contra la lista maestra FT_Articulos.
+  // DB.articles incluye artículos de OFs/plantillas que NO están dados de alta, por lo
+  // que no debe usarse aquí (bloqueaba altas válidas).
   var isNew=!document.getElementById('art-edit-num').readOnly;
-  if(isNew && DB.articles[num]){alert('El artículo '+num+' ya existe.');return;}
+  if(isNew && (DB.articulosMaestros||{})[num]){alert('El artículo '+num+' ya está registrado en la lista de Artículos.');return;}
   var _b=document.getElementById('art-save-btn'); _btnSpinner(_b,true);
   try {
     // Buscar si existe en SP
@@ -4609,12 +4611,15 @@ function ftAdmArtProcessFile(file){
     var wb=XLSX.read(data,{type:'array'});
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
-    var items=[];var dups=0;
+    var items=[];var dups=0;var seen={};
     rows.forEach(function(r){
       var num=(r.Numero_Articulo||r.titulo||r.Title||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||r.DESCRIPCION||'').toString().trim();
       if(!num) return;
-      if(DB.articles[num]){dups++;return;}
+      // Duplicado = ya está en la lista maestra FT_Articulos, o repetido dentro del mismo archivo.
+      // (No usar DB.articles: incluye artículos de OFs/plantillas que aún no están dados de alta.)
+      if((DB.articulosMaestros||{})[num] || seen[num]){dups++;return;}
+      seen[num]=true;
       items.push({num:num,desc:desc});
     });
     _ftArtPendingExcel=items;
