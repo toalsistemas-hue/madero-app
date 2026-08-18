@@ -1237,7 +1237,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📄 Descargar PDF</button>
           <button onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📊 Excel con detalle</button>
-          <button onclick="ftRptExportPDFCodigos()" title="PDF con detalle y código QR por operación para entregar al operador" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
+          <button onclick="ftRptPDFCodigosChooser()" title="PDF con códigos QR — elige General (solo OFs) o Con operaciones" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
           <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
         </div>
       </div>
@@ -16158,7 +16158,8 @@ function ftRptExportExcel(){
 
 // ── PDF con detalle + código QR por operación (para entregar al operador) ──
 // El QR codifica "FT|OF_SAP|Op_ID" para que el Monitor lo escanee y abra acciones rápidas.
-function ftRptExportPDFCodigos(){
+function ftRptExportPDFCodigos(modo){
+  var _modo=(modo==='general')?'general':'operaciones';
   function _trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'.' : s; }
   function build(){
     var jPDF=window.jspdf.jsPDF; var doc=new jPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -16174,10 +16175,12 @@ function ftRptExportPDFCodigos(){
       });
     });
     if(!items.length){ alert('No hay operaciones con los filtros seleccionados.'); return; }
-    // Generar todos los QR (QRious, síncrono → dataURL)
-    items.forEach(function(it){
-      try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
-    });
+    // Generar los QR de operación solo cuando el modo lo requiere (Con operaciones)
+    if(_modo==='operaciones'){
+      items.forEach(function(it){
+        try{ var payload='FT|'+(it.of.of_sap||'')+'|'+(it.op.op_id||''); it._qr=new window.QRious({value:payload,size:220,level:'M'}).toDataURL('image/png'); }catch(e){}
+      });
+    }
     (function(){
       var pageW=210, pageH=297, mL=10, gap=6, rowGap=4;
       var cols=2, cardW=(pageW-mL*2-gap)/cols;
@@ -16201,7 +16204,7 @@ function ftRptExportPDFCodigos(){
       doc.setTextColor(20);doc.setFontSize(13);doc.setFont('helvetica','bold');
       doc.text('Reporte de codigos QR'+_rptEstLabel(), mL, 12);
       doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(90);
-      doc.text('Generado: '+now+'  -  '+_mainOFs.length+' ordenes  -  '+items.length+' operaciones', mL, 16.5);
+      doc.text('Generado: '+now+'  -  '+_mainOFs.length+' ordenes'+(_modo==='operaciones'?('  -  '+items.length+' operaciones'):'  -  Solo QR generales'), mL, 16.5);
       y=22;
 
       function sectionTitle(t, sub, col){
@@ -16286,18 +16289,18 @@ function ftRptExportPDFCodigos(){
         if(_grupo){ doc.setTextColor(124,58,237); doc.text('Grupo '+_grupo+' ('+(_grupoModo==='lote'?'Lote':'Serie')+'): '+_grpN+' ords - total '+_grpTot+' pzas',tx,ty); doc.setTextColor(70); ty+=3.9; }
       }
 
-      // Sección 1: QR principal por OF
+      // Sección 1: QR principal por OF (siempre)
       sectionTitle('QR principal por Orden de Fabricacion', 'Escanea el QR de una OF para ver su avance completo ('+_mainOFs.length+' ordenes)', [124,58,237]);
       grid(_mainOFs, 52, drawMain);
 
-      // Divisor entre secciones (misma hoja si hay espacio)
-      divider();
+      // Sección 2: QR por operación (solo en modo "Con operaciones")
+      if(_modo==='operaciones'){
+        divider();
+        sectionTitle('QR por operacion', 'Escanea el QR de una operacion en el Monitor para las acciones rapidas ('+items.length+' operaciones)', [20,20,20]);
+        grid(items, 64, drawOp);
+      }
 
-      // Sección 2: QR por operación
-      sectionTitle('QR por operacion', 'Escanea el QR de una operacion en el Monitor para las acciones rapidas ('+items.length+' operaciones)', [20,20,20]);
-      grid(items, 64, drawOp);
-
-      var _fname='Operaciones_QR_'+new Date().toISOString().slice(0,10)+'.pdf';
+      var _fname=(_modo==='general'?'QR_General_OF_':'Operaciones_QR_')+new Date().toISOString().slice(0,10)+'.pdf';
       _ftRptShowPrintPreview(doc, _fname);
     })();
   }
@@ -16306,6 +16309,32 @@ function ftRptExportPDFCodigos(){
   ensureJsPDF(function(){ ensureQR(function(){ build(); }); });
 }
 window.ftRptExportPDFCodigos = ftRptExportPDFCodigos;
+
+// Selector de modo antes de generar el PDF con códigos (General / Con operaciones)
+function ftRptPDFCodigosChooser(){
+  var ex=document.getElementById('rptcod-modo-modal'); if(ex) ex.remove();
+  var d=document.createElement('div'); d.id='rptcod-modo-modal';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
+  d.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:14px;width:min(430px,94vw);padding:20px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
+      '<div style="font-weight:700;font-size:1rem;color:#e6edf3;">🔳 PDF con códigos</div>'+
+      '<button onclick="_rptCodModoClose()" style="background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer;line-height:1;">✕</button>'+
+    '</div>'+
+    '<div style="font-size:.8rem;color:#8b949e;margin-bottom:16px;">Elige qué códigos QR incluir en el reporte:</div>'+
+    '<button onclick="_rptCodModoClose();ftRptExportPDFCodigos(\'general\')" style="width:100%;text-align:left;background:rgba(147,51,234,.12);border:1px solid rgba(147,51,234,.35);border-radius:10px;padding:13px 15px;color:#e6edf3;cursor:pointer;margin-bottom:10px;">'+
+      '<div style="font-weight:700;font-size:.9rem;color:#c084fc;">General</div>'+
+      '<div style="font-size:.74rem;color:#8b949e;margin-top:2px;">Solo el QR general de cada orden (avance de la OF).</div>'+
+    '</button>'+
+    '<button onclick="_rptCodModoClose();ftRptExportPDFCodigos(\'operaciones\')" style="width:100%;text-align:left;background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.35);border-radius:10px;padding:13px 15px;color:#e6edf3;cursor:pointer;">'+
+      '<div style="font-weight:700;font-size:.9rem;color:#58a6ff;">Con operaciones</div>'+
+      '<div style="font-size:.74rem;color:#8b949e;margin-top:2px;">El QR general más el QR de cada operación (como actualmente).</div>'+
+    '</button>'+
+  '</div>';
+  document.body.appendChild(d);
+}
+function _rptCodModoClose(){ var m=document.getElementById('rptcod-modo-modal'); if(m) m.remove(); }
+window.ftRptPDFCodigosChooser=ftRptPDFCodigosChooser;
+window._rptCodModoClose=_rptCodModoClose;
 
 // ── Menú de impresión con vista previa para el PDF de códigos QR ──────────
 function _ftRptShowPrintPreview(doc, fname){
