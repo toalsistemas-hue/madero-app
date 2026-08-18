@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.77</title>
+<title>FabTracker App v2.78</title>
 
 <!-- MSAL Browser -->
 
@@ -5670,8 +5670,10 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
-  // Guard: solo terminar si está corriendo o en validación
-  if(op.status!=='running' && op.status!=='validating'){
+  // Guard: permitir terminar si está corriendo, PAUSADA o en validación.
+  // El supervisor puede terminar directamente una operación pausada / fin de turno
+  // (el temporizador ya está congelado en pausa; getTotalOpMins usa el tiempo acumulado).
+  if(op.status!=='running' && op.status!=='validating' && op.status!=='paused'){
     console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
     closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
   }
@@ -15669,8 +15671,10 @@ function appConfirmFinish(){
   var of=DB.activeOFs.find(function(o){return o.of_sap===ctx.of_sap;});
   var op=of?of.ops.find(function(o){return o.id===ctx.op_id;}):null;if(!op)return;
   var key=ctx.of_sap+"_"+ctx.op_id;
-  // Guard: solo terminar si está corriendo o en validación
-  if(op.status!=='running' && op.status!=='validating'){
+  // Guard: permitir terminar si está corriendo, PAUSADA o en validación.
+  // El supervisor puede terminar directamente una operación pausada / fin de turno
+  // (el temporizador ya está congelado en pausa; getTotalOpMins usa el tiempo acumulado).
+  if(op.status!=='running' && op.status!=='validating' && op.status!=='paused'){
     console.warn('[Guard] appConfirmFinish: status inválido ('+op.status+')');
     closeAppModal('app-modal-finish'+(APP.currentFinishSfx||'')); return;
   }
