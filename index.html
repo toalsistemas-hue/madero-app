@@ -14057,7 +14057,8 @@ function renderHist(){
           inicio: _inicioUltimoTurno,
           fin: op.fin||'—',
           fecha: _fechaInicioRow,
-          fechaFin: _fechaFinRow
+          fechaFin: _fechaFinRow,
+          concluido: (op && op._kpiSeg) ? {fecha:'',hora:''} : _kpiConcluidoDe(op)
         });
       }
 
@@ -14074,7 +14075,8 @@ function renderHist(){
           fecha:seg.fecha||'',
           nombre:op.nombre+' ('+turnoLabel+')',
           pauseReason:'🌙 '+turnoLabel,
-          turnos:[] // segmento individual no tiene sub-turnos
+          turnos:[], // segmento individual no tiene sub-turnos
+          _kpiSeg:true // marcar como segmento de turno (para no repetir "Concluido")
         });
         var savedOp=op;op=segOp;
         registerTech(seg.tecnico,'principal');
@@ -14125,6 +14127,21 @@ function renderHist(){
     if(a==null||b==null) return null;
     var d=Math.round((b-a)/60000);
     return (isFinite(d) && d>=0 && d<7*24*60) ? d : null;
+  }
+  // Helper: fecha/hora en que el OPERADOR concluyó la operación (status op_concluded).
+  // En la bitácora se registra como "Actualizó la operación" (previo a "Terminó" del supervisor).
+  function _kpiConcluidoDe(op){
+    var h = op && op.historialCambios;
+    if(!Array.isArray(h) || !h.length) return {fecha:'', hora:''};
+    var idxTermino=-1;
+    for(var i=h.length-1;i>=0;i--){ if(String(h[i].accion||'').indexOf('Terminó la operación')===0){ idxTermino=i; break; } }
+    var found=null;
+    for(var j=0;j<h.length;j++){
+      if(idxTermino>=0 && j>idxTermino) break;
+      if(String(h[j].accion||'').indexOf('Actualizó la operación')===0) found=h[j];
+    }
+    if(!found){ for(var k=h.length-1;k>=0;k--){ if(String(h[k].accion||'').indexOf('Actualizó la operación')===0){ found=h[k]; break; } } }
+    return found ? {fecha:found.fecha||'', hora:found.hora||''} : {fecha:'', hora:''};
   }
   techH+='<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;margin-bottom:10px;">👷 Desempeño de Técnicos</div>';
 
@@ -14215,8 +14232,10 @@ function renderHist(){
         techH+='<thead><tr>';
         techH+='<th style="color:var(--dim);">Rol</th><th style="color:var(--dim);">Tipo</th><th style="color:var(--dim);">OF</th><th style="color:var(--dim);">Pedido</th>';
         techH+='<th style="color:var(--dim);">Operación</th><th style="color:var(--dim);">Estación</th>';
-        techH+='<th style="color:var(--dim);">Inicio</th><th style="color:var(--dim);">Fin</th>';
-        techH+='<th style="color:var(--accent-l);" title="Tiempo real trabajado (cronómetro, sin pausas)">Tiempo</th>';
+        techH+='<th style="color:var(--dim);" title="Fecha y hora en que se inició la operación">Inicio</th>';
+        techH+='<th style="color:var(--dim);white-space:nowrap;font-size:.65rem;" title="Fecha y hora en que el OPERADOR concluyó la operación (antes de la validación del supervisor)">Concluido</th>';
+        techH+='<th style="color:var(--dim);" title="Fecha y hora en que el SUPERVISOR terminó/validó la operación">Fin</th>';
+        techH+='<th style="color:var(--accent-l);" title="Tiempo real trabajado en la operación (cronómetro, sin pausas)">Tiempo OP</th>';
         techH+='<th style="color:var(--dim);white-space:nowrap;font-size:.65rem;" title="Fin - Inicio: tiempo transcurrido de reloj (incluye pausas y tiempo en otras operaciones)">Duración<br>(reloj)</th>';
         techH+='<th style="color:#a5b4fc;white-space:nowrap;font-size:.65rem;" title="T.Prom.Cal × (OK+Def) × 1.20">T.Ref.Cal<br>±20%</th>';
         techH+='<th style="color:var(--green);">OK</th><th style="color:var(--yellow);">Def</th><th style="color:var(--yellow);font-size:.6rem;">Ret</th><th style="color:var(--red);font-size:.6rem;">Chat</th>';
@@ -14267,6 +14286,8 @@ function renderHist(){
           techH+='<td style="color:var(--dim);">'+esc(r.pedido)+'</td>';
           techH+='<td>'+esc(r.op)+'</td><td style="color:var(--dim);">'+esc(r.estacion)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fecha)+'</div>':'')+esc(r.inicio)+'</td>';
+          var _cc=(r.concluido&&r.concluido.hora)?r.concluido:null;
+          techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);" title="Concluida por el operador">'+(_cc?((_cc.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(_cc.fecha)+'</div>':'')+esc(_cc.hora)):'<span style="color:var(--dim);">—</span>')+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fechaFin?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fechaFin)+'</div>':'')+esc(r.fin)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+(r.mins>0?fmtM(r.mins):'—')+'</td>';
           var _wallMins=_kpiWallMins(r.fecha, r.inicio, r.fechaFin, r.fin);
@@ -14279,7 +14300,7 @@ function renderHist(){
           techH+='</tr>';
         });
         techH+='<tr style="background:rgba(0,82,139,.12);font-weight:700;">';
-        techH+='<td colspan="8" style="text-align:right;font-size:.7rem;color:var(--dim);padding:4px 8px;">Total tiempo:</td>';
+        techH+='<td colspan="9" style="text-align:right;font-size:.7rem;color:var(--dim);padding:4px 8px;">Total tiempo:</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);padding:4px 8px;">'+fmtM(opTotal)+'</td>';
         techH+='<td style="padding:4px 8px;color:var(--dim);font-size:.62rem;" title="No se suma: los lapsos de reloj se traslapan entre operaciones">—</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:#a5b4fc;padding:4px 8px;">'+(opRefTotal>0?fmtM(opRefTotal):'—')+'</td>';
