@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.78</title>
+<title>FabTracker App v2.79</title>
 
 <!-- MSAL Browser -->
 
@@ -17895,6 +17895,18 @@ async function appReloadOpsFromSP() {
       if(nP>eP||(nP===eP&&parseInt(o.ID||0)>parseInt(ex.ID||0))) seenR[k]=o;
     });
     var allOps = Object.values(seenR);
+    // ── Guard anti-parpadeo ────────────────────────────────────────────────
+    // Si el flujo devuelve una respuesta VACÍA o claramente PARCIAL (bastantes
+    // menos operaciones de las que ya tenemos cargadas), NO destruir el estado
+    // actual: casi siempre es un fallo transitorio de red/flujo. Sin este guard,
+    // las operaciones "desaparecen" (operadores/ayudantes/piezas) y reaparecen
+    // en el siguiente ciclo, generando intermitencia.
+    var _prevOpCount = 0;
+    (DB.activeOFs||[]).forEach(function(a){ _prevOpCount += (a.ops||[]).length; });
+    if(_prevOpCount > 0 && allOps.length < Math.max(1, Math.floor(_prevOpCount*0.5))){
+      console.warn('[Poll] Respuesta parcial/vacía de FT_Operaciones ('+allOps.length+' de ~'+_prevOpCount+' ops) — se conserva el estado actual, sin refrescar.');
+      return;
+    }
     console.log('Poll SP ops:', rawOpsR.length, '→', allOps.length,
       '| running:', allOps.filter(function(o){return o.Status==='running';}).length);
     // Debug: verificar que Qty_Chat viene en los datos
@@ -17908,7 +17920,10 @@ async function appReloadOpsFromSP() {
       var spOps = allOps.filter(function(o){ return o.OF_SAP === aof.of_sap; })
                         .sort(function(a,b){ return (a.Secuencia||0)-(b.Secuencia||0); });
       if (!spOps.length) {
-        // SP genuinely has no ops for this OF — clear in-memory ops too (don't show stale data)
+        // Anti-parpadeo: en el poll ligero NO vaciar una OF que ya tenía operaciones
+        // (posible respuesta parcial). La recarga completa (appLoadDataFromSP) se
+        // encarga de limpiar las OFs que realmente ya no tienen operaciones.
+        if (aof.ops && aof.ops.length) return;
         aof.ops = [];
         return;
       }
@@ -17923,10 +17938,11 @@ async function appReloadOpsFromSP() {
         return {
           id:          o.Op_ID || o.Title || '',
           nombre:      (o.Nombre&&o.Nombre.trim()) || o.Nombre_Op || o.Title || '',
-          estacion:    o.Estacion || '',
+          estacion:    o.Estacion || (existing ? existing.estacion||'' : ''),
           tipo:        o.Tip || o.Tipo || o.tipo || 'Secuencial',
-          tecnico:     o.Tecnico || '',
-          ayudantes:   (o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean),
+          // Anti-parpadeo: preservar técnico/ayudantes/piezas si el registro llega sin ellos
+          tecnico:     (o.Tecnico!=null && String(o.Tecnico)!=='') ? o.Tecnico : (existing ? (existing.tecnico||'') : ''),
+          ayudantes:   (function(){ var _a=(o.Ayudantes_JSON||o.Ayudantes||'').split(',').map(function(s){return s.trim();}).filter(Boolean); return (_a.length===0 && existing && existing.ayudantes && existing.ayudantes.length) ? existing.ayudantes : _a; })(),
           status:      _effectiveStatus,
           _localStatus: _useLocalStatus ? existing._localStatus : null,
           _localStatusAt: _useLocalStatus ? existing._localStatusAt : null,
