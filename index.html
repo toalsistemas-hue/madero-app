@@ -14106,6 +14106,26 @@ function renderHist(){
 
   // -- 2: Construir HTML -------------------------------------
   var techH='';
+  // Helper: duración de reloj (Fin - Inicio) a partir de fecha + hora 12h (a.m./p.m.)
+  function _kpiParseFH(fecha, hora){
+    if(!fecha || !hora) return null;
+    var dp=String(fecha).trim().split('/'); if(dp.length!==3) return null;
+    var dd=parseInt(dp[0],10), mm=parseInt(dp[1],10), yy=parseInt(dp[2],10);
+    if(isNaN(dd)||isNaN(mm)||isNaN(yy)) return null;
+    if(yy<100) yy+=2000;
+    var h=String(hora).toLowerCase();
+    var m=h.match(/(\d{1,2}):(\d{2})/); if(!m) return null;
+    var hh=parseInt(m[1],10), mi=parseInt(m[2],10);
+    if(/p\.?\s*m/.test(h) && hh<12) hh+=12;
+    if(/a\.?\s*m/.test(h) && hh===12) hh=0;
+    return new Date(yy, mm-1, dd, hh, mi, 0).getTime();
+  }
+  function _kpiWallMins(fi,hi,ff,hf){
+    var a=_kpiParseFH(fi,hi), b=_kpiParseFH(ff,hf);
+    if(a==null||b==null) return null;
+    var d=Math.round((b-a)/60000);
+    return (isFinite(d) && d>=0 && d<7*24*60) ? d : null;
+  }
   techH+='<div style="font-family:\'Syne\',sans-serif;font-size:.85rem;font-weight:700;margin-bottom:10px;">👷 Desempeño de Técnicos</div>';
 
   // Fila 1 de filtros: técnico + fechas
@@ -14196,7 +14216,8 @@ function renderHist(){
         techH+='<th style="color:var(--dim);">Rol</th><th style="color:var(--dim);">Tipo</th><th style="color:var(--dim);">OF</th><th style="color:var(--dim);">Pedido</th>';
         techH+='<th style="color:var(--dim);">Operación</th><th style="color:var(--dim);">Estación</th>';
         techH+='<th style="color:var(--dim);">Inicio</th><th style="color:var(--dim);">Fin</th>';
-        techH+='<th style="color:var(--dim);">Tiempo</th>';
+        techH+='<th style="color:var(--accent-l);" title="Tiempo real trabajado (cronómetro, sin pausas)">Tiempo</th>';
+        techH+='<th style="color:var(--dim);white-space:nowrap;font-size:.65rem;" title="Fin - Inicio: tiempo transcurrido de reloj (incluye pausas y tiempo en otras operaciones)">Duración<br>(reloj)</th>';
         techH+='<th style="color:#a5b4fc;white-space:nowrap;font-size:.65rem;" title="T.Prom.Cal × (OK+Def) × 1.20">T.Ref.Cal<br>±20%</th>';
         techH+='<th style="color:var(--green);">OK</th><th style="color:var(--yellow);">Def</th><th style="color:var(--yellow);font-size:.6rem;">Ret</th><th style="color:var(--red);font-size:.6rem;">Chat</th>';
         techH+='</tr></thead><tbody>';
@@ -14248,6 +14269,8 @@ function renderHist(){
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fecha?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fecha)+'</div>':'')+esc(r.inicio)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;">'+(r.fechaFin?'<div style="font-size:.6rem;color:var(--dim);">'+esc(r.fechaFin)+'</div>':'')+esc(r.fin)+'</td>';
           techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);">'+(r.mins>0?fmtM(r.mins):'—')+'</td>';
+          var _wallMins=_kpiWallMins(r.fecha, r.inicio, r.fechaFin, r.fin);
+          techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--dim);" title="Tiempo transcurrido de reloj (Fin - Inicio)">'+(_wallMins!=null?fmtM(_wallMins):'—')+'</td>';
           techH+='<td>'+opRefCell+'</td>';
           techH+='<td style="color:var(--green);">'+(r.qty_ok>0?r.qty_ok:'—')+'</td>';
           techH+='<td style="color:'+(r.qty_def>0?'var(--yellow)':'var(--dim)')+';">'+(r.qty_def>0?r.qty_def:'—')+'</td>';
@@ -14258,6 +14281,7 @@ function renderHist(){
         techH+='<tr style="background:rgba(0,82,139,.12);font-weight:700;">';
         techH+='<td colspan="8" style="text-align:right;font-size:.7rem;color:var(--dim);padding:4px 8px;">Total tiempo:</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:var(--accent-l);padding:4px 8px;">'+fmtM(opTotal)+'</td>';
+        techH+='<td style="padding:4px 8px;color:var(--dim);font-size:.62rem;" title="No se suma: los lapsos de reloj se traslapan entre operaciones">—</td>';
         techH+='<td style="font-family:\'DM Mono\',monospace;color:#a5b4fc;padding:4px 8px;">'+(opRefTotal>0?fmtM(opRefTotal):'—')+'</td>';
         techH+='<td colspan="4"></td></tr>';
         techH+='</tbody></table></td></tr>';
