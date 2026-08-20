@@ -14045,9 +14045,11 @@ function _manoObraBuild(filtTech, filtFrom, filtTo, filtOf, filtPedT){
         addEntry(seg.tecnico||op.tecnico||'', nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno', estadoCol:'var(--accent-l)', rol:'principal', mins:(seg.mins||0), qty_ok:(seg.qty_ok||0), qty_def:(seg.qty_def||0)});
         (seg.ayudantes||[]).forEach(function(a){ addEntry(a, nf, {of_sap:aof.of_sap, pedido:ofRec.pedido||'—', operacion:op.nombre, estacion:op.estacion||'', estadoLbl:'🌙 Fin de turno (ayud)', estadoCol:'var(--accent-l)', rol:'ayudante', mins:(seg.mins||0), qty_ok:0, qty_def:0}); });
       });
-      // Turno actual = op.mins - suma(turnos previos)
+      // Turno actual. Mins puede ser el TOTAL (turnos previos + actual) o SOLO el turno
+      // actual (según cómo se cerró/reanudó/terminó la operación). Si Mins < suma de
+      // turnos previos, entonces Mins ya representa solo el turno actual (no restar).
       var prevMins=(op.turnos||[]).reduce(function(s,x){return s+(x.mins||0);},0);
-      var curMins=Math.max(0,(op.mins||0)-prevMins);
+      var curMins=((op.mins||0)>=prevMins) ? Math.max(0,(op.mins||0)-prevMins) : (op.mins||0);
       var prevOk=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_ok||0);},0);
       var prevDef=(op.turnos||[]).reduce(function(s,x){return s+(x.qty_def||0);},0);
       var curOk=Math.max(0,(op.qty_ok||0)-prevOk);
@@ -14248,8 +14250,10 @@ function renderHist(){
           // Para ops con turnos: acumular solo el tiempo del último turno.
           // Los turnos previos se acumulan por separado en el forEach de turnos.
           var _prevTurnosMinsSum=(op.turnos||[]).reduce(function(a,s){return a+(s.mins||0);},0);
+          // Mins puede ser el total o solo el turno actual; si es menor que la suma de
+          // turnos previos, ya es solo el turno actual (no restar).
           var _lastTurnoMinsStats=(op.turnos&&op.turnos.length>0)
-            ? Math.max(0,(op.mins||0)-_prevTurnosMinsSum)
+            ? (((op.mins||0)>=_prevTurnosMinsSum) ? Math.max(0,(op.mins||0)-_prevTurnosMinsSum) : (op.mins||0))
             : (op.mins||0);
           techStats[t].mins+=_lastTurnoMinsStats;
           // Para ops con turnos: acumular solo las piezas del último turno en stats.
@@ -14279,7 +14283,7 @@ function renderHist(){
         // Para ops con turnos: el tiempo del "último turno" = total - suma de turnos previos
         // Los turnos previos tienen su propio mins correcto; el último = total - prev
         var _sumTurnosPrevMins=(op.turnos||[]).reduce(function(acc,tSeg){return acc+(tSeg.mins||0);},0);
-        var _lastTurnoMins=(op.turnos&&op.turnos.length>0) ? Math.max(0,(op.mins||0)-_sumTurnosPrevMins) : (op.mins||0);
+        var _lastTurnoMins=(op.turnos&&op.turnos.length>0) ? (((op.mins||0)>=_sumTurnosPrevMins) ? Math.max(0,(op.mins||0)-_sumTurnosPrevMins) : (op.mins||0)) : (op.mins||0);
         var ayudMinsForRow=(rol==='ayudante'&&op.ayudTimes&&op.ayudTimes[t]!==undefined)
           ? op.ayudTimes[t]
           : _lastTurnoMins;
