@@ -2922,12 +2922,21 @@ function applyFabAccessControl() {
   // indicador "Desempeño de Técnicos".
   var hist = document.getElementById('coord-page-historial');
   var pills = document.querySelectorAll('.coord-nav-pill');
+  var tabBtns = document.querySelectorAll('.ft-tab-btn'); // 🏭 Portal Coordinador / ⚙️ Administración
   if(!_esAsistenteKPI()){
     // Comportamiento normal — restaurar visibilidad por si una sesión previa la ocultó.
     pills.forEach(function(b){ b.style.display=''; });
+    tabBtns.forEach(function(b){ b.style.display=''; });
     if(hist) Array.prototype.forEach.call(hist.children, function(ch){ if(ch.style) ch.style.display=''; });
     return;
   }
+  // 0. Ocultar la pestaña superior "⚙️ Administración"; dejar solo "Portal Coordinador".
+  tabBtns.forEach(function(b){
+    var oc = b.getAttribute('onclick')||'';
+    b.style.display = (oc.indexOf("'admin'")>=0) ? 'none' : '';
+  });
+  var admView = document.getElementById('ft-view-admin');
+  if(admView && admView.classList.contains('active') && typeof ftShowTab==='function') ftShowTab('portal');
   // 1. Ocultar todas las pestañas del portal salvo "Historial & KPIs".
   pills.forEach(function(b){
     var oc = b.getAttribute('onclick')||'';
