@@ -2903,13 +2903,52 @@ function _fabNivel() {
   return (u.pantallas && u.pantallas['Fabricaciones']) || null;
 }
 
+// ¿El usuario es una asistente con acceso restringido SOLO al KPI de Desempeño de Técnicos?
+// Aplica a los puestos "ASISTENTE ADMINISTRATIVO INSTALACIONES" y "ASISTENTE DE PRODUCCIÓN".
+function _accNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _esAsistenteKPI(){
+  var u = state.currentUser;
+  if(!u || u.esAdmin) return false;
+  var p = _accNorm((u.puesto||'')+' '+(u.puestoID||''));
+  return p.indexOf('ASISTENTE ADMINISTRATIVO INSTALACIONES')>=0
+      || p.indexOf('ASISTENTE DE PRODUCCION')>=0
+      || p.indexOf('ASISTENTE PRODUCCION')>=0;
+}
+
 // Aplica restricciones de lectura en la interfaz de Fabricaciones.
 // Se llama al entrar a la pantalla y cada vez que se renderizan los botones.
 function applyFabAccessControl() {
-  // All static button hiding is handled by CSS class 'fab-lectura' on #page-Fabricaciones
-  // set in enterApp(). Dynamic rendered buttons (✏ Editar in lists) are handled
-  // directly in their render functions via _fabNivel() checks.
-  // This function is kept as a no-op for backwards compatibility with call sites.
+  // Restricción para asistentes: solo la pestaña "Historial & KPIs" y solo el
+  // indicador "Desempeño de Técnicos".
+  var hist = document.getElementById('coord-page-historial');
+  var pills = document.querySelectorAll('.coord-nav-pill');
+  if(!_esAsistenteKPI()){
+    // Comportamiento normal — restaurar visibilidad por si una sesión previa la ocultó.
+    pills.forEach(function(b){ b.style.display=''; });
+    if(hist) Array.prototype.forEach.call(hist.children, function(ch){ if(ch.style) ch.style.display=''; });
+    return;
+  }
+  // 1. Ocultar todas las pestañas del portal salvo "Historial & KPIs".
+  pills.forEach(function(b){
+    var oc = b.getAttribute('onclick')||'';
+    b.style.display = (oc.indexOf("'historial'")>=0) ? '' : 'none';
+  });
+  // 2. Forzar la página Historial si no está activa.
+  if(hist && !hist.classList.contains('active')){
+    var pill = Array.prototype.filter.call(pills, function(b){ return (b.getAttribute('onclick')||'').indexOf("'historial'")>=0; })[0];
+    showCoordPage('historial', pill||null);
+    return; // showCoordPage vuelve a llamar a applyFabAccessControl
+  }
+  // 3. Dentro de Historial: mostrar solo el card del KPI de Desempeño de Técnicos.
+  if(hist){
+    var techEl = document.getElementById('hist-tech-kpi');
+    var techCard = techEl ? techEl.closest('.card') : null;
+    Array.prototype.forEach.call(hist.children, function(ch){
+      if(!ch.style) return;
+      if(ch.classList && ch.classList.contains('page-hdr')) { ch.style.display=''; return; } // conservar título
+      ch.style.display = (ch===techCard) ? '' : 'none';
+    });
+  }
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
