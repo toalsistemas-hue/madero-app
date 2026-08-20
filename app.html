@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.81</title>
+<title>FabTracker App v2.82</title>
 
 <!-- MSAL Browser -->
 
@@ -10370,16 +10370,20 @@ async function monitorIniciarComida(ofSap, opId){
   console.log('[Monitor] Comida iniciada:', op.nombre, hora);
 }
 function monitorBuildFilterBar(bar, estaciones) {
-  var all = _MON.filtroEstacion === '';
   var html = '';
-  var styleBase = 'padding:4px 10px;border-radius:6px;font-size:.68rem;cursor:pointer;border:1px solid rgba(255,255,255,.1);';
-  var styleActive = styleBase + 'background:#1565C0;color:#fff;font-weight:600;border-color:#1565C0;';
-  var styleInact  = styleBase + 'background:rgba(255,255,255,.06);color:#8b949e;';
-  html += '<button style="'+(all?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\'\';monitorRender();">Todas</button>';
-  estaciones.forEach(function(est) {
-    var a = (_MON.filtroEstacion === est);
-    html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
-  });
+  // Chips de estación: solo tienen sentido cuando hay 2+ estaciones asignadas.
+  if ((estaciones||[]).length > 1) {
+    var all = _MON.filtroEstacion === '';
+    var styleBase = 'padding:4px 10px;border-radius:6px;font-size:.68rem;cursor:pointer;border:1px solid rgba(255,255,255,.1);';
+    var styleActive = styleBase + 'background:#1565C0;color:#fff;font-weight:600;border-color:#1565C0;';
+    var styleInact  = styleBase + 'background:rgba(255,255,255,.06);color:#8b949e;';
+    html += '<button style="'+(all?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\'\';monitorRender();">Todas</button>';
+    estaciones.forEach(function(est) {
+      var a = (_MON.filtroEstacion === est);
+      html += '<button style="'+(a?styleActive:styleInact)+'" onclick="_MON.filtroEstacion=\''+est+'\';monitorRender();">'+est+'</button>';
+    });
+  }
+  // Filtro por N° de OF: siempre disponible (una o varias estaciones).
   html += '<input id="monitor-of-filter" value="'+(_MON.filtroOF?String(_MON.filtroOF).replace(/"/g,'&quot;'):'')+'" oninput="monitorSetOFFilter(this.value)" placeholder="🔍 N° de OF" style="flex:1;min-width:120px;padding:4px 10px;border-radius:6px;font-size:.68rem;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e6edf3;outline:none;">';
   bar.innerHTML = html;
 }
@@ -10496,9 +10500,11 @@ function monitorRender() {
     ? estaciones.filter(function(e){ return e === _MON.filtroEstacion; })
     : estaciones;
 
-  // Render filter bar
+  // Render filter bar — mostrar siempre que haya al menos una estación asignada
+  // (los chips de estación solo aplican con 2+ estaciones; el filtro por N° de OF
+  // debe estar disponible también cuando el monitor tiene una sola estación).
   var filterBar = document.getElementById('monitor-filter-bar');
-  if (filterBar && estaciones.length > 1) {
+  if (filterBar && estaciones.length >= 1) {
     filterBar.style.display = 'flex';
     monitorBuildFilterBar(filterBar, estaciones);
   } else if (filterBar) {
