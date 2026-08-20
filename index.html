@@ -1171,7 +1171,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:6px;">
           <!-- Diagnóstico oculto: <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()">🔍 Diagnóstico</button> -->
           <button class="btn btn-ghost btn-sm" onclick="renderSeg()">↻ Actualizar</button>
-        <span id="auto-refresh-indicator" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
+        <span id="auto-refresh-indicator" class="auto-refresh-ind" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
         </div>
       </div>
       <div class="kpi-grid">
@@ -1186,8 +1186,9 @@ tr:last-child td{border-bottom:none;}
 
     <!-- HISTORIAL -->
     <div class="coord-page" id="coord-page-historial">
-      <div class="page-hdr">
+      <div class="page-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <div><div class="page-title">📊 Historial & KPIs</div></div>
+        <span id="hist-auto-refresh-indicator" class="auto-refresh-ind" title="Los datos se actualizan solos cada ~15s mientras esta pestaña esté abierta y visible." style="font-size:.65rem;color:var(--text-dim);">⏱ auto 15s</span>
       </div>
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-val" id="hist-kpi-ofs" style="color:var(--green)">0</div><div class="kpi-lbl">OFs completadas (mes)</div></div>
@@ -7172,9 +7173,9 @@ async function ftLoadDataFromSP() {
           if(C&&C.currentPage==='seguimiento') renderSeg();
           if(C&&C.currentPage==='programacion') (window.renderProg||renderProg)();
           if(C&&C.currentPage==='historial'&&document.getElementById('hist-tech-kpi')) renderHist();
-          var ind=document.getElementById('auto-refresh-indicator');
-          if(ind){ind.style.color='var(--accent-l)';ind.textContent='⟳ actualizado';
-            setTimeout(function(){ind.style.color='var(--text-dim)';ind.textContent='⏱ auto 30s';},2500);}
+          var _inds=document.querySelectorAll('.auto-refresh-ind');
+          _inds.forEach(function(ind){ ind.style.color='var(--accent-l)'; ind.textContent='⟳ actualizado'; });
+          setTimeout(function(){ document.querySelectorAll('.auto-refresh-ind').forEach(function(ind){ ind.style.color='var(--text-dim)'; ind.textContent='⏱ auto 15s'; }); },2500);
         }
       } catch(e) { /* silencioso */ }
       // ── Polling de CalTiempos — via Graph API (no consume Flow actions) ──
@@ -13987,8 +13988,35 @@ renderAppHoy = function(){
 // ── MANO DE OBRA DIARIA (modo del KPI Desempeño de Técnicos) ───────
 // Incluye operaciones NO concluidas y reparte el tiempo por día.
 // ═══════════════════════════════════════════════════════════════════
-function setTechMode(m){ C.techMode = (m==='manoobra')?'manoobra':'desempeno'; renderHist(); }
+function setTechMode(m){ C.techMode = (m==='manoobra')?'manoobra':'desempeno'; renderHistSpin(); }
 window.setTechMode = setTechMode;
+
+// Overlay bloqueante mientras se filtra/renderiza el KPI (el render es síncrono y pesado).
+function _kpiFilterOverlay(show){
+  if(!document.getElementById('kpi-spin-kf')){
+    var st=document.createElement('style'); st.id='kpi-spin-kf';
+    st.textContent='@keyframes kpispin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  var ov=document.getElementById('kpi-filter-overlay');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='kpi-filter-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:99998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);cursor:progress;';
+    ov.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.5);">'+
+      '<span style="display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.2);border-top-color:#58a6ff;border-radius:50%;animation:kpispin .7s linear infinite;"></span>'+
+      '<span style="color:#e6edf3;font-size:.85rem;font-weight:600;">Filtrando…</span></div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = show ? 'flex' : 'none';
+}
+// Renderiza el KPI mostrando primero el spinner (cede al navegador para pintar antes del render).
+function renderHistSpin(){
+  _kpiFilterOverlay(true);
+  setTimeout(function(){
+    try{ renderHist(); } finally { _kpiFilterOverlay(false); }
+  }, 30);
+}
+window.renderHistSpin = renderHistSpin;
 
 function _manoObraNormFecha(s){
   if(!s) return null;
@@ -14417,11 +14445,11 @@ function renderHist(){
 
   // Fila 1 de filtros: técnico + fechas
   techH+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">';
-  techH+='<select class="form-select-sm" id="hist-tech-filter" onchange="renderHist()" style="min-width:130px;"><option value="">Todos los técnicos</option>';
+  techH+='<select class="form-select-sm" id="hist-tech-filter" onchange="renderHistSpin()" style="min-width:130px;"><option value="">Todos los técnicos</option>';
   TECHNICIANS.forEach(function(t){techH+='<option value="'+esc(t)+'"'+(filtTech===t?' selected':'')+'>'+esc(t)+'</option>';});
   techH+='</select>';
-  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Desde<input type="date" class="form-input-sm" id="hist-tech-from" value="'+filtFrom+'" onchange="renderHist()" style="width:120px;"></label>';
-  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Hasta<input type="date" class="form-input-sm" id="hist-tech-to"   value="'+filtTo+'"   onchange="renderHist()" style="width:120px;"></label>';
+  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Desde<input type="date" class="form-input-sm" id="hist-tech-from" value="'+filtFrom+'" onchange="renderHistSpin()" style="width:120px;"></label>';
+  techH+='<label style="font-size:.68rem;color:var(--dim);display:flex;align-items:center;gap:4px;">Hasta<input type="date" class="form-input-sm" id="hist-tech-to"   value="'+filtTo+'"   onchange="renderHistSpin()" style="width:120px;"></label>';
   techH+='</div>';
 
   // Fila 2 de filtros: OF + Pedido
@@ -15348,7 +15376,7 @@ function clearTechFilters(){
     var el=document.getElementById(id);
     if(el) el.value='';
   });
-  (window.renderHist||renderHist)();
+  if(typeof renderHistSpin==='function') renderHistSpin(); else (window.renderHist||renderHist)();
 }
 
 
