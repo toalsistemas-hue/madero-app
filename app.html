@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.82</title>
+<title>FabTracker App v2.95</title>
 
 <!-- MSAL Browser -->
 
@@ -729,6 +729,15 @@ tr:last-child td{border-bottom:none;}
       <div style="font-size:.72rem;color:#a78bfa;margin-bottom:4px;">Ayudantes</div>
       <div id="mon-turno-ayud-list" style="display:flex;flex-direction:column;gap:4px;max-height:120px;overflow-y:auto;"></div>
       <div id="mon-turno-tech-error" style="font-size:.7rem;color:#f87171;margin-top:4px;min-height:14px;"></div>
+    </div>
+    <div id="mon-turno-ayudm-sec" style="display:none;padding:10px;background:rgba(0,180,216,.06);
+         border:1px solid rgba(0,180,216,.22);border-radius:7px;margin-bottom:12px;">
+      <div style="font-size:.72rem;color:var(--aaccent);margin-bottom:4px;font-weight:600;">🤝 Ayudante para este turno</div>
+      <div id="mon-turno-ayudm-cur" style="font-size:.68rem;color:#8b949e;margin-bottom:7px;"></div>
+      <div id="mon-turno-ayudm-radios" style="display:flex;flex-direction:column;gap:5px;"></div>
+      <select id="mon-turno-ayudm-sel" style="display:none;width:100%;margin-top:7px;background:#0d1117;
+              border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:7px;color:#e6edf3;font-size:.78rem;"></select>
+      <div id="mon-turno-ayudm-err" style="font-size:.7rem;color:#f87171;margin-top:5px;min-height:12px;"></div>
     </div>
     <div id="mon-turno-pin-sec" style="display:none;margin-bottom:12px;">
       <div style="font-size:.72rem;color:#8b949e;margin-bottom:6px;" id="mon-turno-pin-label">Ingresa tu PIN de 4 dígitos</div>
@@ -2366,7 +2375,7 @@ async function appNtfyGuardar() {
   if (status) status.textContent = '⏳ Enviando notificación de prueba...';
   try {
     // Enviar notificación de prueba al canal
-    var resp = await fetch('https://ntfy.sh/' + canal, {
+    var resp = await fetch(NTFY_BASE + '/' + canal, {
       method: 'POST',
       headers: {
         'Title':    'FabTracker conectado',
@@ -2637,6 +2646,9 @@ var _APP_NTFY_MENSAJES = {
   mon_op_iniciada:   { titulo: 'Operador inicio una operacion',    prioridad: 'default' },
   mon_op_concluida:  { titulo: 'Operador concluyo operacion',      prioridad: 'high' },
   mon_val_calidad:   { titulo: 'Validacion de Calidad solicitada desde Monitor', prioridad: 'high' },
+  mon_fin_turno:     { titulo: 'Operador pauso por FIN DE TURNO',  prioridad: 'high' },
+  mon_op_reanudada:  { titulo: 'Operador reanudo una operacion',   prioridad: 'default' },
+  mon_turno_b_val:   { titulo: 'Turno B: falta validar/terminar la operacion original', prioridad: 'high' },
 };
 
 // Roles que deben recibir cada evento (desde la app)
@@ -2648,6 +2660,9 @@ var _APP_NTFY_DEST_ROLES = {
   mon_op_iniciada:   ['supervisor'],                       // → Supervisor
   mon_op_concluida:  ['supervisor'],                       // → Supervisor
   mon_val_calidad:   ['calidad_lin', 'supervisor'],        // → Jefe Calidad + Supervisor
+  mon_fin_turno:     ['supervisor'],                       // → Supervisor
+  mon_op_reanudada:  ['supervisor'],                       // → Supervisor
+  mon_turno_b_val:   ['supervisor'],                       // → Supervisor
 };
 
 async function appNtfyNotificar(evento, data) {
@@ -2667,12 +2682,16 @@ async function appNtfyNotificar(evento, data) {
     }
     _c += '\n\n[PRUEBA/DEV · evento: ' + evento + ']';
     var _t = (typeof _ntfyAsciiSafe === 'function') ? _ntfyAsciiSafe(m.titulo) : String(m.titulo||'').replace(/[^\x20-\x7E]/g,'');
-    fetch('https://ntfy.sh/' + DEV_NTFY_TOPIC, {
+    fetch(NTFY_BASE + '/' + DEV_NTFY_TOPIC, {
       method: 'POST',
       headers: { 'Title': _t, 'Priority': m.prioridad || 'high', 'Tags': 'factory,bell,test' },
       body: _c
-    }).then(function(){ console.log('[ntfy app] DEV →', DEV_NTFY_TOPIC, '· evento:', evento); })
-      .catch(function(e){ console.warn('[ntfy app] DEV error:', e.message); });
+    }).then(function(resp){
+        if (resp && resp.ok) { console.log('[ntfy app] DEV ✓ →', DEV_NTFY_TOPIC, '· evento:', evento); }
+        else { console.warn('[ntfy app] DEV ✗ ntfy HTTP', resp&&resp.status, '· evento:', evento,
+                 (resp&&resp.status===429) ? '→ LÍMITE DIARIO de ntfy.sh alcanzado (plan gratuito)' : ''); }
+      })
+      .catch(function(e){ console.warn('[ntfy app] DEV error de red:', e.message); });
     return;
   }
   var destRoles = _APP_NTFY_DEST_ROLES[evento] || [];
@@ -2725,7 +2744,7 @@ async function appNtfyNotificar(evento, data) {
 
       var _ntfyCanalClean = (u.Canal_Ntfy||'').replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/^ntfy\.sh\//i,'').replace(/[^a-z0-9\-_]/g,'');
       var _bodyFinal = cuerpo + (data && data.operador ? '\nOperador: ' + data.operador : '');
-      fetch('https://ntfy.sh/' + _ntfyCanalClean, {
+      fetch(NTFY_BASE + '/' + _ntfyCanalClean, {
         method: 'POST',
         headers: {
           'Title':    m.titulo,
@@ -2733,8 +2752,12 @@ async function appNtfyNotificar(evento, data) {
           'Tags':     'factory,bell'
         },
         body: _bodyFinal
-      }).then(function(){ console.log('[ntfy app] ✓', u.Canal_Ntfy); })
-        .catch(function(e){ console.warn('[ntfy app] Error:', u.Canal_Ntfy, e.message); });
+      }).then(function(resp){
+          if (resp && resp.ok) { console.log('[ntfy app] ✓', u.Canal_Ntfy); }
+          else { console.warn('[ntfy app] ✗ ntfy HTTP', resp&&resp.status, u.Canal_Ntfy,
+                   (resp&&resp.status===429) ? '→ LÍMITE DIARIO de ntfy.sh alcanzado (plan gratuito)' : ''); }
+        })
+        .catch(function(e){ console.warn('[ntfy app] Error de red:', u.Canal_Ntfy, e.message); });
     });
     console.log('[ntfy app] Canales encontrados para', evento, ':', encontrados, '| puestoRolMap:', JSON.stringify(puestoRolMap));
     if (encontrados === 0) {
@@ -4439,6 +4462,7 @@ function appConfirmReanudar(){
     var newOp={
       id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
+      secuencia:(op.secuencia||0),
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
       qty_total:pzRest,qty_ok:0,qty_def:0,qty_rej:0,qty_chat:0,
@@ -4449,8 +4473,9 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
-    of.ops.push(newOp);
+    // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final).
+    var _idxA = of.ops.indexOf(op);
+    if(_idxA>=0) of.ops.splice(_idxA+1, 0, newOp); else of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -4475,10 +4500,11 @@ function appConfirmReanudar(){
             Estacion:  newOp.estacion||'',
             Tip:       newOp.tipo||'Secuencial',
             Tecnico:   newOp.tecnico||'',
+            Ayudantes_JSON: (newOp.ayudantes||[]).join(','),
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
-            Secuencia: seqNum,
+            Secuencia: (op.secuencia||0),
             Mins:      0,
             Inicio:    '', Fin:''
           };
@@ -4534,10 +4560,14 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: acumular ms de turnos previos en _prevTurnosMs
   // y resetear elapsed del timer para que getEl() devuelva solo el tiempo del turno actual
-  var esFin=op._pauseTipo==='turno';
+  // Detección robusta de reanudación tras FIN DE TURNO: si un poll perdió _pauseTipo,
+  // usar también el texto de pauseReason (persiste en SP). Sin esto, el timer NO se resetea
+  // y el nuevo turno acumula el tiempo del turno anterior.
+  var esFin=(op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('🌙')>=0) || ((op.pauseReason||'').indexOf('Fin de turno')>=0);
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
+  if(esFin) op.mins=0; // el turno nuevo arranca en 0 (el tiempo previo ya quedó en op.turnos)
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
   // B2 fix: registrar inicio real del turno actual (turno B, C, ...)
@@ -7655,6 +7685,13 @@ try { console.info('[ENV] App móvil — entorno:', ENV, '→ sitio', ACTIVE.sit
 const DEV_NTFY_TOPIC = 'madero-notificaciones-prueba';
 function _ntfyDestino(topic){ return (ENV === 'dev') ? DEV_NTFY_TOPIC : topic; }
 
+// ⚑ SERVIDOR NTFY — un solo lugar para cambiar entre ntfy.sh y el servidor PROPIO.
+// Mientras se use ntfy.sh (plan gratuito) hay LÍMITE DIARIO por IP. Cuando la laptop-puente
+// tenga su servidor ntfy propio expuesto por HTTPS (Cloudflare Tunnel), cambiar esta URL, p.ej.:
+//   const NTFY_BASE = 'https://ntfy.maderoeq.com';
+// (SIN barra final). Los nombres de los tópicos/canales NO cambian.
+const NTFY_BASE = 'https://ntfy.sh';
+
 // ── Distintivo visual del ambiente de PRUEBA (solo en dev) ──────────
 // Etiqueta fija visible en login y ya dentro de la app. No bloquea clics.
 if (ENV === 'dev') {
@@ -8465,7 +8502,7 @@ async function _appLoadDataFromSP_impl() {
         isRetrabajo: f.isRetrabajo === true,
       };
     });
-    var statusPriority = {running:5, paused:4, validating:3, done:2, pending:1};
+    var statusPriority = {running:6, op_concluded:5, paused:4, validating:3, done:2, pending:1};
     var opsSeen = {};
     rawOps.forEach(function(o){
       // Dedup key: use Op_ID if available, else use SP item ID
@@ -8523,8 +8560,15 @@ async function _appLoadDataFromSP_impl() {
         nombre: (o.Nombre&&o.Nombre.trim())||o.Title||'', estacion: o.Estacion||'',
         tipo: o.Tipo||o.tipo||'Secuencial',
         tecnico: o.Tecnico||'',
-        ayudantes: o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
-                 : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [],
+        ayudantes: (function(){
+          var _a = o.Ayudantes_JSON ? o.Ayudantes_JSON.split(',').map(function(s){return s.trim();}).filter(Boolean)
+                 : o.Ayudantes ? o.Ayudantes.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+          if(_a.length) return _a;
+          // Preservar ayudantes locales si SP aún no los devuelve (evita perderlos en una recarga completa)
+          var _exAof = DB.activeOFs && DB.activeOFs.find(function(a){return a.of_sap===(f.OF_SAP||f.Title||'');});
+          var _exOp = _exAof && _exAof.ops && _exAof.ops.find(function(p){return p.id===(o.Op_ID||('op_'+(o.ID||'')));});
+          return (_exOp && _exOp.ayudantes && _exOp.ayudantes.length) ? _exOp.ayudantes : _a;
+        })(),
         // _ldLocalStatus: buscar estado local vigente antes de construir el objeto
         // (declarado aquí para poder usarlo también en _localStatus/_localStatusAt más abajo)
         status: (function(){
@@ -8564,17 +8608,29 @@ async function _appLoadDataFromSP_impl() {
           return m?parseInt(m[1]):null;
         })(),
         turnos: (function(){
+          var _sp=[];
           try {
             var d=JSON.parse(o.TurnoData||'');
-            if(d._turnosArray && d.turnos) return d.turnos;
-            if(d._turnoData){
-              return [{turno:1, tecnico:d.tecnico||'', mins:d.mins||0,
+            if(d._turnosArray && d.turnos) _sp=d.turnos;
+            else if(d._turnoData){
+              _sp=[{turno:1, tecnico:d.tecnico||'', mins:d.mins||0,
                 qty_ok:d.qty_ok||0, qty_def:d.qty_def||0, qty_rest:d.qty_rest||0,
                 inicio:d.inicio||'', fin:d.fin||'', fecha:''}];
             }
           } catch(e){}
-          return [];
+          // Anti-carrera: conservar segmentos locales si son MÁS y el cambio es reciente (SP puede ir rezagado)
+          var _ex=o._ld_exOp;
+          if(_ex && _ex.turnos && _ex.turnos.length>_sp.length && _ex._localStatusAt && (Date.now()-_ex._localStatusAt<120000)) return _ex.turnos;
+          return _sp;
         })(),
+        // Recuperar inicio del turno actual desde TurnoData; mientras corre, el valor local manda
+        inicioTurnoActual: (function(){
+          var _spTA=null; try{var d=JSON.parse(o.TurnoData||'');_spTA=d._inicioTurnoActual||null;}catch(e){}
+          var _ex=o._ld_exOp;
+          if(_ex && _ex.inicioTurnoActual && _ex.status==='running') return _ex.inicioTurnoActual;
+          return _spTA || (_ex?_ex.inicioTurnoActual:null);
+        })(),
+        fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
         valcalNote: o.ValCalNote||null, calResult: o.CalResult||null,
         calComment: o.CalComment||null,
         calLineaComment: o.CalLineaComment||null, supFinComment: o.SupFinComment||null, analistaComment: o.AnalistaComment||null, omitComment: o.OmitComment||null,
@@ -10459,7 +10515,14 @@ function _monSemaforoTopic(estacion){
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
   return (typeof ENV!=='undefined' && ENV==='dev' ? 'dev-' : '') + 'madero-estacion-' + slug;
 }
+// ⚑ Publicación del semáforo (andón) DESDE EL MONITOR.
+// Se DESACTIVA por ahora: el color lo publicará la laptop-puente (agente_semaforo.js),
+// que aún no está instalada. Mientras esté en false, los Monitors NO envían nada a ntfy
+// para el semáforo (así no se agota la cuota diaria de ntfy.sh).
+// Para reactivar la publicación desde los Monitors: cambiar a true.
+var MON_SEMAFORO_PUBLICAR = false;
 function monitorPublishSemaforo(estaciones){
+  if(!MON_SEMAFORO_PUBLICAR) return;   // ⚑ desactivado hasta instalar la laptop-puente
   if(!estaciones || !estaciones.length) return;
   window._monSemaforoLast = window._monSemaforoLast || {};
   var now = Date.now();
@@ -10479,7 +10542,7 @@ function monitorPublishSemaforo(estaciones){
     window._monSemaforoLast[est] = { color: color, at: now };
     var topic = _monSemaforoTopic(est);
     try{
-      fetch('https://ntfy.sh/'+topic, {
+      fetch(NTFY_BASE+'/'+topic, {
         method:'POST',
         headers:{ 'Title':'semaforo', 'Tags': color, 'Priority':'min' },
         body: color
@@ -11611,7 +11674,7 @@ function _monSopAddMsg(texto, quien){ // quien: 'op' (operador) | 'sop' (asisten
 
 function _monSopSubscribe(topic){
   try{
-    var es = new EventSource('https://ntfy.sh/'+encodeURIComponent(topic)+'/sse');
+    var es = new EventSource(NTFY_BASE+'/'+encodeURIComponent(topic)+'/sse');
     es.onmessage = function(ev){
       try{
         var d = JSON.parse(ev.data);
@@ -11691,13 +11754,13 @@ async function monitorSoporteEnviar(){
       (op && op.tecnico ? '\nOperador: '+op.tecnico : '')+
       '\n\nResponder al operador en el tópico: '+st.topic;
     try{
-      await fetch('https://ntfy.sh/'+_ntfyDestino(MON_SOPORTE_TOPIC), {
+      await fetch(NTFY_BASE+'/'+_ntfyDestino(MON_SOPORTE_TOPIC), {
         method: 'POST',
         headers: {
           'Title':    _ntfyAsciiSafe('Soporte Monitor' + (estacion ? ' - ' + estacion : '')),
           'Priority': 'high',
           'Tags':     'sos,factory',
-          'Actions':  'view, Responder al operador, https://ntfy.sh/'+st.topic
+          'Actions':  'view, Responder al operador, '+NTFY_BASE+'/'+st.topic
         },
         body: cuerpo
       });
@@ -11707,7 +11770,7 @@ async function monitorSoporteEnviar(){
 
   // Publicar el mensaje del operador en el tópico de la conversación (para el asistente)
   try{
-    var r = await fetch('https://ntfy.sh/'+encodeURIComponent(st.topic), {
+    var r = await fetch(NTFY_BASE+'/'+encodeURIComponent(st.topic), {
       method: 'POST',
       headers: { 'Title': _ntfyAsciiSafe('Operador'+(opNombre?' '+opNombre:'')), 'Tags':'bust_in_silhouette' },
       body: texto
@@ -11724,6 +11787,9 @@ var _monFinTurnoCtx = null;
 function monFinTurnoOpen(of, op, tecNombre){
   _monFinTurnoCtx = { of_sap: of.of_sap, op_id: op.id, tecnico: tecNombre };
   var total = op.qty_total || 0;
+  // Piezas ya producidas en turnos previos (para pedir SOLO las de este turno).
+  var _prevProd = (op.turnos||[]).reduce(function(s,t){ return s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var _faltan = Math.max(0, total - _prevProd);
   var ex = document.getElementById('mon-finturno-modal'); if(ex) ex.remove();
   var inp = 'width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;font-size:1rem;text-align:center;';
   var d = document.createElement('div');
@@ -11732,14 +11798,15 @@ function monFinTurnoOpen(of, op, tecNombre){
   d.innerHTML =
     '<div style="background:#1a2332;border:1px solid rgba(255,255,255,.12);border-radius:14px;width:min(360px,92vw);padding:20px;">'+
       '<div style="font-weight:700;font-size:1rem;color:#f59e0b;margin-bottom:6px;">🌙 Fin de Turno</div>'+
-      '<div style="font-size:.78rem;color:#e6edf3;margin-bottom:12px;line-height:1.4;"><strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion||'')+' · '+esc(op.tecnico||tecNombre||'')+'<br><span style="color:#8b949e;">Meta: '+total+' pzas</span></div>'+
+      '<div style="font-size:.78rem;color:#e6edf3;margin-bottom:12px;line-height:1.4;"><strong>'+esc(op.nombre)+'</strong><br>'+esc(op.estacion||'')+' · '+esc(op.tecnico||tecNombre||'')+'<br><span style="color:#8b949e;">Meta: '+total+' pzas'+(_prevProd>0?' · Ya producidas: '+_prevProd+' · Faltan: '+_faltan:'')+'</span></div>'+
+      '<div style="font-size:.66rem;color:#f59e0b;margin-bottom:6px;">Captura solo las piezas de ESTE turno.</div>'+
       '<div style="display:flex;gap:10px;margin-bottom:10px;">'+
-        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Piezas OK</div>'+
+        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Piezas OK (este turno)</div>'+
           '<input id="mon-ft-ok" type="number" min="0" value="0" inputmode="numeric" oninput="monFinTurnoCalc()" style="'+inp+'color:#22c55e;"></div>'+
-        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Con defecto</div>'+
+        '<div style="flex:1;"><div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Con defecto (este turno)</div>'+
           '<input id="mon-ft-def" type="number" min="0" value="0" inputmode="numeric" oninput="monFinTurnoCalc()" style="'+inp+'color:#f59e0b;"></div>'+
       '</div>'+
-      '<div id="mon-ft-rest" style="font-size:.8rem;color:#58a6ff;font-weight:600;margin-bottom:12px;">Piezas restantes: '+total+'</div>'+
+      '<div id="mon-ft-rest" style="font-size:.8rem;color:#58a6ff;font-weight:600;margin-bottom:12px;">Piezas restantes: '+_faltan+'</div>'+
       '<div style="font-size:.68rem;color:#8b949e;margin-bottom:3px;">Motivo (opcional)</div>'+
       '<input id="mon-ft-reason" placeholder="Fin de turno" style="width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:9px;color:#e6edf3;font-size:.85rem;margin-bottom:16px;">'+
       '<div style="display:flex;gap:10px;">'+
@@ -11755,7 +11822,8 @@ function monFinTurnoCalc(){
   var op = of ? of.ops.find(function(o){ return o.id===ctx.op_id; }) : null; if(!op) return;
   var ok = parseInt((document.getElementById('mon-ft-ok')||{}).value)||0;
   var def = parseInt((document.getElementById('mon-ft-def')||{}).value)||0;
-  var rest = Math.max(0, (op.qty_total||0)-(ok+def));
+  var _prevProd = (op.turnos||[]).reduce(function(s,t){ return s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var rest = Math.max(0, (op.qty_total||0) - _prevProd - (ok+def));
   var el = document.getElementById('mon-ft-rest'); if(el) el.textContent = 'Piezas restantes: '+rest;
 }
 async function monFinTurnoConfirm(){
@@ -11779,8 +11847,12 @@ async function monFinTurnoConfirm(){
     op.mins=Math.floor((DB.timers[key].elapsed||0)/60000);
   }
   var pzProd = pzOk+pzDef;
-  var pzRest = Math.max(0, (op.qty_total||0)-pzProd);
   if(!op.turnos) op.turnos=[];
+  // Restantes = meta − piezas de turnos PREVIOS − piezas de ESTE turno.
+  // (pzOk/pzDef son solo de este turno, no acumulados.)
+  var _curIni = op.inicioTurnoActual || op.inicio;
+  var _prevProd = op.turnos.reduce(function(s,t){ return (t.inicio===_curIni) ? s : s + (t.qty_ok||0) + (t.qty_def||0); }, 0);
+  var pzRest = Math.max(0, (op.qty_total||0) - _prevProd - pzProd);
   var turnoNum = op.turnos.length+1;
   var turnoActual = {
     turno: turnoNum, tecnico: op.tecnico||ctx.tecnico, ayudantes:(op.ayudantes||[]).slice(),
@@ -11789,8 +11861,11 @@ async function monFinTurnoConfirm(){
     fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
     fecha_fin: new Date().toLocaleDateString('es-MX')
   };
-  var existIdx = op.turnos.findIndex(function(t){ return t.inicio===turnoActual.inicio; });
-  if(existIdx>=0) op.turnos[existIdx]=turnoActual; else op.turnos.push(turnoActual);
+  // Siempre AGREGAR un segmento nuevo por cada fin de turno. El guard de status de arriba
+  // (op.status!=='running' ⇒ return) ya impide la doble confirmación del mismo turno, así que
+  // NO hay que deduplicar por hora de inicio: eso provocaba que un turno sobrescribiera a otro
+  // cuando las horas coincidían (p. ej. al reanudar con el mismo operador) y perdía el conteo.
+  op.turnos.push(turnoActual);
   op.status = 'paused';
   op.pauseReason = '🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
   op._pauseTipo = 'turno';
@@ -11812,6 +11887,11 @@ async function monFinTurnoConfirm(){
   } catch(e){ console.warn('[Monitor] Fin de turno SP:', e.message); }
   finally { if(typeof _releaseOpLock==='function') _releaseOpLock(key); }
   if(typeof fireSync==='function') fireSync('app','op_paused',{ of_sap:ctx.of_sap, op_id:ctx.op_id, op_name:op.nombre, tecnico:op.tecnico||'', reason:op.pauseReason||'', tipo:'turno' });
+  // Notificar al supervisor por ntfy
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_fin_turno', {
+    of_sap:ctx.of_sap, op_nombre:op.nombre, estacion:op.estacion||'', operador:op.tecnico||'',
+    nota:'Turno '+turnoNum+' · '+pzProd+' pzas · '+pzRest+' restantes'
+  }).catch(function(){});
   console.log('[Monitor] Fin de turno:', op.nombre, '| turno', turnoNum, '| OK', pzOk, 'Def', pzDef, 'Rest', pzRest);
 }
 
@@ -12172,6 +12252,37 @@ function monTurnoOpen(of, op) {
       'style="accent-color:#c084fc;">' + esc(t.nombre) + '</label>';
   });
   document.getElementById('mon-turno-ayud-list').innerHTML = ayudH;
+  // Sección "mismo técnico": rotación de ayudante (mantener / sin / reemplazar)
+  var _curAyud = (op.ayudantes||[]).filter(Boolean);
+  _monTurnoCtx.curAyud = _curAyud.slice();
+  var _amCur = document.getElementById('mon-turno-ayudm-cur');
+  if(_amCur) _amCur.textContent = _curAyud.length ? ('Ayudante actual: '+_curAyud.join(', ')) : 'Esta operación no tiene ayudante asignado.';
+  var _amSel = document.getElementById('mon-turno-ayudm-sel');
+  if(_amSel){
+    _amSel.innerHTML = '<option value="">— Seleccionar ayudante —</option>';
+    (_MON.technicians || []).forEach(function(t){
+      if(t.nombre===op.tecnico) return;                 // no puede ser el operador
+      if(_curAyud.indexOf(t.nombre)>=0) return;          // ya es el ayudante actual
+      _amSel.innerHTML += '<option value="'+esc(t.nombre)+'">'+esc(t.nombre)+'</option>';
+    });
+    _amSel.style.display='none';
+  }
+  // Construir opciones según si YA tiene ayudante o no
+  var _amRad = document.getElementById('mon-turno-ayudm-radios');
+  if(_amRad){
+    var _lab='display:flex;align-items:center;gap:7px;font-size:.74rem;color:#e6edf3;cursor:pointer;';
+    if(_curAyud.length){
+      _amRad.innerHTML =
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="keep" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar con el mismo ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="none" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Sin ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="replace" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Reemplazar por otro ayudante</label>';
+    } else {
+      // Sin ayudante previo: permitir asignar uno
+      _amRad.innerHTML =
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="none" checked onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Continuar sin ayudante</label>'+
+        '<label style="'+_lab+'"><input type="radio" name="mon-ayudm" value="add" onchange="monTurnoAyudMModo()" style="accent-color:#22d3ee;"> Asignar un ayudante</label>';
+    }
+  }
   document.getElementById('mon-turno-traspaso-sec').style.display = 'none';
   document.getElementById('mon-turno-pin-sec').style.display = 'none';
   document.getElementById('mon-turno-tech-error').textContent = '';
@@ -12198,15 +12309,25 @@ function monTurnoSetTipo(tipo) {
   var bM = document.getElementById('mon-turno-btn-mismo');
   var bO = document.getElementById('mon-turno-btn-otro');
   var sec = document.getElementById('mon-turno-traspaso-sec');
+  var secAM = document.getElementById('mon-turno-ayudm-sec');
   if (tipo === 'otro') {
     bM.style.borderColor = 'rgba(255,255,255,.15)'; bM.style.background = 'rgba(255,255,255,.04)'; bM.style.color = '#8b949e';
     bO.style.borderColor = '#c084fc'; bO.style.background = 'rgba(139,92,246,.15)'; bO.style.color = '#c084fc';
     sec.style.display = 'block';
+    if (secAM) secAM.style.display = 'none';
   } else {
     bO.style.borderColor = 'rgba(255,255,255,.15)'; bO.style.background = 'rgba(255,255,255,.04)'; bO.style.color = '#8b949e';
     bM.style.borderColor = 'var(--aaccent)'; bM.style.background = 'rgba(0,180,216,.12)'; bM.style.color = 'var(--aaccent)';
     sec.style.display = 'none';
+    if (secAM) secAM.style.display = 'block';  // mismo técnico: rotar ayudante existente o asignar uno nuevo
   }
+}
+// Muestra el select de "nuevo ayudante" solo al elegir "Reemplazar"
+function monTurnoAyudMModo() {
+  var v = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
+  var selEl = document.getElementById('mon-turno-ayudm-sel');
+  if (selEl) selEl.style.display = (v === 'replace' || v === 'add') ? 'block' : 'none';
+  var errEl = document.getElementById('mon-turno-ayudm-err'); if (errEl) errEl.textContent = '';
 }
 
 function monTurnoConfirm() {
@@ -12229,6 +12350,16 @@ function monTurnoConfirm() {
       ctx.phase = 'pin_otro';
       document.getElementById('mon-turno-pin-label').textContent = 'PIN de ' + nuevoTech + ' para confirmar';
     } else {
+      // Mismo técnico — capturar decisión de ayudante (mantener / sin / reemplazar / asignar) antes del PIN
+      var _amModo = (document.querySelector('input[name="mon-ayudm"]:checked')||{}).value || 'keep';
+      var _amNuevo = '';
+      var _amErr = document.getElementById('mon-turno-ayudm-err');
+      if (_amErr) _amErr.textContent = '';
+      if (_amModo === 'replace' || _amModo === 'add') {   // ambos requieren elegir ayudante del select
+        _amNuevo = (document.getElementById('mon-turno-ayudm-sel')||{}).value || '';
+        if (!_amNuevo) { if(_amErr) _amErr.textContent = 'Selecciona el ayudante.'; return; }
+      }
+      ctx.ayudModo = _amModo; ctx.ayudNuevo = _amNuevo;
       // Mismo técnico — ask their PIN
       ctx.phase = 'pin_mismo';
       document.getElementById('mon-turno-pin-label').textContent = 'Ingresa tu PIN (' + esc(op.tecnico || 'técnico') + ')';
@@ -12258,9 +12389,27 @@ function monTurnoConfirm() {
     }
     if (ctx._confirmPin && pin !== ctx._confirmPin) { document.getElementById('mon-turno-pin-error').textContent = 'Los PINs no coinciden.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
     if (!ctx._confirmPin && pin !== tec.pin) { document.getElementById('mon-turno-pin-error').textContent = 'PIN incorrecto.'; ctx.pinDigits = ''; monTurnoPinRefresh(); return; }
+    // PIN OK — aplicar rotación/asignación de ayudante antes de reanudar.
+    // IMPORTANTE: mutar la op VIVA de DB (ctx.op puede ser una referencia obsoleta si un poll
+    // reemplazó el objeto mientras el modal estaba abierto), para que _doResumeOp la persista.
+    var _liveOf = DB.activeOFs.find(function(o){ return o.of_sap===of.of_sap; });
+    var _tgt = (_liveOf && _liveOf.ops.find(function(o){ return o.id===op.id; })) || op;
+    var _prevAyud = (_tgt.ayudantes||[]).slice();
+    if (ctx.ayudModo === 'none' || ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') {
+      // Nuevo listado de ayudantes: 'replace'/'add' → el elegido; 'none' → ninguno
+      var _nuevos = ((ctx.ayudModo === 'replace' || ctx.ayudModo === 'add') && ctx.ayudNuevo) ? [ctx.ayudNuevo] : [];
+      // Concluir el tiempo del/los ayudante(s) anterior(es) que ya no continúan
+      _prevAyud.forEach(function(a){
+        if (_nuevos.indexOf(a) >= 0) return;             // sigue → no concluir
+        monTurnoCerrarAyud(of.of_sap, _tgt.id, a);         // freezar timer + marcar concluido
+      });
+      // Si es un ayudante que había sido concluido antes, reactivarlo para que su timer arranque
+      if (_tgt.ayudTimes) _nuevos.forEach(function(a){ if(_tgt.ayudTimes[a]!==undefined) delete _tgt.ayudTimes[a]; });
+      _tgt.ayudantes = _nuevos;
+    }
     // PIN OK — resume with same tech
     monTurnoClose();
-    _doResumeOp(of.of_sap, op.id, op.tecnico, op.ayudantes || []);
+    _doResumeOp(of.of_sap, _tgt.id, _tgt.tecnico, _tgt.ayudantes || []);
     monitorRender();
 
   } else if (ctx.phase === 'pin_otro') {
@@ -12300,6 +12449,25 @@ function monTurnoPinRefresh() {
   document.getElementById('mon-turno-pin-error').textContent = '';
 }
 
+// Concluye el tiempo de un ayudante que ya no continúa en el siguiente turno:
+// congela su cronómetro y lo marca en op.ayudTimes para que la reanudación NO lo reinicie.
+function monTurnoCerrarAyud(of_sap, opId, ayudNombre) {
+  var of = DB.activeOFs.find(function(o){ return o.of_sap===of_sap; });
+  var op = of ? of.ops.find(function(o){ return o.id===opId; }) : null;
+  if (!op || !ayudNombre) return;
+  var ak = of_sap+'_'+opId+'_ayud_'+ayudNombre.replace(/[^a-z0-9]/gi,'_');
+  var t = DB.timers[ak];
+  var mins = 0;
+  if (t) {
+    if (t.running && t.start) { t.elapsed=(t.elapsed||0)+(Date.now()-t.start); }
+    t.running=false; t.start=0;
+    mins = Math.floor(((t._prevTurnosMs||0)+(t.elapsed||0))/60000);
+  }
+  if (!op.ayudTimes) op.ayudTimes = {};
+  op.ayudTimes[ayudNombre] = mins;   // marca al ayudante como concluido (la reanudación lo salta)
+  console.log('[Monitor] Ayudante concluido en rotación:', ayudNombre, '·', mins, 'min');
+}
+
 function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   var ctx = { of_sap: of.of_sap, op_id: op.id };
   var pzRest = op._pzasRestantes || op.qty_total;
@@ -12315,45 +12483,81 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
     DB.timers[key].running = false;
     DB.timers[key].start = null;
   }
-  // Close op A
-  op.status   = 'done'; op.fin = nowT();
-  op.qty_total = pzAok + pzAdef; op.qty_ok = pzAok; op.qty_def = pzAdef;
-  op.mins = turnoA ? (turnoA.mins||0) : 0;
+  // Cerrar el turno A como CONCLUIDA (op_concluded) → el supervisor la termina.
+  // Piezas/tiempo del turno A = suma de TODOS sus turnos (soporta varios turnos del mismo
+  // técnico antes del traspaso). El resto de piezas ya pasó al turno B, así que el turno A
+  // solo responde por lo que produjo (p. ej. 25) y NO por el total original (p. ej. 62).
+  var _tSegs = op.turnos || [];
+  var _okA  = _tSegs.reduce(function(s,t){ return s + (t.qty_ok||0); }, 0);
+  var _defA = _tSegs.reduce(function(s,t){ return s + (t.qty_def||0); }, 0);
+  var _minA = _tSegs.reduce(function(s,t){ return s + (t.mins||0); }, 0);
+  if (_okA===0 && _defA===0) { _okA = pzAok; _defA = pzAdef; }        // respaldo: turno actual
+  if (_minA===0) { _minA = turnoA ? (turnoA.mins||0) : (op.mins||0); }
+  op.status   = 'op_concluded'; op.fin = nowT();
+  op.fecha_fin_real = (typeof nowDT==='function') ? nowDT() : op.fecha_fin_real;
+  op.qty_total = _okA + _defA; op.qty_ok = _okA; op.qty_def = _defA;
+  op.mins = _minA;
+  op._pzasRestantes = null;   // ya no hay "restantes" en el turno A (pasaron al turno B)
   op._traspasoA = { tecnico: op.tecnico, ayudantes: op.ayudantes || [] };
-  // Candado local: evitar que el poll/reload revierta 'done' al 'paused' de la pausa de fin de turno
-  op._localStatus = 'done'; op._localStatusAt = Date.now();
+  op._accionLog = 'Concluyó su turno (traspaso a Turno B)';
+  // Candado local: evitar que el poll/reload revierta el estado a 'paused' de fin de turno
+  op._localStatus = 'op_concluded'; op._localStatusAt = Date.now();
   op._pauseTipo = null; op.pauseReason = null;
-  // Create new op B
+  // Create new op B — se INICIA de inmediato (el nuevo operador ya tecleó su PIN)
   var _turnoIdx  = of.ops.length;
   var _turnoOpId = 'op_' + of.of_sap + '_turnoB' + _turnoIdx;
+  var _nowT = nowT();
+  var _nowDT = (typeof nowDT==='function') ? nowDT() : _nowT;
   var newOp = {
     id: _turnoOpId, nombre: op.nombre + ' (Turno B)',
+    secuencia: (op.secuencia||0),   // hereda la secuencia del turno A → queda en su lugar
     estacion: op.estacion, tecnico: nuevoTech, ayudantes: nuevosAyud,
     qty_total: pzRest, qty_ok: 0, qty_def: 0, qty_rej: 0, qty_chat: 0,
-    tipo: op.tipo, status: 'pending',
-    inicio: null, fin: null, mins: 0,
+    tipo: op.tipo, status: 'running',
+    inicio: _nowT, fin: null, mins: 0,
+    fecha_inicio_real: _nowDT, inicioTurnoActual: _nowT, fechaInicioTurnoActual: _nowDT,
+    _localStatus: 'running', _localStatusAt: Date.now(),
     isTemplate: false, isRetrabajo: false, isTurnoB: true, turnoARef: op.id,
     needsCal: op.needsCal, calResult: null, calComment: null,
     pauseReason: null, _pauseTipo: null
   };
   newOp._colaPos = op._colaPos || null; // heredar la posición de cola del turno A
-  of.ops.push(newOp);
+  newOp._justCreated = Date.now();      // proteger del poll hasta que SP lo confirme
+  // Iniciar el cronómetro del turno B (no requiere volver a teclear el PIN al final de la lista)
+  DB.timers[of.of_sap + '_' + newOp.id] = { start: Date.now(), elapsed: 0, running: true };
+  // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final)
+  var _idxA = of.ops.indexOf(op);
+  if (_idxA >= 0) of.ops.splice(_idxA + 1, 0, newOp); else of.ops.push(newOp);
+  // Snapshot de los valores CONCLUIDOS del turno A (para un PATCH explícito a prueba de carreras)
+  var _opA_spId = op._spId, _opA_fin = op.fin, _opA_ffr = op.fecha_fin_real;
+  var _opA_ok = _okA, _opA_def = _defA, _opA_min = _minA, _opA_tec = op.tecnico||'';
   // Persist
   (async function() {
     try {
       if (!appSiteId) await appGetSiteId();
       await appSaveOpToSP(of.of_sap, op.id);
+      // Garantía: PATCH explícito por _spId para que op A quede CONCLUIDA en SP aunque un
+      // poll haya reemplazado el objeto local durante los awaits (sin esto, revierte a paused).
+      if (_opA_spId && String(_opA_spId).trim() && _opA_spId !== 'null') {
+        try {
+          await appFlowEscribir('FT_Operaciones', 'actualizar', parseInt(_opA_spId), {
+            Status: 'op_concluded', PauseReason: '',
+            Qty_Total: _opA_ok + _opA_def, Qty_OK: _opA_ok, Qty_Def: _opA_def,
+            Mins: _opA_min, Fin: _opA_fin || '', Fecha_Fin: _opA_ffr || ''
+          });
+        } catch(ePatch) { console.warn('[Monitor] PATCH op A concluida:', ePatch.message||ePatch); }
+      }
       if (typeof appSaveTimerToSP === 'function') await appSaveTimerToSP(key).catch(function(){});
-      var seqNum = of.ops.length;
       var postFields = {
         Title: newOp.nombre, OF_SAP: of.of_sap, Op_ID: newOp.id,
         Estacion: newOp.estacion||'', Tip: newOp.tipo||'Secuencial',
-        Tecnico: nuevoTech, Status: 'pending',
+        Tecnico: nuevoTech, Ayudantes_JSON: (nuevosAyud||[]).join(','), Status: 'running',
         Qty_Total: pzRest, Qty_OK: 0, Qty_Def: 0, Qty_Rej: 0,
-        Secuencia: seqNum, Mins: 0, Inicio: '', Fin: ''
+        Secuencia: (op.secuencia||0), Mins: 0, Inicio: _nowT, Fin: '', Fecha_Inicio: _nowDT
       };
       var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
       newOp._spId = res && res.id ? res.id : null;
+      if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(of.of_sap + '_' + newOp.id).catch(function(){});
       if (newOp.estacion) {
         var _posB = op._colaPos || 999; // heredar la posición del turno A para que quede en el lugar correcto
         appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
@@ -12371,6 +12575,12 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
   if (newOp.estacion) sqAddOF(of.of_sap);
   sqSyncColaNumbers();
   monitorRender();
+  // Notificar al supervisor (síncrono, no depende del guardado en SP): la operación original
+  // quedó CONCLUIDA por el operador y falta validarla/terminarla.
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_turno_b_val', {
+    of_sap: of.of_sap, op_nombre: op.nombre, estacion: op.estacion||'', operador: _opA_tec||'',
+    nota: 'Turno B para '+nuevoTech+'. Validar/terminar la operación original ('+(_opA_ok+_opA_def)+' pzas)'
+  }).catch(function(){});
 }
 
 // ── Gear menu ─────────────────────────────────────────────────────
@@ -14278,10 +14488,10 @@ function appConfirmPause(){
       fecha_inicio: op.fechaInicioTurnoActual || (op.fecha_inicio_real ? String(op.fecha_inicio_real).split(' ')[0] : '') || new Date().toLocaleDateString('es-MX'),
       fecha_fin: new Date().toLocaleDateString('es-MX')
     };
-    // Evitar duplicados — si ya existe un turno con el mismo inicio, actualizarlo
-    var existIdx=op.turnos.findIndex(function(t){return t.inicio===turnoActual.inicio;});
-    if(existIdx>=0) op.turnos[existIdx]=turnoActual;
-    else op.turnos.push(turnoActual);
+    // Siempre AGREGAR un segmento nuevo por cada fin de turno. El guard de status de arriba ya
+    // impide la doble confirmación del mismo turno, así que no se deduplica por hora de inicio
+    // (eso hacía que un turno sobrescribiera a otro cuando coincidían las horas).
+    op.turnos.push(turnoActual);
     op.status='paused';
     op.pauseReason='🌙 Fin de turno — '+reason+(pzProd>0?' · '+pzProd+' pzas completadas, '+pzRest+' restantes':'');
     op._pauseTipo='turno';
@@ -14421,6 +14631,7 @@ function appConfirmReanudar(){
     var newOp={
       id:_turnoOpId,
       nombre:op.nombre+' (Turno B)',
+      secuencia:(op.secuencia||0),
       estacion:op.estacion,
       tecnico:nuevoTech,ayudantes:nuevosAyud,
       qty_total:pzRest,qty_ok:0,qty_def:0,qty_rej:0,qty_chat:0,
@@ -14431,8 +14642,9 @@ function appConfirmReanudar(){
       needsCal:op.needsCal,calResult:null,calComment:null,pauseReason:null,
       _pauseTipo:null
     };
-    // Insert al FINAL (no después de op A — así mantiene el orden correcto)
-    of.ops.push(newOp);
+    // Insertar el turno B JUSTO DEBAJO de la operación de la que se generó (no al final).
+    var _idxA = of.ops.indexOf(op);
+    if(_idxA>=0) of.ops.splice(_idxA+1, 0, newOp); else of.ops.push(newOp);
     DB.notifications.push({
       id:'turnoB_'+Date.now(),type:'turnoB',of_sap:ctx.of_sap,op_id:newOp.id,
       msg:'🤝 Turno B: '+pzRest+' pzas de "'+op.nombre+'" asignadas a '+(nuevoTech||'técnico por asignar'),
@@ -14457,10 +14669,11 @@ function appConfirmReanudar(){
             Estacion:  newOp.estacion||'',
             Tip:       newOp.tipo||'Secuencial',
             Tecnico:   newOp.tecnico||'',
+            Ayudantes_JSON: (newOp.ayudantes||[]).join(','),
             Status:    'pending',
             Qty_Total: newOp.qty_total||0,
             Qty_OK:    0, Qty_Def:0, Qty_Rej:0,
-            Secuencia: seqNum,
+            Secuencia: (op.secuencia||0),
             Mins:      0,
             Inicio:    '', Fin:''
           };
@@ -14514,10 +14727,14 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   op._localStatus='running'; op._localStatusAt=Date.now();
   // Si es reanudación tras fin de turno: mover elapsed a _prevTurnosMs y resetear
   // para que getEl() devuelva solo el tiempo del turno actual
-  var esFin=op._pauseTipo==='turno';
+  // Detección robusta de reanudación tras FIN DE TURNO: si un poll perdió _pauseTipo,
+  // usar también el texto de pauseReason (persiste en SP). Sin esto, el timer NO se resetea
+  // y el nuevo turno acumula el tiempo del turno anterior.
+  var esFin=(op._pauseTipo==='turno') || ((op.pauseReason||'').indexOf('🌙')>=0) || ((op.pauseReason||'').indexOf('Fin de turno')>=0);
   var timerActual=DB.timers[key]||{elapsed:0};
   var prevTurnosMs=(timerActual._prevTurnosMs||0)+(esFin?(timerActual.elapsed||0):0);
   DB.timers[key]={start:Date.now(),elapsed:esFin?0:(timerActual.elapsed||0),running:true,_prevTurnosMs:prevTurnosMs};
+  if(esFin) op.mins=0; // el turno nuevo arranca en 0 (el tiempo previo ya quedó en op.turnos)
   op.status='running';op.pauseReason=null;op._pauseTipo=null;
   op.inicio=op.inicio||nowT(); // mantener inicio original del turno A
   // B2 fix: registrar inicio real del turno actual
@@ -14546,6 +14763,11 @@ function _doResumeOp(sap,opId,tecnico,ayudantes){
   var _rOp2 = _rOf2 ? _rOf2.ops.find(function(o){return o.id===opId;}) : null;
   fireSync('app','op_resumed',{of_sap:sap, op_id:opId,
     op_name:_rOp2?_rOp2.nombre:'', tecnico:_rOp2?(_rOp2.tecnico||''):''});
+  // Notificar al supervisor por ntfy que se reanudó (mismo técnico)
+  if(typeof appNtfyNotificar==='function') appNtfyNotificar('mon_op_reanudada', {
+    of_sap:sap, op_nombre:_rOp2?_rOp2.nombre:'', estacion:_rOp2?(_rOp2.estacion||''):'',
+    operador:_rOp2?(_rOp2.tecnico||''):'', nota:(esFin?'Reanudó tras fin de turno':'Reanudó tras pausa')
+  }).catch(function(){});
   // Issue 1 fix: immediately update the local button before full renderApp
   document.querySelectorAll('[data-op-id="'+opId+'"],[id$="_'+opId+'"]').forEach(function(el){
     var resumeBtn = el.querySelector ? el.querySelector('.app-ob-resume') : null;
@@ -17902,7 +18124,7 @@ async function appReloadOpsFromSP() {
   try {
     var opsRes = await appFlowGet('FT_Operaciones', 5000);
     // Deduplicar: priorizar por status (running>paused>done>pending), luego ID mayor
-    var statusPrioR = {running:5, paused:4, validating:3, done:2, pending:1};
+    var statusPrioR = {running:6, op_concluded:5, paused:4, validating:3, done:2, pending:1};
     var rawOpsR = (opsRes.value||[]).map(function(i){
       var f = i.fields || i;
       // Preserve the item's SP ID from the outer wrapper
@@ -17955,8 +18177,9 @@ async function appReloadOpsFromSP() {
         aof.ops = [];
         return;
       }
+      var _prevOps = aof.ops || [];
       aof.ops = spOps.map(function(o) {
-        var existing = aof.ops.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
+        var existing = _prevOps.find(function(e){ return e.id === (o.Op_ID||o.Title||''); });
         // Respetar _localStatus si es reciente (<15s) — protege contra race condition donde
         // SP aún devuelve el status anterior mientras el PATCH viaja por la red
         var _spStatus = o.Status || 'pending';
@@ -17994,9 +18217,17 @@ async function appReloadOpsFromSP() {
           pauseReason: o.PauseReason || '',
           _pauseTipo: (o.PauseReason||'').indexOf('🌙 Fin de turno')===0 ? 'turno' : (_effectiveStatus==='paused'?'normal':null),
           _pzasRestantes: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos&&d.turnos.length)return d.turnos[d.turnos.length-1].qty_rest||0;if(d._turnoData)return d.qty_rest||0;}catch(e){}; var m=(o.PauseReason||'').match(/(\d+) restantes/);return m?parseInt(m[1]):null; })(),
-          turnos: (function(){ try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)return d.turnos;if(d._turnoData)return [{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){}; return []; })(),
+          turnos: (function(){ var _sp=[]; try{var d=JSON.parse(o.TurnoData||'');if(d._turnosArray&&d.turnos)_sp=d.turnos;else if(d._turnoData)_sp=[{turno:1,tecnico:d.tecnico||'',mins:d.mins||0,qty_ok:d.qty_ok||0,qty_def:d.qty_def||0,qty_rest:d.qty_rest||0,inicio:d.inicio||'',fin:d.fin||'',fecha:''}];}catch(e){};
+            // Anti-carrera: si localmente ya hay MÁS segmentos de turno y el cambio es reciente, conservarlos
+            // (SP puede ir rezagado tras un fin de turno y "perdería" el último segmento recién agregado).
+            if(existing && existing.turnos && existing.turnos.length>_sp.length && existing._localStatusAt && (Date.now()-existing._localStatusAt<120000)) return existing.turnos;
+            return _sp; })(),
           // B2 fix: recuperar inicioTurnoActual desde TurnoData al recargar desde SP
-          inicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._inicioTurnoActual||null;}catch(e){return null;} })(),
+          inicioTurnoActual: (function(){ var _spTA=null; try{var d=JSON.parse(o.TurnoData||'');_spTA=d._inicioTurnoActual||null;}catch(e){};
+            // Mientras la op está EN PROCESO, el inicio del turno actual local es la fuente de verdad
+            // (evita que un poll con TurnoData rezagada lo borre y colisionen las horas de los segmentos).
+            if(_effectiveStatus==='running' && existing && existing.inicioTurnoActual) return existing.inicioTurnoActual;
+            return _spTA || (existing?existing.inicioTurnoActual:null); })(),
           fechaInicioTurnoActual: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._fechaInicioTurnoActual||'';}catch(e){return '';} })(),
           _hadNormalPause: (function(){ try{var d=JSON.parse(o.TurnoData||'');return d._hadNormalPause===true;}catch(e){return false;} })(),
           needsCal:    o.NeedsCal === true,
@@ -18016,6 +18247,18 @@ async function appReloadOpsFromSP() {
           ayudTimes:   existing ? (existing.ayudTimes||{}) : {},
         };
       });
+      // Conservar ops recién creadas localmente (p. ej. Turno B) que SP todavía no confirma,
+      // para que no "desaparezcan" unos segundos hasta que el 'crear' termine (evita la demora).
+      _prevOps.forEach(function(pop){
+        if(!pop) return;
+        var inSp = aof.ops.some(function(x){ return x.id === pop.id; });
+        if(inSp) return;
+        var _recent = pop._justCreated && (Date.now()-pop._justCreated < 120000);
+        if((pop.isTurnoB || pop._justCreated) && _recent){
+          aof.ops.push(pop);   // se mantiene hasta que el próximo poll ya lo traiga de SP
+        }
+      });
+      aof.ops.sort(function(a,b){ return (a.secuencia||0)-(b.secuencia||0); });
       // Preservar padre y subarts que no vienen de SP
       if(existing_aof_padre !== undefined) aof.padre = existing_aof_padre;
       if(existing_aof_subarts !== undefined) aof.subarts = existing_aof_subarts;
