@@ -16380,6 +16380,35 @@ function ftRptBuildData(){
   return{porEstacion:porEstacion};
 }
 
+// Avance de TODO un pedido (todas sus OFs), sin importar el filtro de la vista.
+// Cada OF cuenta como: ops terminadas / ops no-omitidas; sin ops → 100% si está Finalizada, si no 0%.
+function _rptPedidoAvance(pedido){
+  if(!pedido) return null;
+  var ofs=(_rptData.ofs||[]).filter(function(o){ return (o.pedido||'')===pedido; });
+  if(!ofs.length) return null;
+  var opsByOf={};
+  (_rptData.ops||[]).forEach(function(op){ if(!op.of_sap) return; (opsByOf[op.of_sap]=opsByOf[op.of_sap]||[]).push(op); });
+  var pcts=ofs.map(function(of){
+    var ops=opsByOf[of.of_sap]||[];
+    if(ops.length){
+      var noOmit=ops.filter(function(o){ return (o.status||'').toLowerCase()!=='omitida'; }).length;
+      var done=ops.filter(function(o){ var s=(o.status||'').toLowerCase(); return s==='done'||s==='terminada'||s==='terminado'; }).length;
+      return noOmit>0?Math.round(done/noOmit*100):100;
+    }
+    return (of.status==='Finalizada'||of.status==='En proceso de cierre')?100:0;
+  });
+  return { pedido:pedido, nOfs:ofs.length, pct:Math.round(pcts.reduce(function(s,p){return s+p;},0)/pcts.length) };
+}
+// Si el resultado filtrado corresponde a UN solo pedido (real), devuelve ese pedido; si no, null.
+function _rptPedidoUnico(porEstacionFiltrado){
+  var peds={};
+  Object.keys(porEstacionFiltrado).forEach(function(est){
+    porEstacionFiltrado[est].forEach(function(r){ var p=r.of.pedido||''; if(p && p!=='N/A') peds[p]=true; });
+  });
+  var pl=Object.keys(peds);
+  return pl.length===1 ? pl[0] : null;
+}
+
 // ── Filtros multi-selección (estación / status) ──────────────────────────
 window._rptSel = window._rptSel || { est:[], status:[] };
 function rptMSToggle(key){
@@ -16443,35 +16472,21 @@ function ftRptRender(){
   if(!estaciones.length){contenido.innerHTML='<div class="rpt-empty">No se encontraron registros con los filtros seleccionados.</div>';return;}
   var iconos={'Lavado':'💧','Pintura':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electronico':'⚡','Electronica':'⚡','Sierra':'🪚','Equipo':'🔌'};
   function iconoEst(e){if(!e||e==='Sin estación')return'📭';var k=Object.keys(iconos).find(function(k){return e.indexOf(k)>=0;});return k?iconos[k]:'🏗️';}
-  // ── Avance general del pedido/proyecto filtrado ──────────────────────────
-  // Al capturar un pedido en el buscador, muestra el % de avance de TODO el pedido
-  // (promedio de avance de sus OFs; las Terminadas/Finalizadas cuentan como 100%).
-  var _rptQ=((document.getElementById('rpt-buscar')||{}).value||'').trim();
+  // ── Avance general del pedido ────────────────────────────────────────────
+  // Solo cuando el filtro corresponde a UN solo pedido. Muestra el avance de TODO el pedido
+  // (todas sus OFs), aunque hayas filtrado una sola OF o una sola estación.
   var _bannerHtml='';
-  if(_rptQ){
-    var _ofAgg={};
-    Object.keys(porEstacionFiltrado).forEach(function(est){
-      porEstacionFiltrado[est].forEach(function(r){
-        var k=r.of.of_sap||('#'+r.of.pedido);
-        if(!_ofAgg[k]) _ofAgg[k]={done:0,noOmit:0,hadOps:false,rowPct:(r.pct||0),ped:(r.of.pedido||'N/A')};
-        _ofAgg[k].done+=(r.termOps||0); _ofAgg[k].noOmit+=(r.noOmit||0);
-        if((r.totalOps||0)>0) _ofAgg[k].hadOps=true;
-        if((r.pct||0)>_ofAgg[k].rowPct) _ofAgg[k].rowPct=(r.pct||0);
-      });
-    });
-    var _ks=Object.keys(_ofAgg);
-    if(_ks.length){
-      var _pcts=_ks.map(function(k){var a=_ofAgg[k]; return a.noOmit>0?Math.round(a.done/a.noOmit*100):(a.hadOps?100:a.rowPct);});
-      var _ov=Math.round(_pcts.reduce(function(s,p){return s+p;},0)/_pcts.length);
-      var _peds={}; _ks.forEach(function(k){_peds[_ofAgg[k].ped]=true;}); var _pl=Object.keys(_peds);
-      var _lbl=_pl.length===1 ? ('Pedido '+_pl[0]) : (_pl.length+' pedidos');
-      var _col=ftRptAvanceColor(_ov);
+  var _pedUnico=_rptPedidoUnico(porEstacionFiltrado);
+  if(_pedUnico){
+    var _pa=_rptPedidoAvance(_pedUnico);
+    if(_pa){
+      var _col=ftRptAvanceColor(_pa.pct);
       _bannerHtml='<div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
-        +'<div style="font-size:.85rem;font-weight:700;color:var(--text);">📊 Avance del pedido — '+esc(_lbl)+'</div>'
+        +'<div style="font-size:.85rem;font-weight:700;color:var(--text);">📊 Avance del pedido — Pedido '+esc(_pa.pedido)+'</div>'
         +'<div style="flex:1;min-width:150px;max-width:360px;display:flex;align-items:center;gap:8px;">'
-        +'<div style="flex:1;height:9px;background:rgba(255,255,255,.1);border-radius:5px;overflow:hidden;"><div style="height:100%;width:'+_ov+'%;background:'+_col+';border-radius:5px;transition:width .3s;"></div></div>'
-        +'<span style="font-size:1.05rem;font-weight:800;color:'+_col+';">'+_ov+'%</span></div>'
-        +'<div style="font-size:.72rem;color:var(--dim);">'+_ks.length+' OF(s)</div>'
+        +'<div style="flex:1;height:9px;background:rgba(255,255,255,.1);border-radius:5px;overflow:hidden;"><div style="height:100%;width:'+_pa.pct+'%;background:'+_col+';border-radius:5px;transition:width .3s;"></div></div>'
+        +'<span style="font-size:1.05rem;font-weight:800;color:'+_col+';">'+_pa.pct+'%</span></div>'
+        +'<div style="font-size:.72rem;color:var(--dim);">'+_pa.nOfs+' OF(s) en el pedido</div>'
         +'</div>';
     }
   }
@@ -16529,7 +16544,11 @@ function ftRptExportPDF(){
     var porEstacion=_rptAplicarFiltros();
     var estaciones=Object.keys(porEstacion).sort(function(a,b){if(a==='Sin estación')return 1;if(b==='Sin estación')return -1;return a.localeCompare(b);});
     if(!estaciones.length){ alert('No hay registros con los filtros seleccionados.'); return; }
+    var _pedU=_rptPedidoUnico(porEstacion); var _paU=_pedU?_rptPedidoAvance(_pedU):null;
     var yOffset=26;
+    if(_paU){ doc.setFontSize(10);doc.setFont('helvetica','bold');doc.setTextColor(30,64,120);
+      doc.text('Avance del Pedido '+_paU.pedido+': '+_paU.pct+'%   ('+_paU.nOfs+' OFs del pedido)',14,yOffset);
+      doc.setTextColor(0,0,0);doc.setFont('helvetica','normal'); yOffset+=6; }
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
       if(yOffset>175){doc.addPage();yOffset=14;}
@@ -16562,6 +16581,7 @@ function ftRptExportExcel(){
     var porEstacion=_rptAplicarFiltros();
     var estaciones=Object.keys(porEstacion).sort(function(a,b){if(a==='Sin estación')return 1;if(b==='Sin estación')return -1;return a.localeCompare(b);});
     if(!estaciones.length){ alert('No hay registros con los filtros seleccionados.'); return; }
+    var _pedU=_rptPedidoUnico(porEstacion); var _paU=_pedU?_rptPedidoAvance(_pedU):null;
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var wsData=[];var rowMeta=[];
       wsData.push(['ESTACIÓN: '+(est||'Sin estación')]);rowMeta.push({outline:0});
@@ -16586,10 +16606,14 @@ function ftRptExportExcel(){
       ws['!rows']=rowMeta.map(function(m){return m.outline===1?{level:1}:{};});
       XLSX.utils.book_append_sheet(wb,ws,(est||'Sin estacion').replace(/[:\\/\[\]\*\?]/g,'-').substring(0,31));
     });
-    var sumData=[['Estación','Total OFs','En Proceso','Terminadas','Avance Prom %']];
-    estaciones.forEach(function(est){var rows=porEstacion[est]||[];var enP=rows.filter(function(r){return r.opStatus==='En Proceso';}).length;var term=rows.filter(function(r){return r.opStatus==='Terminada';}).length;var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;sumData.push([est||'Sin estación',rows.length,enP,term,avg/100]);});
-    var wsSum=XLSX.utils.aoa_to_sheet(sumData);wsSum['!cols']=[{wch:28},{wch:12},{wch:14},{wch:14},{wch:16}];
-    for(var R=1;R<sumData.length;R++){var c=XLSX.utils.encode_cell({r:R,c:4});if(wsSum[c]){wsSum[c].t='n';wsSum[c].z='0%';}}
+    var sumData=[];
+    var _sumHdrRow=0;
+    if(_paU){ sumData.push(['AVANCE DEL PEDIDO '+_paU.pedido, _paU.pct/100, _paU.nOfs+' OFs del pedido']); sumData.push([]); _sumHdrRow=2; }
+    sumData.push(['Estación','Total OFs','En Proceso','Terminadas','Avance Prom %']);
+    estaciones.forEach(function(est){var rows=porEstacion[est]||[];var enP=rows.filter(function(r){return r.opStatus==='En Proceso';}).length;var term=rows.filter(function(r){return r.opStatus.indexOf('Terminada')===0;}).length;var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;sumData.push([est||'Sin estación',rows.length,enP,term,avg/100]);});
+    var wsSum=XLSX.utils.aoa_to_sheet(sumData);wsSum['!cols']=[{wch:30},{wch:12},{wch:16},{wch:14},{wch:16}];
+    if(_paU){ var _pc=XLSX.utils.encode_cell({r:0,c:1}); if(wsSum[_pc]){wsSum[_pc].t='n';wsSum[_pc].z='0%';} }
+    for(var R=_sumHdrRow+1;R<sumData.length;R++){var c=XLSX.utils.encode_cell({r:R,c:4});if(wsSum[c]){wsSum[c].t='n';wsSum[c].z='0%';}}
     XLSX.utils.book_append_sheet(wb,wsSum,'Resumen');
     XLSX.writeFile(wb,'Reporte_FabTracker_'+new Date().toISOString().slice(0,10)+'.xlsx');
   }
