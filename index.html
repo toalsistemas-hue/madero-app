@@ -7888,29 +7888,41 @@ function groupByPedido(ofs){
 // ¿Una OF cuenta como "completa" para poder cerrar el pedido?
 // Completa = Finalizada manualmente, o ya en cierre/cerrada, o producida al 100%
 // (todas sus operaciones done/omitida). Una OF "sin programar" NO cuenta (bloquea el cierre).
+// Índice temporal para evitar búsquedas O(n²) durante un render pesado (Fabricaciones).
+// Se construye UNA vez al inicio de _renderProgBody y se limpia al terminar; los helpers de
+// abajo lo usan si está presente, y si no, hacen el .find/.filter normal (fuera del render).
+var _FAB_IDX = null;
+function _fabAofBySap(of_sap){
+  if(_FAB_IDX && _FAB_IDX.aofBySap) return _FAB_IDX.aofBySap[of_sap] || null;
+  return (DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;}) || null;
+}
+function _fabOfsByPedido(pedido){
+  if(_FAB_IDX && _FAB_IDX.ofsByPedido) return _FAB_IDX.ofsByPedido[pedido] || [];
+  return (DB.ofs||[]).filter(function(o){ return o.pedido===pedido; });
+}
 function _ofCompletaParaCierre(of){
   if(!of) return false;
   if(of.ofCerrada===true) return true; // cerrada individualmente = ya completa
   var st=of.status||'';
   if(st==='Finalizada'||st==='Cerrado'||st==='En proceso de cierre') return true;
-  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of.of_sap;});
+  var aof=_fabAofBySap(of.of_sap);
   if(aof && aof.ops && aof.ops.length){ return aof.ops.every(function(op){return op.status==='done'||op.status==='omitida';}); }
   return false;
 }
 // El pedido puede cerrarse solo si TODAS sus OFs (excepto canceladas) están completas.
 function pedidoPuedeCerrar(pedido){
-  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  var ofs=_fabOfsByPedido(pedido).filter(function(o){ var s=o.status||''; return s!=='Pedido Cancelado' && s!=='Cancelada'; });
   if(!ofs.length) return false;
   return ofs.every(_ofCompletaParaCierre);
 }
 // Resumen de OFs del pedido para mostrar en Tiempo Real
 function _pedidoResumen(pedido){
-  var ofs=(DB.ofs||[]).filter(function(o){ var s=o.status||''; return o.pedido===pedido && s!=='Pedido Cancelado' && s!=='Cancelada'; });
+  var ofs=_fabOfsByPedido(pedido).filter(function(o){ var s=o.status||''; return s!=='Pedido Cancelado' && s!=='Cancelada'; });
   var prog=0, sinProg=0, fin=0;
   ofs.forEach(function(o){
     var s=o.status||'';
     if(s==='Finalizada'){ fin++; return; }
-    var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===o.of_sap;});
+    var aof=_fabAofBySap(o.of_sap);
     var tieneOps=aof && aof.ops && aof.ops.length;
     if(o.programadoHoy===true || tieneOps || s==='En Fabricacion' || s==='En proceso de cierre' || s==='Cerrado') prog++;
     else sinProg++;
@@ -8259,7 +8271,7 @@ function renderProg(){
 
     g.ofs.forEach(function(of){
       var tpl = DB.templates[of.articulo];
-      var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      var aof = _fabAofBySap(of.of_sap);
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
       var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
@@ -10938,13 +10950,13 @@ function renderProg(){
   _progRenderT = setTimeout(function(){ _progRenderT = null; try { _renderProgBody(); } catch(e){ console.warn('[renderProg]', e.message); } }, 45);
 }
 function _renderProgBody(){
-  // Debug: verificar datos en primera OF
-  if(DB.ofs && DB.ofs.length > 0){
-    console.log('[renderProg] Primera OF:', DB.ofs[0].of_sap, '| fecha_entrega:', DB.ofs[0].fecha_entrega, '| cantidad:', DB.ofs[0].cantidad);
-  }
   var fText = C.filterText.toLowerCase();
   var fStatus = C.filterStatus;
-  console.log('[renderProg] DB.ofs total:', DB.ofs.length, '| cerradas:', DB.ofs.filter(function(o){return o.pedidoCerrado||o.status==='Cerrado';}).length, '| fStatus:', fStatus);
+  // Índices O(1) construidos UNA vez por render → evita las búsquedas O(n²) que congelaban la UI.
+  _FAB_IDX = { aofBySap:{}, ofsByPedido:{} };
+  (DB.activeOFs||[]).forEach(function(a){ if(a && a.of_sap!=null) _FAB_IDX.aofBySap[a.of_sap]=a; });
+  (DB.ofs||[]).forEach(function(o){ if(!o) return; var k=o.pedido||'SIN_PEDIDO'; (_FAB_IDX.ofsByPedido[k]=_FAB_IDX.ofsByPedido[k]||[]).push(o); });
+  try {
   var groups = groupByPedido(DB.ofs.filter(function(of){
     if(fStatus==='cancelados') return of.status==='Pedido Cancelado';
     if(of.status==='Pedido Cancelado') return false;
@@ -10953,7 +10965,7 @@ function _renderProgBody(){
     if(fStatus==='sin-prog') return !of.programadoHoy;
     if(fStatus==='programados') return of.programadoHoy===true;
     if(fStatus==='terminados'){
-      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      var aof=_fabAofBySap(of.of_sap);
       if(!aof || !aof.ops || aof.ops.length===0) return false;
       return aof.ops.every(function(op){return op.status==='done';});
     }
@@ -10982,7 +10994,7 @@ function _renderProgBody(){
 
     g.ofs.forEach(function(of){
       var tpl = DB.templates[of.articulo];
-      var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      var aof = _fabAofBySap(of.of_sap);
       var done = aof?aof.ops.filter(function(o){return o.status==="done";}).length:0;
       var total = aof?aof.ops.filter(function(o){return o.status!=='omitida';}).length:0;
       var pct = total>0?Math.round(done/total*100):0;
@@ -11100,6 +11112,7 @@ function _renderProgBody(){
   // Ocultar sección pie de cancelados siempre (reemplazada por pestaña)
   var _canSec2=document.getElementById('prog-cancelados-section');
   if(_canSec2) _canSec2.style.display='none';
+  } finally { _FAB_IDX = null; }   // liberar el índice temporal del render
 }
 
 function getProgFields(sap){
