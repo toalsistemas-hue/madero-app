@@ -1287,8 +1287,11 @@ tr:last-child td{border-bottom:none;}
             <div id="ft-adm-excel" class="ft-adm-section">
               <div class="ft-card" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:20px;margin-bottom:16px;">
                 <div style="font-family:\'Syne\',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px;">📊 Carga de Proyectos y Órdenes de Fabricación</div>
-                <div style="font-size:.78rem;color:var(--dim,#64748b);margin-bottom:16px;">Sube el archivo Excel con las OFs del período. El sistema detecta duplicados automáticamente.</div>
-                
+                <div style="font-size:.78rem;color:var(--dim,#64748b);margin-bottom:12px;">Sube el archivo Excel con las OFs del período, o da de alta una orden de forma manual. El sistema detecta duplicados automáticamente.</div>
+                <div class="fab-read-only-hide" style="margin-bottom:14px;">
+                  <button class="btn btn-primary btn-sm" onclick="ftManualOFOpen()">➕ Alta manual de OF</button>
+                </div>
+
                 <!-- Drop zone -->
                 <div id="ft-drop-zone" class="fab-read-only-hide" onclick="document.getElementById('ft-file-input').click()"
                   ondragover="event.preventDefault();this.style.borderColor='var(--accent-l,#58a6ff)'"
@@ -5028,6 +5031,24 @@ function ftHandleFileSelect(e) {
   if (file) ftProcessExcelFile(file);
 }
 
+// Extrae el número de OF de una fila del Excel probando varios nombres de columna posibles
+// (evita que se "salten" filas silenciosamente cuando el encabezado no es exactamente OF_SAP).
+function _ftRowOFSap(row){
+  if(!row) return '';
+  var direct = row.OF_SAP || row.of_sap || row['OF_SAP'] || row['OF SAP'] || row['OF'] || row['Of'] ||
+               row['Orden'] || row['Orden_Fabricacion'] || row['Orden de Fabricacion'] || row['Orden de Fabricación'] ||
+               row['Numero_OF'] || row['Numero OF'] || row['No_OF'] || row['No OF'] || row['OF_Sap'] || row['ofsap'];
+  if(direct!==undefined && direct!==null && String(direct).trim()!=='') return String(direct).trim();
+  // Búsqueda flexible por si el encabezado trae variaciones (espacios, mayúsculas, "número de of", etc.)
+  var keys=Object.keys(row);
+  for(var i=0;i<keys.length;i++){
+    var kn=keys[i].toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(kn==='ofsap'||kn==='of'||kn==='orden'||kn==='numerodeof'||kn==='numof'||kn==='noof'||kn==='ordenfabricacion'||kn==='ordendefabricacion'){
+      var v=row[keys[i]]; if(v!==undefined&&v!==null&&String(v).trim()!=='') return String(v).trim();
+    }
+  }
+  return '';
+}
 function ftProcessExcelFile(file) {
   if (!window.XLSX) { alert('Librería Excel no cargada. Recarga la página.'); return; }
   const reader = new FileReader();
@@ -5051,18 +5072,9 @@ function ftShowExcelPreview(rows) {
   const tbody = document.getElementById('ft-excel-tbody');
   preview.style.display = 'block';
 
-  // Stats
-  const existingOFs = (DB && DB.ofs) ? DB.ofs.map(o => String(o.of_sap)) : [];
-  let newCount = 0, updCount = 0;
-  rows.forEach(r => {
-    const key = String(r.OF_SAP || r.of_sap || '');
-    if (!key) return;
-    if (existingOFs.includes(key)) updCount++; else newCount++;
-  });
-  stats.innerHTML =
-    '<span style="background:rgba(34,197,94,.15);color:#22c55e;border-radius:6px;padding:4px 12px;font-size:.74rem;font-weight:700;">✅ ' + newCount + ' nuevas</span>' +
-    '<span style="background:rgba(245,158,11,.15);color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:.74rem;font-weight:700;">🔄 ' + updCount + ' actualizaciones</span>' +
-    '<span style="background:rgba(255,255,255,.06);color:var(--dim);border-radius:6px;padding:4px 12px;font-size:.74rem;">📊 ' + rows.length + ' total</span>';
+  // Stats — se calculan contra SharePoint (no contra la memoria local, que puede estar desfasada)
+  stats.innerHTML = '<span style="color:var(--dim);font-size:.75rem;">⏳ Verificando contra SharePoint…</span>';
+  _ftOFPreviewStats(rows, stats);
 
   // Table
   const cols = Object.keys(rows[0]);
@@ -5071,6 +5083,31 @@ function ftShowExcelPreview(rows) {
     '<tr>' + cols.map(c => '<td style="padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:.7rem;">' + (r[c]||'') + '</td>').join('') + '</tr>'
   ).join('');
   if (rows.length > 20) tbody.innerHTML += '<tr><td colspan="' + cols.length + '" style="padding:8px 10px;font-size:.7rem;color:var(--dim);text-align:center;">... y ' + (rows.length - 20) + ' filas más</td></tr>';
+}
+
+// Conteo real de nuevas/actualizaciones leyendo FT_OrdenesFabricacion desde SharePoint,
+// más avisos de filas SIN número de OF y OFs repetidas dentro del propio archivo.
+async function _ftOFPreviewStats(rows, stats){
+  var existSet={};
+  try{
+    var r=await flowGet('FT_OrdenesFabricacion','',5000);
+    (r.value||[]).forEach(function(i){ var t=String((i.fields&&(i.fields.Title||i.fields.OF_SAP))||'').trim().toUpperCase(); if(t) existSet[t]=true; });
+  }catch(e){ (DB.ofs||[]).forEach(function(o){ existSet[String(o.of_sap||'').trim().toUpperCase()]=true; }); }
+  var seen={}, newC=0, updC=0, dupFile=0, blank=0;
+  rows.forEach(function(row){
+    var key=_ftRowOFSap(row).toUpperCase();
+    if(!key){ blank++; return; }
+    if(seen[key]){ dupFile++; return; } seen[key]=true;
+    if(existSet[key]) updC++; else newC++;
+  });
+  if(!stats) return;
+  var h=''
+    +'<span style="background:rgba(34,197,94,.15);color:#22c55e;border-radius:6px;padding:4px 12px;font-size:.74rem;font-weight:700;">✅ '+newC+' nuevas</span>'
+    +'<span style="background:rgba(245,158,11,.15);color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:.74rem;font-weight:700;">🔄 '+updC+' actualizaciones</span>'
+    +'<span style="background:rgba(255,255,255,.06);color:var(--dim);border-radius:6px;padding:4px 12px;font-size:.74rem;">📊 '+rows.length+' filas</span>';
+  if(dupFile) h+='<span style="background:rgba(147,51,234,.15);color:#c084fc;border-radius:6px;padding:4px 12px;font-size:.74rem;">📑 '+dupFile+' repetidas en el archivo</span>';
+  if(blank)   h+='<span style="background:rgba(239,68,68,.15);color:#f87171;border-radius:6px;padding:4px 12px;font-size:.74rem;font-weight:700;" title="Filas sin número de OF reconocible — no se cargarán">⚠️ '+blank+' sin N° de OF</span>';
+  stats.innerHTML=h;
 }
 
 function ftCancelExcelLoad() {
@@ -5096,16 +5133,18 @@ async function ftConfirmExcelLoad() {
   }
   try {
     const siteId = await getSiteId();
-    const existRes = await flowGet('FT_OrdenesFabricacion', '', 2000);
-    const existMap = {};
-    (existRes.value||[]).forEach(i => { existMap[String(i.fields.Title||i.fields.OF_SAP||'')] = i.id; });
-    let created = 0, updated = 0, errors = 0;
+    const existRes = await flowGet('FT_OrdenesFabricacion', '', 5000);
+    const existMap = {};   // clave normalizada (MAYÚSCULAS) → itemId
+    (existRes.value||[]).forEach(i => { var t=String((i.fields&&(i.fields.Title||i.fields.OF_SAP))||'').trim().toUpperCase(); if(t) existMap[t] = i.id; });
+    let created = 0, updated = 0, errors = 0, sinNum = 0;
     const errList = [];
+    const okSaps = [];   // OFs que intentamos guardar (para verificar después)
     const loadingEl = document.getElementById('ft-excel-loading');
     for (let idx = 0; idx < _ftPendingExcel.length; idx++) {
       const row = _ftPendingExcel[idx];
-      const ofSap = String(row.OF_SAP || row.of_sap || '').trim();
-      if (!ofSap) continue;
+      const ofSap = _ftRowOFSap(row);
+      if (!ofSap) { sinNum++; continue; }
+      const ofKey = ofSap.toUpperCase();
       if (loadingEl) loadingEl.innerHTML = '<div style="padding:16px;text-align:center;font-size:.82rem;color:var(--dim);">⏳ Guardando OF ' + ofSap + ' (' + (idx+1) + ' de ' + _ftPendingExcel.length + ')...</div>';
       const fields = { Title: ofSap };
       // ── Parse optional Cantidad ─────────────────────────────────────────
@@ -5152,9 +5191,10 @@ async function ftConfirmExcelLoad() {
       if (_cantVal)  optFields.Cantidad      = _cantVal;
       if (_fechaISO) optFields.Fecha_Entrega = _fechaISO + 'T00:00:00Z';
       Object.assign(fields, optFields);
+      okSaps.push(ofSap);
       try {
-        const isNew = !existMap[ofSap];
-        let itemId = existMap[ofSap] || null;
+        const isNew = !existMap[ofKey];
+        let itemId = existMap[ofKey] || null;
         if (isNew) {
           var fechaHoy = new Date();
           var fechaISO = fechaHoy.getFullYear()+'-'+String(fechaHoy.getMonth()+1).padStart(2,'0')+'-'+String(fechaHoy.getDate()).padStart(2,'0');
@@ -5176,15 +5216,116 @@ async function ftConfirmExcelLoad() {
       }
       if (idx < _ftPendingExcel.length - 1) await delay(350);
     }
+    // ── Verificación posterior: releer SP y detectar OFs que NO quedaron registradas ──
+    // (el flujo de Power Automate a veces responde 'ok' sin insertar; aquí lo confirmamos
+    //  contra SP real y reintentamos las faltantes, para evitar cargas incompletas.)
+    var faltantes = okSaps.slice();
+    for (var _pass = 0; _pass < 2 && faltantes.length; _pass++) {
+      try {
+        if (loadingEl) loadingEl.innerHTML = '<div style="padding:16px;text-align:center;font-size:.82rem;color:var(--dim);">🔎 Verificando en SharePoint… (' + faltantes.length + ' por confirmar)</div>';
+        var vr = await flowGet('FT_OrdenesFabricacion', '', 5000);
+        var vset = {}; (vr.value||[]).forEach(function(it){ var t=String((it.fields&&(it.fields.Title||it.fields.OF_SAP))||'').trim().toUpperCase(); if(t) vset[t]=true; });
+        var pendientes = faltantes.filter(function(s){ return !vset[s.toUpperCase()]; });
+        if (!pendientes.length) { faltantes = []; break; }
+        // Reintentar SOLO las pendientes
+        for (var k = 0; k < pendientes.length; k++) {
+          var _sap = pendientes[k];
+          var _r = _ftPendingExcel.find(function(rr){ return _ftRowOFSap(rr).toUpperCase() === _sap.toUpperCase(); });
+          if (!_r) continue;
+          if (loadingEl) loadingEl.innerHTML = '<div style="padding:16px;text-align:center;font-size:.82rem;color:var(--dim);">🔁 Reintentando OF ' + _sap + ' (' + (k+1) + '/' + pendientes.length + ')…</div>';
+          try {
+            var _f = { Title:_sap,
+              Numero_Articulo:String(_r.Numero_Articulo||_r['Numero Articulo']||''),
+              Descripcion_Articulo:String(_r.Descripcion_Articulo||_r['Descripcion Articulo']||''),
+              Pedido:String(_r.Numero_Pedido||_r.Pedido||_r['Numero Pedido']||''),
+              Cliente:String(_r.Cliente||_r.cliente||''),
+              Prioridad:String(_r.Prioridad||_r.prioridad||'Normal'),
+              Status:'Sin programar', Programado_Hoy:false };
+            await spEscribirConReintento('FT_OrdenesFabricacion', _f, null, _sap);
+          } catch(e2) { /* se reevalúa en el siguiente pase */ }
+          await delay(350);
+        }
+        faltantes = pendientes;
+      } catch(e) { console.warn('[OF] Verificación falló:', e.message); break; }
+    }
     document.getElementById('ft-excel-loading').style.display = 'none';
     var msg = '✅ Carga completada:\n' + created + ' OFs nuevas\n' + updated + ' actualizadas';
-    if (errors) msg += '\n\n⚠️ ' + errors + ' error(es):\nOFs no guardadas: ' + errList.join(', ') + '\n\nIntenta cargarlas de nuevo.';
+    if (sinNum) msg += '\n\n⚠️ ' + sinNum + ' fila(s) sin número de OF (se omitieron). Revisa la columna OF_SAP en el Excel.';
+    if (faltantes.length) msg += '\n\n❌ ' + faltantes.length + ' OF(s) NO quedaron registradas en SharePoint:\n' + faltantes.slice(0,25).join(', ') + (faltantes.length>25?' …':'') + '\n\nVuelve a cargar el archivo (solo esas se crearán).';
+    else if (errors) msg += '\n\n⚠️ ' + errors + ' error(es) durante la carga, pero se verificaron y quedaron registradas.';
+    else msg += '\n\n✔️ Todas verificadas en SharePoint.';
     alert(msg);
     ftCancelExcelLoad();
     if (typeof ftLoadDataFromSP === 'function') ftLoadDataFromSP();
   } catch(e) {
     document.getElementById('ft-excel-loading').style.display = 'none';
     alert('Error en la carga: ' + e.message);
+  }
+}
+
+// ── Alta MANUAL de una Orden de Fabricación ──────────────────────────────
+function ftManualOFOpen(){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var ex=document.getElementById('modal-of-manual'); if(ex) ex.remove();
+  var inp='width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:8px 10px;color:var(--text);font-size:.82rem;';
+  var lbl='font-size:.72rem;color:var(--dim);margin:0 0 3px 2px;display:block;';
+  var d=document.createElement('div'); d.id='modal-of-manual'; d.className='coord-modal-bg show';
+  d.innerHTML='<div class="coord-modal-box" style="max-width:560px;max-height:90vh;overflow:auto;">'+
+    '<div class="coord-modal-title">➕ Alta manual de Orden de Fabricación</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;">'+
+      '<div><label style="'+lbl+'">N° de OF (SAP) *</label><input id="mof-ofsap" style="'+inp+'" placeholder="Ej. 14520"></div>'+
+      '<div><label style="'+lbl+'">N° de Pedido</label><input id="mof-pedido" style="'+inp+'" placeholder="Ej. 60005010"></div>'+
+      '<div style="grid-column:1/-1;"><label style="'+lbl+'">Cliente</label><input id="mof-cliente" style="'+inp+'"></div>'+
+      '<div><label style="'+lbl+'">N° de Artículo</label><input id="mof-articulo" style="'+inp+'"></div>'+
+      '<div><label style="'+lbl+'">Cantidad</label><input id="mof-cantidad" type="number" min="0" step="any" style="'+inp+'"></div>'+
+      '<div style="grid-column:1/-1;"><label style="'+lbl+'">Descripción del artículo</label><input id="mof-desc" style="'+inp+'"></div>'+
+      '<div><label style="'+lbl+'">Fecha de entrega</label><input id="mof-fentrega" type="date" style="'+inp+'"></div>'+
+      '<div><label style="'+lbl+'">Prioridad</label><select id="mof-prio" style="'+inp+'"><option value="Normal">⬜ Normal</option><option value="Media">🟡 Media</option><option value="Alta">🔴 Alta</option></select></div>'+
+    '</div>'+
+    '<div id="mof-err" style="font-size:.74rem;color:#f87171;min-height:16px;margin-top:8px;"></div>'+
+    '<div class="coord-modal-actions" style="margin-top:6px;">'+
+      '<button class="btn btn-ghost btn-sm" onclick="closeCModal(\'modal-of-manual\')">Cancelar</button>'+
+      '<button id="mof-save-btn" class="btn btn-primary btn-sm" onclick="ftManualOFSave()">💾 Guardar OF</button>'+
+    '</div></div>';
+  document.body.appendChild(d);
+  setTimeout(function(){ var i=document.getElementById('mof-ofsap'); if(i) i.focus(); }, 60);
+}
+async function ftManualOFSave(){
+  var err=document.getElementById('mof-err'); if(err) err.textContent='';
+  var g=function(id){ return (document.getElementById(id)||{}).value||''; };
+  var ofSap=g('mof-ofsap').trim();
+  if(!ofSap){ if(err) err.textContent='El número de OF es obligatorio.'; return; }
+  var btn=document.getElementById('mof-save-btn'); if(btn){ btn.disabled=true; btn.textContent='⏳ Guardando…'; }
+  try{
+    if(!FT_SITE_ID){ try{ FT_SITE_ID=await getSiteId(); }catch(e){} }
+    // Verificar duplicado contra SP
+    var exist=await flowGet('FT_OrdenesFabricacion','',5000).catch(function(){return {value:[]};});
+    var dup=(exist.value||[]).find(function(i){ return String((i.fields&&(i.fields.Title||i.fields.OF_SAP))||'').trim().toUpperCase()===ofSap.toUpperCase(); });
+    if(dup){ if(err) err.textContent='La OF '+ofSap+' ya está registrada en SharePoint.'; if(btn){ btn.disabled=false; btn.textContent='💾 Guardar OF'; } return; }
+    var fentrega=g('mof-fentrega');
+    var cant=parseFloat(String(g('mof-cantidad')).replace(',','.'));
+    var fechaHoy=new Date(); var fcarga=fechaHoy.getFullYear()+'-'+String(fechaHoy.getMonth()+1).padStart(2,'0')+'-'+String(fechaHoy.getDate()).padStart(2,'0');
+    var fields={ Title:ofSap,
+      Numero_Articulo:g('mof-articulo').trim(),
+      Descripcion_Articulo:g('mof-desc').trim(),
+      Pedido:g('mof-pedido').trim(),
+      Cliente:g('mof-cliente').trim(),
+      Prioridad:g('mof-prio')||'Normal',
+      Status:'Sin programar', Programado_Hoy:false, Fecha_Carga:fcarga };
+    if(!isNaN(cant) && cant>0) fields.Cantidad=cant;
+    if(fentrega) fields.Fecha_Entrega=fentrega+'T00:00:00Z';
+    await spEscribir('FT_OrdenesFabricacion', fields, null);
+    // Verificar que quedó registrada
+    var ver=await flowGet('FT_OrdenesFabricacion','',5000).catch(function(){return {value:[]};});
+    var ok=(ver.value||[]).some(function(i){ return String((i.fields&&(i.fields.Title||i.fields.OF_SAP))||'').trim().toUpperCase()===ofSap.toUpperCase(); });
+    if(!ok){ if(err) err.textContent='No se pudo confirmar el registro en SharePoint. Intenta de nuevo.'; if(btn){ btn.disabled=false; btn.textContent='💾 Guardar OF'; } return; }
+    closeCModal('modal-of-manual');
+    if(typeof ftLoadDataFromSP==='function') await ftLoadDataFromSP();
+    if(typeof showInfoModal==='function') showInfoModal('OF registrada','La orden '+ofSap+' se dio de alta correctamente.',null,null);
+    else alert('OF '+ofSap+' registrada.');
+  }catch(e){
+    if(err) err.textContent='Error al guardar: '+(e&&e.message||e);
+    if(btn){ btn.disabled=false; btn.textContent='💾 Guardar OF'; }
   }
 }
 
@@ -7883,6 +8024,12 @@ function groupByPedido(ofs){
     else if(of.prioridad==="media"&&g[k].prioridad!=="alta")g[k].prioridad="media";
   });
   var arr=Object.values(g);
+  // Ordenar las OFs dentro de cada pedido por número de OF ascendente (menor a mayor)
+  arr.forEach(function(gp){ gp.ofs.sort(function(a,b){
+    var na=parseInt(String(a.of_sap||'').replace(/\D/g,''),10), nb=parseInt(String(b.of_sap||'').replace(/\D/g,''),10);
+    if(!isNaN(na)&&!isNaN(nb)&&na!==nb) return na-nb;
+    return String(a.of_sap||'').localeCompare(String(b.of_sap||''));
+  }); });
   arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
   return arr;
 }
@@ -8265,6 +8412,8 @@ function renderProg(){
     h+="<div><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
     h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div>";
     h+="<div style='display:flex;align-items:center;gap:8px'>";
+    var _resP=(typeof _pedidoResumen==='function')?_pedidoResumen(g.pedido):{total:g.ofs.length};
+    h+="<span class='chip' style='background:rgba(0,180,216,.14);color:var(--accent-l);border:1px solid rgba(0,180,216,.3);white-space:nowrap;' title='Órdenes de fabricación cargadas en este pedido'>📦 "+_resP.total+" OF"+(_resP.total===1?"":"s")+"</span>";
     h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
     if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
     if(!cancelado && _fabNivel()!=='lectura') h+="<button onclick='cancelarPedido(\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 10px;font-size:.7rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar Pedido</button>";
@@ -10988,6 +11137,8 @@ function _renderProgBody(){
     h+="<div style='display:flex;align-items:center;gap:6px;min-width:0;'><button type='button' class='prog-toggle' title='Expandir / comprimir órdenes' onclick='toggleProgCard(this)'>▾</button><div style='min-width:0;'><div class='prog-ped-num' style='"+(completed?"color:var(--green)":cancelado?"color:var(--red)":"")+"'>Pedido "+esc(g.pedido)+"</div>";
     h+="<div class='prog-ped-cliente'>"+esc(g.cliente)+(g.ofv?" <span style='color:var(--dim);font-size:.72rem'>· "+esc(g.ofv)+"</span>":"")+(completed?" <span class='chip c-done' style='margin-left:6px'>✓ Completado</span>":cancelado?" <span class='chip' style='background:rgba(239,68,68,.15);color:var(--red);margin-left:6px;'>✗ Cancelado</span>":"")+"</div></div></div>";
     h+="<div style='display:flex;align-items:center;gap:8px'>";
+    var _resP=(typeof _pedidoResumen==='function')?_pedidoResumen(g.pedido):{total:g.ofs.length};
+    h+="<span class='chip' style='background:rgba(0,180,216,.14);color:var(--accent-l);border:1px solid rgba(0,180,216,.3);white-space:nowrap;' title='Órdenes de fabricación cargadas en este pedido'>📦 "+_resP.total+" OF"+(_resP.total===1?"":"s")+"</span>";
     h+="<span class='"+pC[g.prioridad]+"'>"+pL[g.prioridad]+"</span>";
     if(C.editingMode) h+="<select class='form-select-sm' onchange='updatePedidoPrio(\""+g.pedido+"\",this.value)'><option value='alta'"+(g.prioridad==="alta"?" selected":"")+">🔴 Alta</option><option value='media'"+(g.prioridad==="media"?" selected":"")+">🟡 Media</option><option value='normal'"+(g.prioridad==="normal"?" selected":"")+">⬜ Normal</option></select>";
     if(!cancelado && _fabNivel()!=='lectura') h+="<button onclick='cancelarPedido(\""+esc(g.pedido)+"\")' style='background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);border-radius:6px;padding:3px 10px;font-size:.7rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar Pedido</button>";
