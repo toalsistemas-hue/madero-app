@@ -1049,7 +1049,7 @@ tr:last-child td{border-bottom:none;}
     <button class="coord-nav-pill" onclick="showCoordPage('plantillas',this)">📋 Plantillas OF</button>
     <span style="width:1px;height:16px;background:rgba(255,255,255,.12);margin:0 6px;flex-shrink:0;align-self:center;"></span>
     <button class="coord-nav-pill" onclick="showCoordPage('seguimiento',this)">📡 Tiempo Real</button>
-    <button class="coord-nav-pill" onclick="showCoordPage('historial',this)">📊 Historial & KPIs</button>
+    <button class="coord-nav-pill" onclick="coordGoHistorial(this)">📊 Historial & KPIs</button>
     <button class="coord-nav-pill" onclick="showCoordPage('flujos',this)">🔀 Flujos en proceso</button>
     <button class="coord-nav-pill" onclick="showCoordPage('reportes',this);ftRptLoad()">📋 Reportes</button>
     <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
@@ -1238,7 +1238,7 @@ tr:last-child td{border-bottom:none;}
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button onclick="ftRptExportPDF()" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📄 Descargar PDF</button>
           <button onclick="ftRptExportExcel()" style="background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.25);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">📊 Excel con detalle</button>
-          <button onclick="ftRptPDFCodigosChooser()" title="PDF con códigos QR — elige General (solo OFs) o Con operaciones" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
+          <button class="fab-read-only-hide" onclick="ftRptPDFCodigosChooser()" title="PDF con códigos QR — elige General (solo OFs) o Con operaciones" style="background:rgba(147,51,234,.15);color:#c084fc;border:1px solid rgba(147,51,234,.35);border-radius:7px;padding:6px 14px;font-size:.78rem;cursor:pointer;">🔳 PDF con códigos</button>
           <button onclick="ftRptLoad()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:6px 12px;font-size:.78rem;cursor:pointer;color:var(--text);">🔄 Actualizar</button>
         </div>
       </div>
@@ -13759,10 +13759,10 @@ function renderSeg(){
     if((filterStatus==='activos' || filterStatus==='ofcerradas') && pedidoPuedeCerrar(g.pedido)){
       h+='<div style="display:flex;gap:5px;">';
       if(_fabNivel()!=='lectura') h+='<button class="btn btn-sm" style="background:rgba(212,160,23,.15);color:var(--yellow);border:1px solid rgba(212,160,23,.3);" onclick="movePedidoCierre(\''+g.pedido+'\')" title="Iniciar proceso de cierre">🟡 En proceso de cierre</button>';
-      h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
+      if(_fabNivel()!=='lectura') h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido definitivamente">✅ Cerrar pedido</button>';
       h+='</div>';
     }
-    if(filterStatus==='cierre'){
+    if(filterStatus==='cierre' && _fabNivel()!=='lectura'){
       h+='<button class="btn btn-sm btn-success" onclick="cerrarPedido(\''+g.pedido+'\')" title="Cerrar pedido">✅ Cerrar pedido</button>';
     }
     h+='</div></div>';
@@ -14161,7 +14161,7 @@ function setTechMode(m){ C.techMode = (m==='manoobra')?'manoobra':'desempeno'; r
 window.setTechMode = setTechMode;
 
 // Overlay bloqueante mientras se filtra/renderiza el KPI (el render es síncrono y pesado).
-function _kpiFilterOverlay(show){
+function _kpiFilterOverlay(show, msg){
   if(!document.getElementById('kpi-spin-kf')){
     var st=document.createElement('style'); st.id='kpi-spin-kf';
     st.textContent='@keyframes kpispin{to{transform:rotate(360deg)}}';
@@ -14173,19 +14173,28 @@ function _kpiFilterOverlay(show){
     ov.style.cssText='position:fixed;inset:0;z-index:99998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);cursor:progress;';
     ov.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.5);">'+
       '<span style="display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.2);border-top-color:#58a6ff;border-radius:50%;animation:kpispin .7s linear infinite;"></span>'+
-      '<span style="color:#e6edf3;font-size:.85rem;font-weight:600;">Filtrando…</span></div>';
+      '<span id="kpi-overlay-msg" style="color:#e6edf3;font-size:.85rem;font-weight:600;">Filtrando…</span></div>';
     document.body.appendChild(ov);
   }
+  var _m=document.getElementById('kpi-overlay-msg'); if(_m) _m.textContent = msg || 'Filtrando…';
   ov.style.display = show ? 'flex' : 'none';
 }
 // Renderiza el KPI mostrando primero el spinner (cede al navegador para pintar antes del render).
-function renderHistSpin(){
-  _kpiFilterOverlay(true);
+function renderHistSpin(msg){
+  _kpiFilterOverlay(true, msg);
   setTimeout(function(){
     try{ renderHist(); } finally { _kpiFilterOverlay(false); }
   }, 30);
 }
 window.renderHistSpin = renderHistSpin;
+// Entra a la pestaña Historial & KPIs mostrando un spinner (el primer render es pesado).
+function coordGoHistorial(el){
+  if(typeof _kpiFilterOverlay==='function') _kpiFilterOverlay(true, 'Cargando datos…');
+  setTimeout(function(){
+    try{ showCoordPage('historial', el); } finally { if(typeof _kpiFilterOverlay==='function') _kpiFilterOverlay(false); }
+  }, 30);
+}
+window.coordGoHistorial = coordGoHistorial;
 
 function _manoObraNormFecha(s){
   if(!s) return null;
@@ -15483,7 +15492,8 @@ function appQueueSave(){
 function toggleTechDetail(t){
   if(!C.techExpanded)C.techExpanded={};
   C.techExpanded[t]=!C.techExpanded[t];
-  (window.renderHist||renderHist)();
+  if(typeof renderHistSpin==='function') renderHistSpin(C.techExpanded[t]?'Cargando detalle…':'Actualizando…');
+  else (window.renderHist||renderHist)();
 }
 
 // -- Station status (app móvil) -----------------------------
