@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.98</title>
+<title>FabTracker App v2.99</title>
 
 <!-- MSAL Browser -->
 
@@ -10719,17 +10719,23 @@ function monReporteMetaOpen(scope){
   filtros+='<input id="meta-f-op" placeholder="👷 Operador" oninput="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:95px;">';
   if(sup){
     filtros+='<input id="meta-f-ped" placeholder="📦 N° de pedido" oninput="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:95px;">';
-    var estAll={}; (DB.activeOFs||[]).forEach(function(aof){ (aof.ops||[]).forEach(function(o){ if(o.estacion) estAll[o.estacion]=true; }); });
-    var sel='<select id="meta-f-est" onchange="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:120px;"><option value="">🏭 Todas las estaciones</option>';
-    Object.keys(estAll).sort().forEach(function(e){ sel+='<option value="'+esc(e)+'">'+esc(e)+'</option>'; });
-    filtros+=sel+'</select>';
   }
+  // Filtro de estación para ambos: en supervisor = todas; en monitor = solo las asignadas
+  var _estList;
+  if(sup){ var estAll={}; (DB.activeOFs||[]).forEach(function(aof){ (aof.ops||[]).forEach(function(o){ if(o.estacion) estAll[o.estacion]=true; }); }); _estList=Object.keys(estAll).sort(); }
+  else { _estList=(_MON.estaciones||[]).slice(); }
+  var sel='<select id="meta-f-est" onchange="monReporteMetaRender()" style="'+inpSty+'flex:1;min-width:120px;"><option value="">🏭 Todas las estaciones</option>';
+  _estList.forEach(function(e){ sel+='<option value="'+esc(e)+'">'+esc(e)+'</option>'; });
+  filtros+=sel+'</select>';
   filtros+='<button onclick="monReporteMetaLimpiar()" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 10px;color:#8b949e;font-size:.74rem;cursor:pointer;white-space:nowrap;">✕ Limpiar</button>';
   filtros+='</div>';
   d.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(135deg,#0d9488,#0f766e);flex-shrink:0;">'+
       '<div style="font-weight:800;font-size:1.05rem;color:#fff;">📊 Reporte Meta'+(sup?' — Todas las estaciones':'')+'</div>'+
-      '<button onclick="monReporteMetaClose()" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;border-radius:8px;padding:5px 13px;">✕</button>'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<button id="meta-refresh-btn" onclick="monReporteMetaRefresh()" title="Actualizar datos" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1rem;cursor:pointer;line-height:1;border-radius:8px;padding:6px 12px;">↻</button>'+
+        '<button onclick="monReporteMetaClose()" style="background:rgba(255,255,255,.18);border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;border-radius:8px;padding:5px 13px;">✕</button>'+
+      '</div>'+
     '</div>'+
     filtros+
     '<div id="mon-reporte-meta-body" style="flex:1;overflow-y:auto;padding:12px;"></div>';
@@ -10738,6 +10744,17 @@ function monReporteMetaOpen(scope){
 }
 function monReporteMetaClose(){ var m=document.getElementById('mon-reporte-meta-modal'); if(m) m.remove(); }
 function monReporteMetaLimpiar(){ ['meta-f-of','meta-f-op','meta-f-ped'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';}); var s=document.getElementById('meta-f-est'); if(s)s.value=''; monReporteMetaRender(); }
+// Actualizar: recarga los datos desde SharePoint y vuelve a dibujar el reporte
+async function monReporteMetaRefresh(){
+  var btn=document.getElementById('meta-refresh-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  try{
+    if(typeof appReloadOpsFromSP==='function') await appReloadOpsFromSP();
+    else if(typeof appLoadDataFromSP==='function') await appLoadDataFromSP();
+  }catch(e){ console.warn('[Meta] actualizar:', e&&e.message); }
+  monReporteMetaRender();
+  var b2=document.getElementById('meta-refresh-btn'); if(b2){ b2.disabled=false; b2.textContent='↻'; }
+}
 function _monMetaColor(pct){ return pct>=100?'#22c55e':(pct>=60?'#58a6ff':(pct>=30?'#f59e0b':'#f87171')); }
 function monReporteMetaRender(){
   var body=document.getElementById('mon-reporte-meta-body'); if(!body) return;
@@ -10750,10 +10767,10 @@ function monReporteMetaRender(){
   if(sup){
     var estAll={}; (DB.activeOFs||[]).forEach(function(aof){ (aof.ops||[]).forEach(function(o){ if(o.estacion) estAll[o.estacion]=true; }); });
     ests=Object.keys(estAll).sort();
-    if(fEst) ests=ests.filter(function(e){ return e===fEst; });
   } else {
     ests=(_MON.estaciones||[]).slice();
   }
+  if(fEst) ests=ests.filter(function(e){ return e===fEst; });
   if(!ests.length){ body.innerHTML='<div style="text-align:center;color:#8b949e;padding:40px 20px;font-size:.85rem;">'+(sup?'No hay estaciones con órdenes cargadas.':'Este monitor no tiene estaciones asignadas.<br>Configúralas con el ⚙ de arriba.')+'</div>'; return; }
   var porEst={}; ests.forEach(function(e){ porEst[e]=[]; });
   var gTotal=0, gResueltas=0, ofAgg={};
