@@ -1076,6 +1076,7 @@ tr:last-child td{border-bottom:none;}
         <div><div class="page-title">📅 Programación</div><div class="page-sub">Gestiona qué OFs se fabrican hoy</div></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" onclick="openPrioModal()" id="btn-prio">⚡ Prioridades</button>
+          <button class="btn btn-ghost btn-sm" onclick="ftProgExportExcel()" id="btn-prog-excel" title="Descargar el listado de OFs en Excel, agrupado por pedido">⬇ Descargar Excel</button>
           <button class="btn btn-ghost btn-sm fab-read-only-hide" onclick="ftAbrirAgrupar()" id="btn-agrupar" title="Agrupar OFs del mismo artículo para fabricar en lote">🔗 Agrupar</button>
           <button class="btn btn-primary btn-sm fab-read-only-hide" onclick="startEditMode()" id="btn-prog">✏ Editar Programación</button>
           <button class="btn btn-success btn-sm" onclick="abrirRevisionProgramacion()" id="btn-confirm-prog" style="display:none;">✓ Confirmar</button>
@@ -6444,6 +6445,7 @@ async function ftLoadDataFromSP() {
       pedidoCerrado: f.Status === 'Cerrado',
       fecha_entrega: (f.Fecha_Entrega||'').split('T')[0] || '',
       fecha_programacion: (f.Fecha_Programacion||'').split('T')[0] || '',
+      fecha_carga: (f.Fecha_Carga||'').split('T')[0] || '',
       cantidad: parseFloat(String(f.Cantidad||'').replace(',','.'))||null,
       monitor_override: (function(){
         var _sap=f.OF_SAP||f.Title||'';
@@ -8032,6 +8034,40 @@ function groupByPedido(ofs){
   }); });
   arr.sort(function(a,b){var p={alta:0,media:1,normal:2};return (p[a.prioridad]||2)-(p[b.prioridad]||2);});
   return arr;
+}
+// Descargar el listado de OFs (Programación) a Excel, agrupado por número de pedido
+function ftProgExportExcel(){
+  function go(){
+    var XLSX=window.XLSX; if(!XLSX){ alert('No se pudo cargar la librería de Excel.'); return; }
+    var ofs=(DB.ofs||[]).slice();
+    if(!ofs.length){ alert('No hay órdenes de fabricación para exportar.'); return; }
+    var grupos={};
+    ofs.forEach(function(o){ var k=o.pedido||'SIN PEDIDO'; (grupos[k]=grupos[k]||[]).push(o); });
+    var pedidos=Object.keys(grupos).sort(function(a,b){ var na=parseInt(String(a).replace(/\D/g,''))||0, nb=parseInt(String(b).replace(/\D/g,''))||0; if(na!==nb) return na-nb; return String(a).localeCompare(String(b)); });
+    var _cap=function(s){ s=String(s||''); return s? s.charAt(0).toUpperCase()+s.slice(1):''; };
+    var headers=['OF_SAP','Numero_Articulo','Descripcion_Articulo','Cliente','Pedido','Prioridad','Sub_Articulos','Programado_Hoy','Status','Fecha_Cargar','Fecha_Programacion','Fecha_Entrega','Cantidad'];
+    var aoa=[headers];
+    pedidos.forEach(function(ped){
+      var arr=grupos[ped].slice().sort(function(a,b){ var na=parseInt(String(a.of_sap).replace(/\D/g,''))||0, nb=parseInt(String(b.of_sap).replace(/\D/g,''))||0; return na-nb; });
+      var cli=(arr[0]&&arr[0].cliente)||'';
+      aoa.push(['▼ PEDIDO '+ped+(cli?' — '+cli:'')+'  ('+arr.length+' OF'+(arr.length===1?'':'s')+')','','','','','','','','','','','','']);
+      arr.forEach(function(o){
+        aoa.push([
+          o.of_sap||'', o.articulo||'', o.descripcion||'', o.cliente||'', o.pedido||'',
+          _cap(o.prioridad), (o.sub_articulos||[]).join(', '), (o.programadoHoy===true?'Sí':'No'), o.status||'',
+          o.fecha_carga||'', o.fecha_programacion||'', o.fecha_entrega||'', (o.cantidad!=null?o.cantidad:'')
+        ]);
+      });
+      aoa.push([]);
+    });
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:12},{wch:16},{wch:44},{wch:26},{wch:14},{wch:10},{wch:22},{wch:14},{wch:22},{wch:14},{wch:16},{wch:14},{wch:10}];
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Programación');
+    XLSX.writeFile(wb, 'Programacion_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }
+  if(window.XLSX){ go(); }
+  else { var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar la librería de Excel.'); }; document.head.appendChild(s); }
 }
 // ¿Una OF cuenta como "completa" para poder cerrar el pedido?
 // Completa = Finalizada manualmente, o ya en cierre/cerrada, o producida al 100%
