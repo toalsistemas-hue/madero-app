@@ -2115,6 +2115,16 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: SISTEMA DE GESTIÓN DOCUMENTAL -->
+<div class="page" id="page-ControlDocumental" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="cdoc-iframe"
+    src="Sistema_Gestion_Documental.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:block;z-index:10;"
+    title="Sistema de Gestión Documental">
+  </iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -3152,6 +3162,8 @@ function navigateToPantalla(pantallaID) {
     if (ifrm) ifrm.style.display = 'none';
     var cotzIfrm = document.getElementById('cotz-iframe');
     if (cotzIfrm) cotzIfrm.style.display = 'none';
+    var cdocIfrm = document.getElementById('cdoc-iframe');
+    if (cdocIfrm) cdocIfrm.style.display = 'none';
 
     if (pantallaID==='Cotizaciones') {
       if (cotzIfrm) {
@@ -3192,6 +3204,30 @@ function navigateToPantalla(pantallaID) {
               token: state.token || null,
               userName: state.currentUser ? state.currentUser.nombre : '',
               access: nivel,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 600);
+      }
+    }
+    if (pantallaID==='ControlDocumental') {
+      if (cdocIfrm) {
+        cdocIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (cdocIfrm && cdocIfrm.contentWindow) {
+            var nivelCd = (state.currentUser && state.currentUser.pantallas)
+              ? (state.currentUser.pantallas['ControlDocumental'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelCd = 'completo';
+            cdocIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: nivelCd,
               isDemoMode: state.isDemoMode || false
             }, '*');
           }
@@ -4796,9 +4832,15 @@ async function ftAdmOpSave(){
   var desc=document.getElementById('op-edit-desc').value.trim();
   var spId=document.getElementById('op-edit-spid').value;
   if(!nombre){alert('El nombre de la operación es requerido.');return;}
-  // Verificar duplicado
-  var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
-  if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
+  // Verificar duplicado: solo es duplicado si coincide la descripción/nombre Y el mismo número de artículo.
+  // Se permite la misma descripción si el artículo es distinto.
+  var _artLc=(artKey||'').toLowerCase();
+  var dup=(DB.opCatalogFull||[]).find(function(o){
+    return o.nombre.toLowerCase()===nombre.toLowerCase()
+        && (o.articulo||'').toLowerCase()===_artLc
+        && o.spId!==spId;
+  });
+  if(dup){alert('La operación "'+nombre+'" ya existe para el artículo "'+(artKey||'(sin artículo)')+'".');return;}
   var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
@@ -4857,13 +4899,16 @@ function ftAdmOpProcessFile(file){
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
     var items=[];var dups=0;
-    var existingNames=(DB.opCatalogFull||[]).map(function(o){return o.nombre.toLowerCase();});
+    // Clave de duplicado = descripción/nombre + número de artículo (misma descripción con distinto artículo SÍ se permite)
+    var existingKeys=(DB.opCatalogFull||[]).map(function(o){return (o.nombre||'').toLowerCase()+'|'+(o.articulo||'').toLowerCase();});
     rows.forEach(function(r){
       var nombre=(r.Operacion||r.operacion||r.Title||r.Nombre||'').toString().trim();
       var art=(r.Articulo_Key||r.articulo||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||'').toString().trim();
       if(!nombre) return;
-      if(existingNames.indexOf(nombre.toLowerCase())>=0){dups++;return;}
+      var key=nombre.toLowerCase()+'|'+art.toLowerCase();
+      if(existingKeys.indexOf(key)>=0){dups++;return;}   // ya existe (misma descripción y mismo artículo) o repetido en el archivo
+      existingKeys.push(key);
       items.push({nombre:nombre,art:art,desc:desc});
     });
     _ftOpPendingExcel=items;
@@ -6303,6 +6348,30 @@ async function spEscribir(lista, datos, itemId) {
 // Protocolo:  { type:'SP_BRIDGE_REQUEST',  callId, op, args }
 //          →  { type:'SP_BRIDGE_RESPONSE', callId, error, result }
 // ═══════════════════════════════════════════════════════════════════
+// Handshake del Sistema de Gestión Documental (SGD) embebido: cada pantalla del
+// SGD, al cargar, solicita el usuario en sesión y su nivel de acceso a
+// ControlDocumental ('completo' | 'lectura' | ''). Respondemos con SGD_AUTH.
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'SGD_READY') return;
+  try {
+    var nivelCd = (state.currentUser && state.currentUser.pantallas)
+      ? (state.currentUser.pantallas['ControlDocumental'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelCd = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelCd,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
 window.addEventListener('message', async function(e) {
   if (!e.data || e.data.type !== 'SP_BRIDGE_REQUEST') return;
   var callId = e.data.callId;
@@ -6337,6 +6406,48 @@ window.addEventListener('message', async function(e) {
     } else if (op === 'update') {
       await spEscribir(args.lista, args.fields, args.itemId);
       reply(null, { ok: true });
+
+    } else if (op === 'delete') {
+      if (LISTAS_PROTEGIDAS.indexOf(args.lista) !== -1) {
+        await flowEscribir(args.lista, 'eliminar', parseInt(args.itemId, 10), {});
+      } else {
+        var sidD = await getSiteId();
+        var tokD = await getToken();
+        var urlD = 'https://graph.microsoft.com/v1.0/sites/'+sidD+'/lists/'+args.lista+'/items/'+args.itemId;
+        var rD = await fetch(urlD, { method:'DELETE', headers:{ Authorization:'Bearer '+tokD } });
+        if (!rD.ok && rD.status !== 204) { reply('delete_' + rD.status, null); return; }
+      }
+      reply(null, { ok: true });
+
+    } else if (op === 'reauth') {
+      // Verificación de identidad con Microsoft (token silencioso de la sesión actual),
+      // para confirmar que quien autoriza es el mismo usuario en sesión. Devuelve su correo.
+      try {
+        if (!state.msalInstance) { reply('no_msal', null); return; }
+        var accts = state.msalInstance.getAllAccounts();
+        if (!accts || !accts.length) { reply('no_account', null); return; }
+        var rr = await state.msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account: accts[0] });
+        var acc = (rr && rr.account) ? rr.account : accts[0];
+        reply(null, { username: acc ? (acc.username || '') : '', name: acc ? (acc.name || '') : '' });
+      } catch (e) {
+        reply('reauth_' + (e && e.errorCode ? e.errorCode : 'error'), null);
+      }
+
+    } else if (op === 'getFileBase64') {
+      // Devuelve el contenido de un archivo del drive (por su driveItem id) en base64.
+      // Se usa para mostrar documentos controlados en un visor (blob) sin exponer enlaces.
+      var sidF = await getSiteId();
+      var tokF = await getToken();
+      var resF = await fetch('https://graph.microsoft.com/v1.0/sites/'+sidF+'/drive/items/'+encodeURIComponent(args.driveId)+'/content', {
+        headers: { Authorization: 'Bearer ' + tokF }
+      });
+      if (!resF.ok) { reply('file_' + resF.status, null); return; }
+      var bufF = await resF.arrayBuffer();
+      var bytesF = new Uint8Array(bufF), binF = '', CH = 0x8000;
+      for (var iF = 0; iF < bytesF.length; iF += CH) {
+        binF += String.fromCharCode.apply(null, bytesF.subarray(iF, iF + CH));
+      }
+      reply(null, { base64: btoa(binF), mime: (resF.headers.get('content-type') || 'application/octet-stream') });
 
     } else if (op === 'uploadAttachment') {
       var sidU  = await getSiteId();
