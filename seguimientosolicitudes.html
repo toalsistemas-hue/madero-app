@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento de Solicitudes</title>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+
+    <!-- Reutiliza el mismo lenguaje visual que Atención a Solicitudes -->
+    <link rel="stylesheet" href="atencionsolicitudes.css">
+
+    <style>
+        .btn-actualizar-seg{
+            background:linear-gradient(135deg,#2f75a8,#1f4e79);
+            color:white;border:none;padding:12px 24px;border-radius:8px;
+            cursor:pointer;font-size:15px;font-weight:600;transition:.3s;
+            box-shadow:0 6px 15px rgba(31,78,121,.3);
+        }
+        .btn-actualizar-seg:hover{transform:translateY(-3px);}
+        .sub-encabezado{ padding:14px 35px 0 35px;color:#4b5563;font-size:14px; }
+        .sin-datos{ text-align:center;padding:40px;color:#7b8794;font-size:15px; }
+        /* Scroll horizontal de la tabla en pantallas chicas */
+        .tabla-scroll{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .tabla-scroll table{ min-width:1250px; }
+
+        /* Píldoras de estatus */
+        .estado-pill{ display:inline-block;padding:5px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap; }
+        .estado-pendiente{ background:#fff3e0;color:#c77700;border:1px solid #ffd8a8; }
+        .estado-abierta{ background:#e3f0ff;color:#1f6feb;border:1px solid #b6d4fb; }
+        .estado-proceso{ background:#e6f7ff;color:#0b7285;border:1px solid #b3e5f2; }
+        .estado-revision{ background:#f3e8ff;color:#6b34b3;border:1px solid #ddc7f5; }
+        .estado-liberacion{ background:#fff1e6;color:#c2410c;border:1px solid #ffd3b0; }
+        .estado-cancelado{ background:#f3f4f6;color:#6b7280;border:1px solid #dfe3e8; }
+        .estado-atendida{ background:#e7f6ee;color:#1e8449;border:1px solid #b6e3c8; }
+        .estado-otro{ background:#eef2f6;color:#55606c;border:1px solid #dfe6ee; }
+
+        /* Ayuda y leyenda */
+        .seg-ayuda{ display:inline-block; margin-top:8px; color:#1f6feb; font-size:13px; }
+        .seg-ayuda i{ margin-right:5px; }
+        .seg-leyenda{ display:flex; flex-wrap:wrap; gap:10px 22px; padding:12px 35px 4px; }
+        .seg-leyenda .ley-item{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:#55606c; }
+        .seg-leyenda .estado-pill{ padding:3px 10px; font-size:11.5px; }
+
+        /* Enlace del nombre del documento */
+        .seg-detalle-link{ color:#1f4e79;font-weight:600;text-decoration:none;cursor:pointer; }
+        .seg-detalle-link:hover{ text-decoration:underline; }
+
+        /* ===== Modal de detalle ===== */
+        .seg-modal{ display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,30,50,.65);align-items:center;justify-content:center;padding:24px; }
+        .seg-modal.activo{ display:flex; }
+        .seg-box{ background:#fff;width:min(600px,96vw);max-height:92vh;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35); }
+        .seg-head{ display:flex;align-items:center;justify-content:space-between;padding:16px 22px;color:#fff;background:linear-gradient(135deg,#1f4e79,#2f75a8); }
+        .seg-head .t{ font-size:19px;font-weight:700;display:flex;align-items:center;gap:10px; }
+        .seg-head .cerrar{ background:rgba(255,255,255,.2);border:none;color:#fff;font-size:22px;cursor:pointer;border-radius:8px;width:40px;height:40px;line-height:1; }
+        .seg-body{ padding:20px 22px;overflow:auto; }
+        .seg-foot{ display:flex;justify-content:flex-end;padding:16px 22px;border-top:1px solid #eef1f6; }
+        .seg-btn{ background:#1f4e79;color:#fff;border:none;border-radius:9px;padding:11px 20px;font-size:15px;font-weight:600;cursor:pointer; }
+        .seg-btn:hover{ background:#163a5c; }
+        .det-grid{ display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:16px; }
+        .det-grid .campo{ display:flex;flex-direction:column;gap:2px; }
+        .det-grid .k{ font-size:11px;font-weight:700;color:#8a94a2;text-transform:uppercase;letter-spacing:.4px; }
+        .det-grid .v{ font-size:14px;color:#243244; }
+        .det-block{ margin-bottom:14px; }
+        .det-block .k{ font-size:11px;font-weight:700;color:#8a94a2;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px; }
+        .det-block .v{ font-size:14px;color:#33455a;line-height:20px;white-space:pre-wrap;background:#f7f9fc;border:1px solid #edf1f6;border-radius:8px;padding:10px 12px; }
+        @media(max-width:560px){ .det-grid{ grid-template-columns:1fr; } }
+
+        /* Columna "Confirmación de cita" */
+        .cita-sub{ display:inline-block; color:#7b8794; font-size:12px; }
+        .cita-btn{ border:none; border-radius:8px; padding:9px 14px; font-size:13px; font-weight:700; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+        .cita-btn[disabled]{ cursor:default; }
+        .cita-sincita{ background:#eef2f6; color:#8a94a2; }
+        .cita-porconfirmar{ background:#fff3e0; color:#c77700; border:1px solid #ffd8a8; }
+        .cita-confirmada{ background:#e7f6ee; color:#1e8449; border:1px solid #b6e3c8; }
+        .cita-validar{ background:linear-gradient(135deg,#f0932b,#e67e22); color:#fff; cursor:pointer; }
+        .cita-validar:hover{ filter:brightness(.96); }
+
+        /* Modal responder propuesta */
+        .seg-info{ background:#f4f7fb; border:1px solid #e2e9f2; border-radius:10px; padding:12px 14px; font-size:14px; color:#33455a; margin-bottom:16px; line-height:20px; white-space:pre-wrap; }
+        .seg-info b{ color:#1f4e79; }
+        .seg-opt{ display:block; box-sizing:border-box; width:100%; border:1.5px solid #e2e9f2; border-radius:12px; padding:14px 16px; margin-bottom:12px; cursor:pointer; }
+        .seg-opt.sel{ border-color:#2f75a8; background:#f0f7ff; }
+        .seg-opt .cab{ display:flex; align-items:center; gap:10px; font-weight:700; color:#243244; font-size:15px; }
+        .seg-opt .cab input{ width:18px; height:18px; accent-color:#2f75a8; flex:0 0 auto; }
+        .seg-opt .det{ margin:12px 0 0 28px; display:none; }
+        .seg-opt.sel .det{ display:block; }
+        .seg-opt .det label{ display:block; font-size:12px; font-weight:600; color:#555; margin:8px 0 4px; }
+        .seg-opt .det input, .seg-opt .det textarea{ width:100%; box-sizing:border-box; padding:9px 11px; border:1px solid #cfd8e3; border-radius:8px; font-size:14px; }
+        .seg-opt .det .row2{ display:flex; gap:10px; } .seg-opt .det .row2>div{ flex:1; }
+        .seg-error{ color:#c0392b; font-size:13px; font-weight:600; min-height:18px; margin:4px 0; }
+        .seg-foot .cancel{ background:#eef1f6; color:#33455a; margin-right:10px; }
+    </style>
+
+</head>
+
+<body>
+
+    <div class="contenedor">
+
+        <!-- Encabezado -->
+        <header>
+            SEGUIMIENTO DE MIS SOLICITUDES
+        </header>
+
+        <div class="sub-encabezado" id="seg-usuario">
+            Solicitudes en proceso de <strong id="seg-nombre-usuario">tu usuario</strong>.
+            Las solicitudes ya atendidas dejan de mostrarse aquí.
+            <br><span class="seg-ayuda"><i class="fa-solid fa-circle-info"></i> Selecciona el <strong>Nombre del Documento</strong> para ver los detalles de la solicitud.</span>
+        </div>
+
+        <!-- Leyenda de estatus -->
+        <div class="seg-leyenda">
+            <span class="ley-item"><span class="estado-pill estado-pendiente">Pendiente</span> En espera de que Calidad confirme la fecha de tu cita.</span>
+            <span class="ley-item"><span class="estado-pill estado-abierta">Abierta</span> Cita confirmada; la solicitud está lista para atenderse por Calidad.</span>
+            <span class="ley-item"><span class="estado-pill estado-proceso">En proceso</span> Calidad está elaborando el documento.</span>
+            <span class="ley-item"><span class="estado-pill estado-revision">En revisión</span> Hay un borrador disponible para tu visto bueno.</span>
+            <span class="ley-item"><span class="estado-pill estado-liberacion">En liberación</span> Documento aprobado, en proceso de liberación.</span>
+            <span class="ley-item"><span class="estado-pill estado-cancelado">Cancelado</span> La solicitud fue cancelada (revisa el motivo en el detalle).</span>
+        </div>
+
+        <!-- Barra superior -->
+        <div class="barra-filtros">
+
+            <div class="grupo-filtro">
+                <label>Tipo de Modificación</label>
+                <select id="seg-filtro-tipo" onchange="segRender()">
+                    <option value="">Todos</option>
+                    <option value="Nuevo Ingreso">Nuevo Ingreso</option>
+                    <option value="Actualización">Actualización</option>
+                    <option value="Baja">Baja</option>
+                </select>
+            </div>
+
+            <div class="grupo-botones">
+
+                <button class="btn-salir"
+                        onclick="window.location.href='Sistema_Gestion_Documental.html'">
+                    <i class="fa-solid fa-house"></i>
+                    Salir al menú principal
+                </button>
+
+                <button class="btn-actualizar-seg" onclick="segCargar()">
+                    <i class="fa-solid fa-rotate"></i>
+                    Actualizar
+                </button>
+
+            </div>
+
+        </div>
+
+        <!-- Tabla (solo lectura) -->
+        <div class="tabla-scroll">
+        <table>
+
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Estatus de la Solicitud</th>
+                    <th>Nombre del Documento</th>
+                    <th>Departamento</th>
+                    <th>Tipo de Modificación</th>
+                    <th>Fecha de Solicitud</th>
+                    <th>Fecha de Cita</th>
+                    <th>Hora de Cita</th>
+                    <th>Confirmación de cita</th>
+                    <th>Revisión de documento</th>
+                </tr>
+            </thead>
+
+            <tbody id="seg-tbody">
+                <!-- Filas generadas por segRender() -->
+            </tbody>
+
+        </table>
+        </div>
+
+    </div>
+
+<!-- ==========================
+     MODAL: DETALLE DE LA SOLICITUD
+========================== -->
+<div class="seg-modal" id="seg-det-modal">
+  <div class="seg-box">
+    <div class="seg-head">
+      <div class="t"><i class="fa-regular fa-file-lines"></i> Detalle de la solicitud</div>
+      <button class="cerrar" onclick="segCerrarDetalle()">&times;</button>
+    </div>
+    <div class="seg-body" id="seg-det-body"></div>
+    <div class="seg-foot">
+      <button class="seg-btn" onclick="segCerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: RESPONDER PROPUESTA DE CITA
+========================== -->
+<div class="seg-modal" id="seg-resp-modal">
+  <div class="seg-box">
+    <div class="seg-head" style="background:linear-gradient(135deg,#e67e22,#f0932b);">
+      <div class="t"><i class="fa-solid fa-calendar-check"></i> Validar cita</div>
+      <button class="cerrar" onclick="segResponderCerrar()">&times;</button>
+    </div>
+    <div class="seg-body">
+      <div class="seg-info" id="seg-resp-info"></div>
+
+      <label class="seg-opt sel" id="seg-opt-aceptar">
+        <div class="cab"><input type="radio" name="seg-resp" value="aceptar" checked onchange="segRespSel()"> Confirmar cita (aceptar la propuesta)</div>
+        <div class="det">
+          <p style="margin:0 0 4px;color:#33455a;font-size:14px;">Elige la fecha y hora específica dentro de lo que propuso el analista. Al confirmar, tu solicitud pasa a <b>Abierta</b> y recibirás el correo de confirmación.</p>
+          <div class="row2">
+            <div><label>Fecha elegida</label><input type="date" id="seg-resp-fecha"></div>
+            <div><label>Hora elegida</label><input type="time" id="seg-resp-hora" min="09:00" max="18:00"></div>
+          </div>
+        </div>
+      </label>
+
+      <label class="seg-opt" id="seg-opt-rechazar">
+        <div class="cab"><input type="radio" name="seg-resp" value="rechazar" onchange="segRespSel()"> Rechazar cita (proponer otra fecha)</div>
+        <div class="det">
+          <p style="margin:0 0 4px;color:#33455a;font-size:14px;">Si las fechas propuestas no te funcionan, propón tú una nueva fecha y hora. Volverá al analista para revisarla.</p>
+          <div class="row2">
+            <div><label>Nueva fecha</label><input type="date" id="seg-resp-nfecha"></div>
+            <div><label>Nueva hora</label><input type="time" id="seg-resp-nhora" min="09:00" max="18:00"></div>
+          </div>
+          <label>Comentario para el analista (opcional)</label>
+          <textarea id="seg-resp-coment" rows="2" placeholder="Explica tu disponibilidad o lo que necesitas…"></textarea>
+        </div>
+      </label>
+
+      <div class="seg-error" id="seg-resp-error"></div>
+    </div>
+    <div class="seg-foot">
+      <button class="seg-btn cancel" onclick="segResponderCerrar()">Cancelar</button>
+      <button class="seg-btn" id="seg-resp-ok" onclick="segResponderConfirmar()">Enviar respuesta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: VISOR DE ARCHIVO (borrador / final) — solo lectura
+========================== -->
+<div class="seg-modal" id="seg-visor-modal" style="z-index:10002;">
+  <div class="seg-box" style="width:min(1100px,98vw); height:94vh; max-height:94vh;">
+    <div class="seg-head">
+      <div class="t"><i class="fa-solid fa-file-pdf"></i> <span id="seg-visor-titulo">Documento</span></div>
+      <button class="cerrar" onclick="segCerrarVisor()">&times;</button>
+    </div>
+    <iframe id="seg-visor-frame" src="about:blank" style="flex:1;width:100%;border:none;background:#525659;"></iframe>
+    <div style="background:#12263b;color:#9fb6cf;font-size:12px;text-align:center;padding:8px;">Vista solo lectura · Borrador controlado</div>
+  </div>
+</div>
+
+<!-- ==========================
+     MODAL: REVISAR BORRADOR (Autorizar / Rechazar)
+========================== -->
+<div class="seg-modal" id="seg-doc-modal">
+  <div class="seg-box">
+    <div class="seg-head" style="background:linear-gradient(135deg,#6b34b3,#8e44ad);">
+      <div class="t"><i class="fa-regular fa-file-lines"></i> Revisar borrador</div>
+      <button class="cerrar" onclick="segDocCerrar()">&times;</button>
+    </div>
+    <div class="seg-body">
+      <div class="seg-info" id="seg-doc-info"></div>
+
+      <button class="seg-btn" style="background:#6b34b3;margin-bottom:16px;" onclick="segVerBorradorActual()">
+        <i class="fa-regular fa-file-lines"></i> Ver borrador
+      </button>
+
+      <label class="seg-opt sel" id="seg-doc-opt-aut">
+        <div class="cab"><input type="radio" name="seg-doc" value="autorizar" checked onchange="segDocSel()"> Autorizar el documento</div>
+        <div class="det">
+          <p style="margin:0;color:#33455a;font-size:14px;">Se verificará tu identidad con <b>Microsoft</b> (tu sesión actual) para confirmar que eres el <b>solicitante</b>. Al autorizar, el documento pasa a finalizado.</p>
+        </div>
+      </label>
+
+      <label class="seg-opt" id="seg-doc-opt-rec">
+        <div class="cab"><input type="radio" name="seg-doc" value="rechazar" onchange="segDocSel()"> Rechazar y solicitar cambios</div>
+        <div class="det">
+          <label>Cambios necesarios</label>
+          <textarea id="seg-doc-cambios" rows="3" placeholder="Describe los cambios que el analista debe realizar en el borrador…"></textarea>
+        </div>
+      </label>
+
+      <div class="seg-error" id="seg-doc-error"></div>
+    </div>
+    <div class="seg-foot">
+      <button class="seg-btn cancel" onclick="segDocCerrar()">Cancelar</button>
+      <button class="seg-btn" id="seg-doc-ok" onclick="segDocConfirmar()">Autorizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Puente SP + usuario en sesión (inyectado por index.html) -->
+<script src="script.js"></script>
+<script>
+/* =====================================================================
+   SEGUIMIENTO DE SOLICITUDES (solo lectura)
+   ---------------------------------------------------------------------
+   Muestra las solicitudes del usuario en sesión registradas en
+   SGD_Solicitudes, EXCEPTO las que ya están "Atendida".
+   Los datos se leen de SharePoint por el puente del padre (index.html).
+   ===================================================================== */
+
+var SEG_ITEMS = [];  // solicitudes ya filtradas por usuario y estatus
+
+// Datos de ejemplo SOLO para modo standalone (sin padre / sin SP)
+var SEG_DATA_DEMO = [
+  { estatus:'Pendiente', documento:'Procedimiento de compras',  departamento:'Compras', tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'', horaCita:'' },
+  { estatus:'Abierta',   documento:'Procedimiento de ventas',   departamento:'Ventas',  tipo:'Nuevo Ingreso', fecha:'09/12/2025', fechaCita:'12/12/2025', horaCita:'17:30' }
+];
+
+function segClaseTipo(t){
+  var s=(t||'').toLowerCase();
+  if (s.indexOf('nuevo')>=0) return 'nuevo';
+  if (s.indexOf('actualiz')>=0) return 'actualizacion';
+  if (s.indexOf('baja')>=0) return 'baja';
+  return 'nuevo';
+}
+function segEstadoPill(est){
+  var e=(est||'').toLowerCase();
+  var cls='estado-otro';
+  if(e==='abierta') cls='estado-abierta';
+  else if(e==='pendiente') cls='estado-pendiente';
+  else if(e==='en proceso') cls='estado-proceso';
+  else if(e==='en revisión'||e==='en revision') cls='estado-revision';
+  else if(e==='en liberación'||e==='en liberacion') cls='estado-liberacion';
+  else if(e==='cancelado') cls='estado-cancelado';
+  else if(e==='atendida') cls='estado-atendida';
+  return '<span class="estado-pill '+cls+'">'+(est||'—')+'</span>';
+}
+function segFmtFecha(s){
+  if(!s) return '';
+  s=String(s).split('T')[0];
+  var p=s.split('-');
+  if(p.length<3) return s;
+  return p[2]+'/'+p[1]+'/'+p[0];
+}
+
+// Dibuja la tabla a partir de SEG_ITEMS aplicando el filtro de tipo
+var SEG_VISIBLE=[];  // subconjunto visible (base para los índices del detalle)
+function segEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function segRender(){
+  var tbody=document.getElementById('seg-tbody');
+  if(!tbody) return;
+  var filtroTipo=(document.getElementById('seg-filtro-tipo')||{}).value||'';
+  SEG_VISIBLE=SEG_ITEMS.slice();
+  if(filtroTipo) SEG_VISIBLE=SEG_VISIBLE.filter(function(s){ return (s.tipo||'')===filtroTipo; });
+
+  if(!SEG_VISIBLE.length){
+    tbody.innerHTML='<tr><td colspan="10" class="sin-datos">No tienes solicitudes en proceso.</td></tr>';
+    return;
+  }
+  var html='';
+  SEG_VISIBLE.forEach(function(s,i){
+    html+='<tr>';
+    html+='<td>'+(i+1)+'</td>';
+    html+='<td>'+segEstadoPill(s.estatus)+'</td>';
+    html+='<td><a href="#" class="seg-detalle-link" onclick="segVerDetalle('+i+');return false;" title="Ver detalle de la solicitud">'+segEsc(s.documento)+'</a></td>';
+    html+='<td>'+segEsc(s.departamento)+'</td>';
+    html+='<td><span class="tipo '+segClaseTipo(s.tipo)+'">'+segEsc(s.tipo)+'</span></td>';
+    html+='<td>'+(s.fecha||'')+'</td>';
+    html+='<td>'+(s.fechaCita||'—')+'</td>';
+    html+='<td>'+(s.horaCita||'—')+'</td>';
+    html+='<td>'+segCeldaCita(s,i)+'</td>';
+    html+='<td>'+segCeldaDoc(s,i)+'</td>';
+    html+='</tr>';
+  });
+  tbody.innerHTML=html;
+}
+
+// Botón de estado de la cita en la columna "Confirmación de cita"
+function segCeldaCita(s, idx){
+  var conf = String(s.citaConfirmada||'').toLowerCase();
+  var req  = String(s.requiereRev||'').toLowerCase();
+  var presencial = (req==='sí'||req==='si');
+  var hayPropuesta = !!(s.propuesta && s.propuesta.trim());
+  var resp = String(s.respuestaSol||'').toLowerCase();
+
+  // Solicitud sin revisión presencial: no hay cita que confirmar
+  if(!presencial){
+    return '<button class="cita-btn cita-sincita" disabled>Sin cita</button>'
+      + (s.analista? '<br><span class="cita-sub">Atiende: '+segEsc(s.analista)+'</span>' : '');
+  }
+  // Cita ya confirmada
+  if(conf==='sí'||conf==='si'){
+    return '<button class="cita-btn cita-confirmada" disabled><i class="fa-solid fa-circle-check"></i> Confirmada</button>'
+      + (s.analista? '<br><span class="cita-sub">Atiende: '+segEsc(s.analista)+'</span>' : '');
+  }
+  // El analista propuso una fecha nueva y espera mi respuesta → puedo validar
+  if(hayPropuesta && resp!=='rechazada' && resp!=='aceptada'){
+    return '<button class="cita-btn cita-validar" onclick="segResponderAbrir('+idx+')"><i class="fa-solid fa-calendar-check"></i> Validar cita</button>';
+  }
+  // Inicial (esperando al analista) o ya respondí y espera al analista
+  return '<button class="cita-btn cita-porconfirmar" disabled>Por confirmar</button>';
+}
+
+// Botón de la columna "Revisión de documento"
+function segCeldaDoc(s, idx){
+  var est=String(s.estatus||'').toLowerCase();
+  var rdoc=String(s.respuestaDoc||'').toLowerCase();
+  if(s.docFinalURL){
+    return '<button class="cita-btn cita-confirmada" onclick="segVerArchivo(\''+segEsc(s.docFinalURL)+'\',\''+segEsc((s.documento||'').replace(/\x27/g,""))+'\')"><i class="fa-solid fa-file-circle-check"></i> Autorizado</button>';
+  }
+  if((est==='en revisión'||est==='en revision') && s.docBorradorURL && rdoc!=='autorizado'){
+    return '<button class="cita-btn cita-validar" onclick="segDocAbrir('+idx+')"><i class="fa-regular fa-file-lines"></i> Revisar borrador</button>';
+  }
+  if(rdoc==='rechazado'){
+    return '<span class="cita-sub">Cambios enviados; espera nuevo borrador</span>';
+  }
+  return '—';
+}
+
+/* ===== Visor de archivos (borrador / final) sin descargar ni imprimir ===== */
+var _segVisorBlob=null;
+async function segVerArchivo(ref, titulo){
+  if(!ref){ alert('El documento aún no está disponible.'); return; }
+  var modal=document.getElementById('seg-visor-modal');
+  var frame=document.getElementById('seg-visor-frame');
+  document.getElementById('seg-visor-titulo').textContent = titulo || 'Documento';
+  if(frame) frame.src='about:blank';
+  modal.classList.add('activo');
+  var res = await (window.SGD.obtenerBlobUrl ? window.SGD.obtenerBlobUrl(ref) : null);
+  if(!res || !res.url){
+    segCerrarVisor();
+    if(res && res.error && /403|forbidden/i.test(res.error)) alert('No tienes permiso para ver este borrador. Solicita acceso de lectura a la biblioteca de documentos.');
+    else alert('No se pudo abrir el borrador.');
+    return;
+  }
+  // Borrador guardado con formato anterior (URL de SharePoint) no se puede incrustar:
+  if(!res.revocar && /sharepoint\.com|login\.microsoftonline\.com/i.test(res.url)){
+    segCerrarVisor();
+    alert('Este borrador se cargó con una versión anterior y no puede mostrarse en el visor.\n\nPide al analista que vuelva a enviarlo (Atención a Solicitudes → Cambiar estatus → En revisión, adjuntando de nuevo el PDF).');
+    return;
+  }
+  if(_segVisorBlob){ try{URL.revokeObjectURL(_segVisorBlob);}catch(e){} }
+  _segVisorBlob = res.revocar ? res.url : null;
+  var sep = res.url.indexOf('#')>=0?'&':'#';
+  if(frame) frame.src = res.url + sep + 'toolbar=0&navpanes=0&statusbar=0&view=FitH';
+}
+function segCerrarVisor(){
+  var modal=document.getElementById('seg-visor-modal'); var frame=document.getElementById('seg-visor-frame');
+  if(frame) frame.src='about:blank'; if(modal) modal.classList.remove('activo');
+  if(_segVisorBlob){ try{URL.revokeObjectURL(_segVisorBlob);}catch(e){} _segVisorBlob=null; }
+}
+
+/* ===== Revisar borrador: Autorizar (con re-login Microsoft) o Rechazar ===== */
+var SEG_DOC_IDX=-1;
+function segDocAbrir(idx){
+  SEG_DOC_IDX=idx;
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  document.getElementById('seg-doc-info').innerHTML =
+    '<b>'+segEsc(s.documento)+'</b>'
+    + (s.comentariosAnalista? '<br><br><b>Comentarios del analista:</b><br>'+segEsc(s.comentariosAnalista) : '')
+    + '<br><br>Revisa el borrador y autorízalo o solicita cambios.';
+  document.querySelector('#seg-doc-modal input[value="autorizar"]').checked=true;
+  document.getElementById('seg-doc-cambios').value='';
+  document.getElementById('seg-doc-error').textContent='';
+  segDocSel();
+  document.getElementById('seg-doc-modal').classList.add('activo');
+}
+function segDocCerrar(){ document.getElementById('seg-doc-modal').classList.remove('activo'); }
+function segDocSel(){
+  var v=(document.querySelector('#seg-doc-modal input[name="seg-doc"]:checked')||{}).value;
+  document.getElementById('seg-doc-opt-aut').classList.toggle('sel', v==='autorizar');
+  document.getElementById('seg-doc-opt-rec').classList.toggle('sel', v==='rechazar');
+}
+function segVerBorradorActual(){
+  var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;
+  segVerArchivo(s.docBorradorURL, 'Borrador · '+(s.documento||''));
+}
+async function segDocConfirmar(){
+  var s=SEG_VISIBLE[SEG_DOC_IDX]; if(!s) return;
+  var v=(document.querySelector('#seg-doc-modal input[name="seg-doc"]:checked')||{}).value;
+  var err=document.getElementById('seg-doc-error'); err.textContent='';
+  var btn=document.getElementById('seg-doc-ok');
+  var fields;
+
+  if(v==='autorizar'){
+    // Verificación de identidad con Microsoft (sesión actual), confirmando que sea el mismo solicitante
+    btn.disabled=true; btn.textContent='Verificando identidad…';
+    var r;
+    try{ r = await window.SGD.sp('reauth', {}); }
+    catch(e){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar tu identidad con Microsoft. Intenta de nuevo.'; return; }
+    var cuentaUsada=((r&&r.username)||'').toLowerCase();
+    var solicitante=String(s.correo||'').toLowerCase();
+    if(!cuentaUsada){ btn.disabled=false; btn.textContent='Autorizar'; err.textContent='No se pudo verificar la cuenta.'; return; }
+    if(cuentaUsada!==solicitante){
+      btn.disabled=false; btn.textContent='Autorizar';
+      err.textContent='La cuenta ('+cuentaUsada+') no coincide con la del solicitante. Debes autorizar con tu propia cuenta.';
+      return;
+    }
+    fields = {
+      Documento_Final_URL: s.docBorradorURL,
+      Respuesta_Documento:'Autorizado',
+      Estatus:'En liberación',
+      Evento_Notificacion:'DOC_AUTORIZADO'
+    };
+  } else {
+    var cambios=document.getElementById('seg-doc-cambios').value.trim();
+    if(!cambios){ err.textContent='Escribe los cambios necesarios para el analista.'; return; }
+    fields = {
+      Respuesta_Documento:'Rechazado',
+      Comentarios_Doc: cambios,
+      Estatus:'En proceso',
+      Evento_Notificacion:'DOC_RECHAZADO'
+    };
+  }
+
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+    if(window.SGD.bitacora) window.SGD.bitacora(v==='autorizar'?'Autoriza documento (borrador)':'Rechaza documento (solicita cambios)', 'SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
+    segDocCerrar();
+    await segCargar();
+  }catch(e){ err.textContent='No se pudo enviar. Intenta de nuevo.'; }
+  finally{ btn.disabled=false; btn.textContent=(v==='autorizar'?'Autorizar':'Enviar cambios'); }
+}
+
+/* ===== Detalle de la solicitud (lo que capturó el solicitante) ===== */
+function segCampo(k,v){ return '<div class="campo"><span class="k">'+k+'</span><span class="v">'+(v?segEsc(v):'—')+'</span></div>'; }
+function segBloque(k,v){ if(!v) return ''; return '<div class="det-block"><div class="k">'+k+'</div><div class="v">'+segEsc(v)+'</div></div>'; }
+function segVerDetalle(idx){
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  var citaTxt=(s.fechaCita?segEsc(s.fechaCita):'—')+(s.horaCita?(' · '+segEsc(s.horaCita)):'');
+  var rev=(String(s.requiereRev).toLowerCase()==='sí'||String(s.requiereRev).toLowerCase()==='si')?'Sí':(s.requiereRev||'No');
+  var html=
+    '<div class="det-grid">'
+    + segCampo('Estatus', s.estatus)
+    + segCampo('Analista asignado', s.analista)
+    + segCampo('Nombre del documento', s.documento)
+    + segCampo('Tipo de documento', s.tipoDoc)
+    + segCampo('Tipo de modificación', s.tipo)
+    + segCampo('Departamento', s.departamento)
+    + segCampo('Solicitante', s.solicitante)
+    + segCampo('Fecha de solicitud', s.fecha)
+    + segCampo('Requiere revisión presencial', rev)
+    + segCampo('Fecha/hora de cita', citaTxt)
+    + '</div>'
+    + segBloque('Propuesta de cita del analista', s.propuesta)
+    + segBloque('Tu respuesta a la propuesta', s.respuestaSol)
+    + segBloque('Tu comentario', s.comentarioSol)
+    + segBloque('Comentarios del analista (revisión)', s.comentariosAnalista)
+    + segBloque('Estatus del borrador', s.respuestaDoc)
+    + segBloque('Cambios que solicitaste al borrador', s.comentariosDoc)
+    + segBloque('Objetivo del documento', s.objetivo)
+    + segBloque('Alcance del documento', s.alcance)
+    + segBloque('Responsables del documento', s.responsables)
+    + segBloque('Descripción general', s.descripcion);
+  document.getElementById('seg-det-body').innerHTML=html;
+  document.getElementById('seg-det-modal').classList.add('activo');
+}
+function segCerrarDetalle(){ document.getElementById('seg-det-modal').classList.remove('activo'); }
+
+/* ===== Responder propuesta de cita (Aceptar / Rechazar) ===== */
+var SEG_RESP_IDX=-1;
+function segResponderAbrir(idx){
+  SEG_RESP_IDX=idx;
+  var s=SEG_VISIBLE[idx]; if(!s) return;
+  var citaAnterior=(s.fechaCita?segEsc(s.fechaCita):'—')+(s.horaCita?(' · '+segEsc(s.horaCita)):'');
+  document.getElementById('seg-resp-info').innerHTML =
+    '<b>'+segEsc(s.documento)+'</b>'
+    + '<br><span style="color:#7b8794;">Fecha/hora que solicitaste:</span> '+citaAnterior
+    + '<br><br><b>Propuesta del analista '+(s.analista?('('+segEsc(s.analista)+')'):'')+':</b><br>'+segEsc(s.propuesta||'—');
+  document.querySelector('#seg-resp-modal input[value="aceptar"]').checked=true;
+  document.getElementById('seg-resp-fecha').value = s.fechaCitaISO||'';
+  document.getElementById('seg-resp-hora').value = s.horaCita||'';
+  document.getElementById('seg-resp-nfecha').value = '';
+  document.getElementById('seg-resp-nhora').value = '';
+  document.getElementById('seg-resp-coment').value='';
+  document.getElementById('seg-resp-error').textContent='';
+  segRespSel();
+  document.getElementById('seg-resp-modal').classList.add('activo');
+}
+function segResponderCerrar(){ document.getElementById('seg-resp-modal').classList.remove('activo'); }
+function segRespSel(){
+  var v=(document.querySelector('#seg-resp-modal input[name="seg-resp"]:checked')||{}).value;
+  document.getElementById('seg-opt-aceptar').classList.toggle('sel', v==='aceptar');
+  document.getElementById('seg-opt-rechazar').classList.toggle('sel', v==='rechazar');
+}
+async function segResponderConfirmar(){
+  var s=SEG_VISIBLE[SEG_RESP_IDX]; if(!s) return;
+  var v=(document.querySelector('#seg-resp-modal input[name="seg-resp"]:checked')||{}).value;
+  var err=document.getElementById('seg-resp-error'); err.textContent='';
+  var btn=document.getElementById('seg-resp-ok');
+  var fields;
+
+  if(v==='aceptar'){
+    var fecha=document.getElementById('seg-resp-fecha').value;
+    var hora=document.getElementById('seg-resp-hora').value;
+    if(!fecha || !hora){ err.textContent='Elige la fecha y la hora que aceptas.'; return; }
+    fields = {
+      Estatus:'Abierta',
+      Cita_Confirmada:'Sí',
+      Respuesta_Solicitante:'Aceptada',
+      Fecha_Revision: fecha+'T00:00:00Z',
+      Hora_Revision: hora,
+      Evento_Notificacion:'CITA_ACEPTADA_SOLICITANTE'
+    };
+  } else {
+    var nfecha=document.getElementById('seg-resp-nfecha').value;
+    var nhora=document.getElementById('seg-resp-nhora').value;
+    var coment=document.getElementById('seg-resp-coment').value.trim();
+    if(!nfecha || !nhora){ err.textContent='Elige la nueva fecha y hora que propones.'; return; }
+    fields = {
+      Estatus:'Pendiente',
+      Cita_Confirmada:'No',
+      Respuesta_Solicitante:'Rechazada',
+      Fecha_Revision: nfecha+'T00:00:00Z',
+      Hora_Revision: nhora,
+      Comentario_Solicitante: coment,
+      Evento_Notificacion:'CITA_RECHAZADA_SOLICITANTE'
+    };
+  }
+  if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
+  if(!fields.Fecha_Revision) delete fields.Fecha_Revision;
+  if(!fields.Hora_Revision) delete fields.Hora_Revision;
+
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await window.SGD.sp('update', { lista:(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes'), itemId:s.id, fields:fields });
+    if(window.SGD.bitacora) window.SGD.bitacora(v==='aceptar'?'Acepta propuesta de cita':'Rechaza propuesta de cita', 'SGD_Solicitudes', s.documento||'', { id:s.id, pantalla:'Seguimiento de solicitudes' });
+    segResponderCerrar();
+    await segCargar();
+  }catch(e){
+    err.textContent='No se pudo enviar la respuesta. Intenta de nuevo.';
+  }finally{ btn.disabled=false; btn.textContent='Enviar respuesta'; }
+}
+
+// Carga las solicitudes del usuario desde SharePoint (o demo en standalone)
+async function segCargar(){
+  var tbody=document.getElementById('seg-tbody');
+  var u=(window.SGD&&window.SGD.getUsuario)?window.SGD.getUsuario():null;
+  var correo=u&&u.correo?String(u.correo).toLowerCase():'';
+  var nEl=document.getElementById('seg-nombre-usuario');
+  if(nEl) nEl.textContent=(u&&u.nombre)?u.nombre:'tu usuario';
+
+  // Standalone (pruebas sin padre / sin SP): usar datos de ejemplo
+  if(!(window.SGD && window.SGD.embebido && window.SGD.embebido())){
+    SEG_ITEMS=SEG_DATA_DEMO.slice();
+    segRender();
+    return;
+  }
+
+  // Embebido pero aún sin usuario: esperar (el handshake llamará de nuevo)
+  if(!correo){
+    if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+    return;
+  }
+
+  if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">Cargando tus solicitudes…</td></tr>';
+  try{
+    var lista=(window.SGD.LISTA_SOLICITUDES||'SGD_Solicitudes');
+    var r=await window.SGD.sp('list',{ lista:lista, queryParams:'$expand=fields&$top=1000' });
+    var items=(r&&r.value)?r.value:[];
+    SEG_ITEMS=items.map(function(it){
+      var f=it.fields||it;
+      return {
+        id:           (it.id!==undefined?it.id:''),
+        estatus:      f.Estatus||'Pendiente',
+        documento:    f.Title||'',
+        tipoDoc:      f.Tipo_Documento||'',
+        departamento: f.Departamento||'',
+        tipo:         f.Tipo_Modificacion||'Nuevo Ingreso',
+        solicitante:  f.Solicitante||'',
+        objetivo:     f.Objetivo||'',
+        alcance:      f.Alcance||'',
+        responsables: f.Responsables||'',
+        descripcion:  f.Descripcion||'',
+        requiereRev:  f.Requiere_Revision||'',
+        analista:     f.Analista_Asignado||'',
+        analistaCorreo:f.Analista_Correo||'',
+        propuesta:    f.Propuesta_Cita||'',
+        citaConfirmada:f.Cita_Confirmada||'',
+        respuestaSol: f.Respuesta_Solicitante||'',
+        comentarioSol:f.Comentario_Solicitante||'',
+        comentariosAnalista:f.Comentarios_Analista||'',
+        docBorradorURL:f.Documento_Borrador_URL||'',
+        docFinalURL:  f.Documento_Final_URL||'',
+        respuestaDoc: f.Respuesta_Documento||'',
+        comentariosDoc:f.Comentarios_Doc||'',
+        fecha:        segFmtFecha(f.Fecha_Solicitud),
+        fechaCita:    segFmtFecha(f.Fecha_Revision),
+        fechaCitaISO: (f.Fecha_Revision||'').split('T')[0],
+        horaCita:     f.Hora_Revision||'',
+        correo:       f.Correo||''
+      };
+    })
+    .filter(function(s){ return String(s.correo).toLowerCase()===correo; })          // solo mis solicitudes
+    .filter(function(s){ var e=(s.estatus||'').toLowerCase(); return e!=='atendida' && e!=='publicada'; })  // excluir atendidas/publicadas
+    .sort(function(a,b){ return (b.fecha||'').localeCompare(a.fecha||''); });
+    segRender();
+  }catch(e){
+    if(tbody) tbody.innerHTML='<tr><td colspan="10" class="sin-datos">No se pudieron cargar tus solicitudes. Presiona Actualizar para reintentar.</td></tr>';
+  }
+}
+
+// Cuando el padre confirma el usuario (handshake), recargar
+window.SGD = window.SGD || {};
+window.SGD._onAuth = segCargar;
+
+document.addEventListener('DOMContentLoaded', function(){ segCargar(); });
+
+// Cerrar los modales al hacer clic fuera de la caja
+(function(){ var el=document.getElementById('seg-det-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarDetalle(); }); })();
+(function(){ var el=document.getElementById('seg-resp-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segResponderCerrar(); }); })();
+(function(){ var el=document.getElementById('seg-doc-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segDocCerrar(); }); })();
+(function(){ var el=document.getElementById('seg-visor-modal'); if(el) el.addEventListener('click', function(ev){ if(ev.target===this) segCerrarVisor(); }); })();
+</script>
+
+</body>
+</html>

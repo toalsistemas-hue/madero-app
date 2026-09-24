@@ -4832,15 +4832,9 @@ async function ftAdmOpSave(){
   var desc=document.getElementById('op-edit-desc').value.trim();
   var spId=document.getElementById('op-edit-spid').value;
   if(!nombre){alert('El nombre de la operación es requerido.');return;}
-  // Verificar duplicado: solo es duplicado si coincide la descripción/nombre Y el mismo número de artículo.
-  // Se permite la misma descripción si el artículo es distinto.
-  var _artLc=(artKey||'').toLowerCase();
-  var dup=(DB.opCatalogFull||[]).find(function(o){
-    return o.nombre.toLowerCase()===nombre.toLowerCase()
-        && (o.articulo||'').toLowerCase()===_artLc
-        && o.spId!==spId;
-  });
-  if(dup){alert('La operación "'+nombre+'" ya existe para el artículo "'+(artKey||'(sin artículo)')+'".');return;}
+  // Verificar duplicado
+  var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
+  if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
   var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
@@ -4899,16 +4893,13 @@ function ftAdmOpProcessFile(file){
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
     var items=[];var dups=0;
-    // Clave de duplicado = descripción/nombre + número de artículo (misma descripción con distinto artículo SÍ se permite)
-    var existingKeys=(DB.opCatalogFull||[]).map(function(o){return (o.nombre||'').toLowerCase()+'|'+(o.articulo||'').toLowerCase();});
+    var existingNames=(DB.opCatalogFull||[]).map(function(o){return o.nombre.toLowerCase();});
     rows.forEach(function(r){
       var nombre=(r.Operacion||r.operacion||r.Title||r.Nombre||'').toString().trim();
       var art=(r.Articulo_Key||r.articulo||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||'').toString().trim();
       if(!nombre) return;
-      var key=nombre.toLowerCase()+'|'+art.toLowerCase();
-      if(existingKeys.indexOf(key)>=0){dups++;return;}   // ya existe (misma descripción y mismo artículo) o repetido en el archivo
-      existingKeys.push(key);
+      if(existingNames.indexOf(nombre.toLowerCase())>=0){dups++;return;}
       items.push({nombre:nombre,art:art,desc:desc});
     });
     _ftOpPendingExcel=items;
