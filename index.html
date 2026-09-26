@@ -4832,9 +4832,15 @@ async function ftAdmOpSave(){
   var desc=document.getElementById('op-edit-desc').value.trim();
   var spId=document.getElementById('op-edit-spid').value;
   if(!nombre){alert('El nombre de la operación es requerido.');return;}
-  // Verificar duplicado
-  var dup=(DB.opCatalogFull||[]).find(function(o){return o.nombre.toLowerCase()===nombre.toLowerCase()&&o.spId!==spId;});
-  if(dup){alert('La operación "'+nombre+'" ya existe.');return;}
+  // Verificar duplicado: solo es duplicado si coincide la descripción/nombre Y el mismo número de artículo.
+  // Se permite la misma descripción si el artículo es distinto.
+  var _artLc=(artKey||'').toLowerCase();
+  var dup=(DB.opCatalogFull||[]).find(function(o){
+    return o.nombre.toLowerCase()===nombre.toLowerCase()
+        && (o.articulo||'').toLowerCase()===_artLc
+        && o.spId!==spId;
+  });
+  if(dup){alert('La operación "'+nombre+'" ya existe para el artículo "'+(artKey||'(sin artículo)')+'".');return;}
   var _b=document.getElementById('opcat-save-btn'); _btnSpinner(_b,true);
   try{
     var fields={Title:nombre};
@@ -4893,13 +4899,16 @@ function ftAdmOpProcessFile(file){
     var ws=wb.Sheets[wb.SheetNames[0]];
     var rows=XLSX.utils.sheet_to_json(ws,{header:0,defval:''});
     var items=[];var dups=0;
-    var existingNames=(DB.opCatalogFull||[]).map(function(o){return o.nombre.toLowerCase();});
+    // Clave de duplicado = descripción/nombre + número de artículo (misma descripción con distinto artículo SÍ se permite)
+    var existingKeys=(DB.opCatalogFull||[]).map(function(o){return (o.nombre||'').toLowerCase()+'|'+(o.articulo||'').toLowerCase();});
     rows.forEach(function(r){
       var nombre=(r.Operacion||r.operacion||r.Title||r.Nombre||'').toString().trim();
       var art=(r.Articulo_Key||r.articulo||r.Articulo||'').toString().trim().toUpperCase();
       var desc=(r.Descripcion||r.descripcion||'').toString().trim();
       if(!nombre) return;
-      if(existingNames.indexOf(nombre.toLowerCase())>=0){dups++;return;}
+      var key=nombre.toLowerCase()+'|'+art.toLowerCase();
+      if(existingKeys.indexOf(key)>=0){dups++;return;}   // ya existe (misma descripción y mismo artículo) o repetido en el archivo
+      existingKeys.push(key);
       items.push({nombre:nombre,art:art,desc:desc});
     });
     _ftOpPendingExcel=items;
@@ -7721,6 +7730,63 @@ async function ftSaveQueueToSP(of_sap) {
     }
   } catch(e) { ftErrNotify('ftSaveQueueToSP', e, 'FT_Cola_Estacion'); }
 }
+
+// ============================================================================
+// DIAGNÓSTICO (SOLO LECTURA) de FT_Cola_Estacion — NO BORRA NADA.
+// Cuenta duplicados por clave (OF_SAP + Op_ID) y filas de OFs cerradas/canceladas.
+// Ejecutar desde la consola del navegador (F12 → Consola):   ftDiagnosticoCola()
+// ============================================================================
+async function ftDiagnosticoCola(){
+  try{
+    console.log('%c[Diag Cola] Leyendo FT_Cola_Estacion completa… (solo lectura)', 'color:#2f75a8;font-weight:bold');
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var items = (raw && raw.value) ? raw.value : [];
+    var total = items.length;
+
+    // OFs en estado terminal (cerradas / canceladas), desde DB.ofs ya cargado en memoria
+    var cerradas = {};
+    (DB.ofs||[]).forEach(function(o){
+      if(o && (o.pedidoCerrado || o.status==='Cerrado' || o.status==='Pedido Cancelado')) cerradas[String(o.of_sap)] = true;
+    });
+
+    var porClave = {};      // "OF_SAP__Op_ID" -> nº de copias
+    var sinClave = 0;       // filas sin OF_SAP u Op_ID
+    var filasCerradas = 0;  // filas cuya OF está cerrada/cancelada
+    items.forEach(function(it){
+      var f = it.fields || it;
+      var of = String(f.OF_SAP||'').trim();
+      var op = String(f.Op_ID||'').trim();
+      if(!of || !op){ sinClave++; return; }
+      porClave[of+'__'+op] = (porClave[of+'__'+op]||0) + 1;
+      if(cerradas[of]) filasCerradas++;
+    });
+
+    var claves = Object.keys(porClave);
+    var unicos = claves.length;
+    var duplicados = 0, mantener = 0, topDup = [];
+    claves.forEach(function(k){
+      var c = porClave[k];
+      if(c > 1){ duplicados += (c-1); topDup.push({clave:k, copias:c}); }
+      if(!cerradas[k.split('__')[0]]) mantener++;   // operaciones únicas de OFs NO cerradas
+    });
+    topDup.sort(function(a,b){ return b.copias - a.copias; });
+
+    console.log('%c===== DIAGNÓSTICO FT_Cola_Estacion (solo lectura) =====', 'color:#1f4e79;font-weight:bold;font-size:13px');
+    console.log('Filas totales leídas:            ', total);
+    console.log('Operaciones únicas (OF_SAP+Op_ID):', unicos);
+    console.log('Filas DUPLICADAS (sobran):       ', duplicados, ' ← se eliminarían al activar el borrado');
+    console.log('Filas de OFs cerradas/canceladas:', filasCerradas, ' ← también depurables');
+    console.log('Filas sin OF_SAP/Op_ID:          ', sinClave);
+    console.log('Filas que quedarían tras depurar (≈):', mantener, ' (una por operación de OFs abiertas)');
+    console.log('Top 15 claves con más copias:');
+    topDup.slice(0,15).forEach(function(d){ console.log('   ' + d.clave + '  →  ' + d.copias + ' copias'); });
+    console.log('%c(No se borró nada. Esto es solo diagnóstico.)', 'color:#c77700;font-weight:bold');
+    return { total:total, operacionesUnicas:unicos, duplicados:duplicados, filasCerradas:filasCerradas, sinClave:sinClave, quedarianAprox:mantener };
+  }catch(e){
+    console.warn('[Diag Cola] No se pudo completar el diagnóstico:', e && e.message);
+  }
+}
+window.ftDiagnosticoCola = ftDiagnosticoCola;
 
 // ====== FT_Status_Estacion — save station status ======
 async function ftSaveStationStatusToSP(estacion) {
