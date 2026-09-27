@@ -7844,11 +7844,12 @@ async function ftDedupCola(){
     });
     if(!aBorrar.length){ console.log('%c[Dedup Cola] No hay duplicados. Nada que borrar.', 'color:#1e8449;font-weight:bold'); return {borradas:0, fallidas:0}; }
     console.log('%c[Dedup Cola] Eliminando '+aBorrar.length+' filas duplicadas (van a la Papelera)…', 'color:#c77700;font-weight:bold');
+    if(!FT_SITE_ID){ try{ FT_SITE_ID = await getSiteId(); }catch(_e){} }
     var ok=0, fail=0;
     for(var i=0;i<aBorrar.length;i++){
-      try{ await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(aBorrar[i])); ok++; }
+      try{ await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+aBorrar[i]); ok++; }
       catch(e){ fail++; }
-      if((i+1)%100===0) console.log('   … '+(i+1)+'/'+aBorrar.length);
+      if((i+1)%50===0){ console.log('   … '+(i+1)+'/'+aBorrar.length); await new Promise(function(r){ setTimeout(r, 300); }); }
     }
     console.log('%c[Dedup Cola] Listo. Borradas: '+ok+(fail?(' · Fallidas: '+fail):''), 'color:#1f4e79;font-weight:bold');
     console.log('%c➡ Ahora RECARGA la página para que la app cargue la lista ya limpia.', 'color:#c0392b;font-weight:bold');
