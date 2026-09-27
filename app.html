@@ -8353,7 +8353,7 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Operaciones', 5000).catch(emptyFn),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
-      appFlowGet('FT_Cola_Estacion', 2000).catch(emptyFn),
+      appFlowGet('FT_Cola_Estacion', 5000).catch(emptyFn),
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
       appFlowGet('FT_Timers', 2000).catch(emptyFn),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
@@ -18441,7 +18441,7 @@ async function appReloadOpsFromSP() {
     window._colaReloadCount = (window._colaReloadCount||0) + 1;
     var _shouldReloadCola = (window._colaReloadCount % 3 === 1); // 1, 4, 7... (every 3 cycles)
     if (_shouldReloadCola) try {
-      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 500);
+      var colaEstRes = await appFlowGet('FT_Cola_Estacion', 5000);
       // Build posicion map: Op_ID → {posicion, spId}
       var _posMap = {};
       (colaEstRes.value||[]).forEach(function(item){

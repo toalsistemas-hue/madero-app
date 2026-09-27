@@ -6521,7 +6521,7 @@ async function ftLoadDataFromSP() {
       flowGet('FT_Operaciones', '', 5000).catch(empty),
       flowGet('FT_Tecnicos', '', 200).catch(empty),
       flowGet('FT_Estaciones', '', 100).catch(empty),
-      flowGet('FT_Cola_Estacion', '', 2000).catch(empty),
+      flowGet('FT_Cola_Estacion', '', 5000).catch(empty),
       flowGet('FT_Status_Estacion', '', 100).catch(empty),
       flowGet('FT_Timers', '', 2000).catch(empty),
       flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
@@ -7322,7 +7322,7 @@ async function ftLoadDataFromSP() {
           });
           // Recargar FT_Cola_Estacion para reflejar reordenamientos desde app móvil
           try {
-            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=500');
+            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=5000');
             window.DB_STATION_QUEUE = {};
             window.STATIONS.forEach(function(s){ window.DB_STATION_QUEUE[s]=[]; });
             var colaItemsPoll = (colaResPoll.value||[]).sort(function(a,b){return (a.fields.Posicion||0)-(b.fields.Posicion||0);});
@@ -7659,7 +7659,7 @@ async function ftSaveQueueToSP(of_sap) {
     // ── Step 1: Load existing FT_Cola_Estacion items via Flow ──────────────
     if(!window._queueSpIdCache) window._queueSpIdCache = {};
     try {
-      var existingRes = await flowGet('FT_Cola_Estacion', '', 500);
+      var existingRes = await flowGet('FT_Cola_Estacion', '', 5000);
       (existingRes.value||[]).forEach(function(item){
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
@@ -7810,6 +7810,52 @@ async function ftDiagnosticoCola(){
   }
 }
 window.ftDiagnosticoCola = ftDiagnosticoCola;
+
+// ============================================================================
+// DE-DUPLICACIÓN de FT_Cola_Estacion (mismo criterio que FT_Operaciones).
+// Deja UNA fila por operación (clave OF_SAP + Op_ID) y borra las repetidas.
+// Conserva la de mayor Posicion (más informativa); en empate, la más reciente.
+// Lo borrado va a la Papelera de reciclaje (recuperable 93 días).
+// Uso: ejecutar en la consola  ->  await ftDedupCola()
+//   y DESPUÉS recargar la página para que la app cargue la lista ya limpia.
+// Es idempotente: si se vuelve a correr y no hay duplicados, no borra nada.
+// ============================================================================
+async function ftDedupCola(){
+  try{
+    console.log('%c[Dedup Cola] Leyendo FT_Cola_Estacion completa…', 'color:#2f75a8;font-weight:bold');
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var items = (raw && raw.value) ? raw.value : [];
+    var grupos = {};   // "OF_SAP__Op_ID" -> [{id, pos, numId}]
+    items.forEach(function(it){
+      var f = it.fields || it;
+      var of = String(f.OF_SAP||'').trim(), op = String(f.Op_ID||'').trim();
+      if(!of || !op) return;                 // filas sin clave: se dejan intactas
+      var id = it.id || (f.ID);
+      (grupos[of+'__'+op] = grupos[of+'__'+op] || []).push({
+        id: id, pos: parseInt(f.Posicion||0)||0, numId: parseInt(id||0)||0
+      });
+    });
+    var aBorrar = [];
+    Object.keys(grupos).forEach(function(k){
+      var arr = grupos[k];
+      if(arr.length <= 1) return;            // sin duplicados
+      arr.sort(function(a,b){ if(b.pos!==a.pos) return b.pos-a.pos; return b.numId-a.numId; });
+      for(var i=1;i<arr.length;i++){ if(arr[i].id!=null) aBorrar.push(arr[i].id); }  // arr[0] se conserva
+    });
+    if(!aBorrar.length){ console.log('%c[Dedup Cola] No hay duplicados. Nada que borrar.', 'color:#1e8449;font-weight:bold'); return {borradas:0, fallidas:0}; }
+    console.log('%c[Dedup Cola] Eliminando '+aBorrar.length+' filas duplicadas (van a la Papelera)…', 'color:#c77700;font-weight:bold');
+    var ok=0, fail=0;
+    for(var i=0;i<aBorrar.length;i++){
+      try{ await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(aBorrar[i])); ok++; }
+      catch(e){ fail++; }
+      if((i+1)%100===0) console.log('   … '+(i+1)+'/'+aBorrar.length);
+    }
+    console.log('%c[Dedup Cola] Listo. Borradas: '+ok+(fail?(' · Fallidas: '+fail):''), 'color:#1f4e79;font-weight:bold');
+    console.log('%c➡ Ahora RECARGA la página para que la app cargue la lista ya limpia.', 'color:#c0392b;font-weight:bold');
+    return {borradas:ok, fallidas:fail};
+  }catch(e){ console.warn('[Dedup Cola] Error:', e && e.message); }
+}
+window.ftDedupCola = ftDedupCola;
 
 // ====== FT_Status_Estacion — save station status ======
 async function ftSaveStationStatusToSP(estacion) {
@@ -10930,7 +10976,7 @@ function confirmProgMain() {
         showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
 
         // Fetch existing cola records via Flow
-        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 2000).catch(function(){return {value:[]};});
+        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 5000).catch(function(){return {value:[]};});
         var _colaRes = _colaFlowRes;
         var _existingColaMap = {};
         var _dups = [];
@@ -10999,7 +11045,7 @@ function confirmProgMain() {
               // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
               // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
               if(!(w.existing&&w.existing.spId)){
-                try{ var _cc=await flowGet('FT_Cola_Estacion','',2000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
+                try{ var _cc=await flowGet('FT_Cola_Estacion','',5000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
               }
             }
             try{
@@ -12626,7 +12672,7 @@ function saveTplModal(){
                   return op.nombre !== _dOp.nombre;
                 });
                 // Eliminar de cola en SP
-                var _qRes = await flowGet('FT_Cola_Estacion','',200);
+                var _qRes = await flowGet('FT_Cola_Estacion','',5000);
                 (_qRes&&_qRes.value||[]).forEach(async function(qItem){
                   var qf=qItem.fields||qItem;
                   if(qf.Estacion===_dOp.estacion && qf.OF_SAP===_aof.of_sap){
@@ -15552,7 +15598,7 @@ async function portalSaveColaToSP(estacion){
   // Always reload _queueSpIdCache from SP to get latest item IDs
   window._queueSpIdCache = {};
   try {
-    var existRes = await flowGet('FT_Cola_Estacion', '', 500);
+    var existRes = await flowGet('FT_Cola_Estacion', '', 5000);
     (existRes.value||[]).forEach(function(item){
       if(item.fields && item.fields.Op_ID) window._queueSpIdCache[item.fields.Op_ID] = item.id;
     });
