@@ -7771,6 +7771,24 @@ async function ftDiagnosticoCola(){
     });
     topDup.sort(function(a,b){ return b.copias - a.copias; });
 
+    // Clasifica las operaciones únicas según el ESTATUS REAL de su OF en FT_OrdenesFabricacion
+    // (no solo lo que hay en memoria), para saber cuántas son de OFs realmente activas.
+    var porStatus = {}, huerfanas = 0;
+    try{
+      var ordRaw = await flowGet('FT_OrdenesFabricacion', '', 5000);
+      var ofStatus = {};
+      ((ordRaw && ordRaw.value) ? ordRaw.value : []).forEach(function(it){
+        var f = it.fields || it; var t = String(f.Title||'').trim();
+        if(t) ofStatus[t] = String(f.Status||'(sin status)');
+      });
+      claves.forEach(function(k){
+        var of = k.split('__')[0];
+        var st = ofStatus[of];
+        if(st === undefined){ huerfanas++; }
+        else { porStatus[st] = (porStatus[st]||0) + 1; }
+      });
+    }catch(eo){ console.warn('[Diag Cola] No se pudo leer FT_OrdenesFabricacion:', eo && eo.message); }
+
     console.log('%c===== DIAGNÓSTICO FT_Cola_Estacion (solo lectura) =====', 'color:#1f4e79;font-weight:bold;font-size:13px');
     console.log('Filas totales leídas:            ', total);
     console.log('Operaciones únicas (OF_SAP+Op_ID):', unicos);
@@ -7780,8 +7798,13 @@ async function ftDiagnosticoCola(){
     console.log('Filas que quedarían tras depurar (≈):', mantener, ' (una por operación de OFs abiertas)');
     console.log('Top 15 claves con más copias:');
     topDup.slice(0,15).forEach(function(d){ console.log('   ' + d.clave + '  →  ' + d.copias + ' copias'); });
+    console.log('%c-- Desglose de las ' + unicos + ' operaciones únicas por ESTATUS REAL de su OF --', 'color:#1f4e79;font-weight:bold');
+    Object.keys(porStatus).sort(function(a,b){ return porStatus[b]-porStatus[a]; }).forEach(function(s){
+      console.log('   ' + s + ': ' + porStatus[s]);
+    });
+    console.log('   OF no encontrada en FT_OrdenesFabricacion (huérfanas):', huerfanas);
     console.log('%c(No se borró nada. Esto es solo diagnóstico.)', 'color:#c77700;font-weight:bold');
-    return { total:total, operacionesUnicas:unicos, duplicados:duplicados, filasCerradas:filasCerradas, sinClave:sinClave, quedarianAprox:mantener };
+    return { total:total, operacionesUnicas:unicos, duplicados:duplicados, filasCerradas:filasCerradas, sinClave:sinClave, quedarianAprox:mantener, porStatusOF:porStatus, huerfanas:huerfanas };
   }catch(e){
     console.warn('[Diag Cola] No se pudo completar el diagnóstico:', e && e.message);
   }
