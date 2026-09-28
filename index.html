@@ -7732,6 +7732,36 @@ async function ftSaveQueueToSP(of_sap) {
 }
 
 // ============================================================================
+// PURGA de la cola de una OF: borra TODAS las filas de FT_Cola_Estacion de esa
+// OF (se llama al CERRAR o CANCELAR la orden). Limpia además el _queueSpId en
+// memoria para que, si la OF se reabre, la app recree filas nuevas (no falle).
+// ============================================================================
+async function ftBorrarColaDeOF(of_sap){
+  if(!of_sap) return;
+  try{
+    if(!FT_SITE_ID){ try{ FT_SITE_ID = await getSiteId(); }catch(_e){} }
+    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var sap = String(of_sap).trim();
+    var ids = ((raw && raw.value) ? raw.value : [])
+      .filter(function(it){ var f=it.fields||it; return String(f.OF_SAP||'').trim()===sap; })
+      .map(function(it){ return it.id || (it.fields && it.fields.ID); })
+      .filter(Boolean);
+    // Limpia referencias en memoria de esa OF (para que al reabrir se recree)
+    (DB.activeOFs||[]).forEach(function(a){
+      if(a && a.of_sap===of_sap && a.ops){
+        a.ops.forEach(function(op){ op._queueSpId=null; if(window._queueSpIdCache) delete window._queueSpIdCache[op.id]; });
+      }
+    });
+    for(var i=0;i<ids.length;i++){
+      try{ await graphDelete('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items/'+ids[i]); }catch(e){}
+      if((i+1)%50===0) await new Promise(function(r){ setTimeout(r, 200); });
+    }
+    if(ids.length) console.log('[Cola] Purga OF '+of_sap+': '+ids.length+' filas eliminadas.');
+  }catch(e){ console.warn('[ftBorrarColaDeOF]', e && e.message); }
+}
+window.ftBorrarColaDeOF = ftBorrarColaDeOF;
+
+// ============================================================================
 // DIAGNÓSTICO (SOLO LECTURA) de FT_Cola_Estacion — NO BORRA NADA.
 // Cuenta duplicados por clave (OF_SAP + Op_ID) y filas de OFs cerradas/canceladas.
 // Ejecutar desde la consola del navegador (F12 → Consola):   ftDiagnosticoCola()
@@ -8846,6 +8876,7 @@ async function _ejecutarCancelacionOF(of, aof){
     var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
     if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
   } catch(e){ console.warn('SP cancel OF:', e.message); }
+  ftBorrarColaDeOF(sap);   // purga las filas de cola de esta OF cancelada
   // Persistir en SP — Operaciones
   if(aof && aof.ops){
     for(var i=0;i<aof.ops.length;i++){
@@ -13435,6 +13466,7 @@ appConfirmValCal = function(){
       var ofItem = (existRes.value||[]).find(function(i){return (i.fields.Title||i.fields.OF_SAP||'')===sap;});
       if(ofItem) await spEscribir('FT_OrdenesFabricacion',{Status:'Pedido Cancelado', Programado_Hoy:false}, ofItem.id);
     } catch(e){ console.warn('SP cancel OF:', e.message); }
+    ftBorrarColaDeOF(sap);   // purga las filas de cola de esta OF cancelada
     // Persistir en SP — Operaciones
     if(aof && aof.ops){
       for(var i=0;i<aof.ops.length;i++){
@@ -14242,6 +14274,7 @@ async function _ofCerradaSetSP(of, val){
     await spEscribir('FT_OrdenesFabricacion', { OF_Cerrada: val }, of._spId);
     window._ofcLocal[of.of_sap] = { val: val, at: Date.now() }; // refrescar TTL tras confirmar
     fireSync('coord', val ? 'of_cerrada' : 'of_reabierta', { of_sap: of.of_sap });
+    if(val) ftBorrarColaDeOF(of.of_sap);   // al cerrar la OF, purga sus filas de cola
   }catch(e){
     of.ofCerrada = prev;                    // revertir en error
     if(window._ofcLocal) delete window._ofcLocal[of.of_sap];
@@ -14316,6 +14349,7 @@ async function cerrarPedido(pedido){
           var of = ofsDelPedido[i];
           var item = (existRes.value||[]).find(function(it){return (it.fields.Title||'')===of.of_sap;});
           if(item) await spEscribir('FT_OrdenesFabricacion',{Status:'Cerrado',Programado_Hoy:false,OF_Cerrada:false}, item.id);
+          ftBorrarColaDeOF(of.of_sap);   // purga la cola de cada OF del pedido cerrado
         }
       } catch(e){ console.warn('SP cerrarPedido:', e.message); }
     }
