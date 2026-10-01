@@ -426,6 +426,50 @@ async function sgdDescargarCopia(ref, nombre) {
   }
 }
 
+// Descarga el BORRADOR con una marca de agua diagonal "BORRADOR" en cada página.
+async function sgdDescargarBorrador(ref, nombre){
+  if (!ref){ alert('El borrador aún no está disponible para descargar.'); return; }
+  var nombreArchivo = ((nombre || 'documento').replace(/[^\w\-. áéíóúÁÉÍÓÚñÑ]/g, '_')) + ' (BORRADOR).pdf';
+  var got = await window.SGD.obtenerBytes(ref);
+  if (!got || !got.bytes){
+    if (got && got.error && /403|forbidden/i.test(got.error)){ alert('No tienes permiso para descargar este borrador.'); return; }
+    var resB = await window.SGD.obtenerBlobUrl(ref);
+    if (resB && resB.url){ sgdDispararDescarga(await (await fetch(resB.url)).blob(), nombreArchivo); }
+    else { alert('No se pudo preparar la descarga del borrador.'); }
+    return;
+  }
+  try{
+    var PDFLib = await window.SGD.cargarPdfLib();
+    var pdfDoc = await PDFLib.PDFDocument.load(got.bytes);
+    var font = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+    var texto = 'BORRADOR';
+    var pages = pdfDoc.getPages();
+    for (var i = 0; i < pages.length; i++){
+      var pg = pages[i], w = pg.getWidth(), h = pg.getHeight();
+      var diag = Math.sqrt(w*w + h*h);
+      var w1 = font.widthOfTextAtSize(texto, 1) || 1;
+      var size = (diag * 0.72) / w1;          // el texto ocupa ~72% de la diagonal
+      var rad = Math.PI/4;                     // 45°
+      var tw = font.widthOfTextAtSize(texto, size);
+      pg.drawText(texto, {
+        x: (w/2) - (tw/2)*Math.cos(rad),
+        y: (h/2) - (tw/2)*Math.sin(rad),
+        size: size, font: font,
+        color: PDFLib.rgb(0.85, 0.12, 0.12),
+        rotate: PDFLib.degrees(45),
+        opacity: 0.20
+      });
+    }
+    var out = await pdfDoc.save();
+    sgdDispararDescarga(new Blob([out], { type: 'application/pdf' }), nombreArchivo);
+    if (window.SGD.bitacora) window.SGD.bitacora('Descargar borrador', 'Documento', nombre || '', {});
+  }catch(e){
+    // Si falla el estampado, descargar el PDF sin marca para no bloquear al usuario
+    try { sgdDispararDescarga(new Blob([got.bytes], { type: 'application/pdf' }), nombreArchivo); } catch(_){}
+    console.warn('[SGD] No se pudo estampar BORRADOR:', e && e.message);
+  }
+}
+
 // Deduce la extensión de archivo a partir del tipo MIME devuelto por SharePoint
 function sgdExtDeMime(m){
   m = (m||'').toLowerCase();
@@ -739,6 +783,16 @@ function sgdToggleRevisionPresencial() {
 }
 
 // Registra la solicitud de documentación
+// Convierte un File a base64 (sin el prefijo data:) para subirlo por el puente SP
+function sgdFileB64(file){
+  return new Promise(function(res, rej){
+    var r = new FileReader();
+    r.onload = function(){ res(String(r.result).split(',')[1] || ''); };
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
 async function sgdRegistrarSolicitud(ev) {
   if (ev) ev.preventDefault();
   var err = document.getElementById('sol-error');
@@ -790,6 +844,10 @@ async function sgdRegistrarSolicitud(ev) {
   var btn = document.getElementById('sol-registrar');
   if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
 
+  // Documentos adjuntos seleccionados por el solicitante
+  var adjInput = document.getElementById('sol-adjuntos');
+  var adjFiles = (adjInput && adjInput.files) ? Array.prototype.slice.call(adjInput.files) : [];
+
   // Campos para la lista SGD_Solicitudes en SharePoint
   var fields = {
     Title: datos.titulo,
@@ -806,7 +864,8 @@ async function sgdRegistrarSolicitud(ev) {
     Fecha_Revision: (requierePresencial && datos.fecha) ? (datos.fecha + 'T00:00:00Z') : '',
     Hora_Revision: requierePresencial ? (datos.hora || '') : '',
     Estatus: estatusInicial,
-    Fecha_Solicitud: new Date().toISOString()
+    Fecha_Solicitud: new Date().toISOString(),
+    Tiene_Adjuntos: adjFiles.length ? 'Sí' : 'No'
   };
   // Fecha_Revision es columna Fecha y hora: si va vacía hay que OMITIRLA (una cadena vacía da 400)
   if (!fields.Fecha_Revision) delete fields.Fecha_Revision;
@@ -831,6 +890,29 @@ async function sgdRegistrarSolicitud(ev) {
       if (err) err.textContent = 'No se pudo registrar la solicitud. Intenta de nuevo.';
       return;
     }
+  }
+
+  // Subir documentos adjuntos (si hay) y guardar sus referencias en la solicitud
+  if (nuevoId && adjFiles.length && window.SGD.embebido && window.SGD.embebido()) {
+    if (btn) btn.textContent = 'Subiendo adjuntos…';
+    var adjRefs = [];
+    for (var ai = 0; ai < adjFiles.length; ai++) {
+      var fAdj = adjFiles[ai];
+      try {
+        var b64a = await sgdFileB64(fAdj);
+        var safeName = (fAdj.name || ('archivo_' + (ai + 1))).replace(/[^\w.\- áéíóúÁÉÍÓÚñÑ]/g, '_');
+        var upa = await window.SGD.sp('uploadAttachment', {
+          carpeta: 'SGD_Adjuntos_Solicitud', itemId: nuevoId,
+          fileName: (ai + 1) + '_' + safeName, contentBase64: b64a
+        });
+        if (upa && upa.id) adjRefs.push({ id: upa.id, nombre: (fAdj.name || safeName) });
+      } catch (eUp) { console.warn('[Adjunto] no se pudo subir', fAdj && fAdj.name, eUp && eUp.message); }
+    }
+    try {
+      var updAdj = { Adjuntos_JSON: JSON.stringify(adjRefs), Tiene_Adjuntos: adjRefs.length ? 'Sí' : 'No' };
+      if (window.SGD.stampAuditoria) window.SGD.stampAuditoria(updAdj);
+      await window.SGD.sp('update', { lista: window.SGD.LISTA_SOLICITUDES, itemId: nuevoId, fields: updAdj });
+    } catch (eUpd) { console.warn('[Adjunto] no se pudo guardar Adjuntos_JSON', eUpd && eUpd.message); }
   }
 
   // Bitácora de auditoría
