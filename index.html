@@ -1099,6 +1099,7 @@ tr:last-child td{border-bottom:none;}
         <button id="ftab-sin-prog"    onclick="setProgTab('sin-prog')"    class="btn btn-sm btn-ghost">Sin programar</button>
         <button id="ftab-programados" onclick="setProgTab('programados')" class="btn btn-sm btn-ghost">Programados</button>
         <button id="ftab-terminados"  onclick="setProgTab('terminados')"  class="btn btn-sm btn-ghost">Terminados</button>
+        <button id="ftab-completados" onclick="setProgTab('completados')" class="btn btn-sm btn-ghost" style="color:var(--green);border-color:rgba(46,160,67,.3);">✓ Completados</button>
         <div style="margin-left:auto;">
           <button id="ftab-cancelados" onclick="setProgTab('cancelados')" class="btn btn-sm btn-ghost" style="color:var(--red);border-color:rgba(239,68,68,.3);">🚫 Cancelados <span id="ftab-cancelados-badge" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:.65rem;margin-left:3px;">0</span></button>
         </div>
@@ -8673,15 +8674,16 @@ function setProgTab(tab){
   if(tab==='cancelados' && C.filterStatus==='cancelados') tab='todos';
   C.filterStatus = tab;
   // Actualizar estilos igual que Tiempo Real
-  ['todos','sin-prog','programados','terminados','cancelados'].forEach(function(t){
+  ['todos','sin-prog','programados','terminados','completados','cancelados'].forEach(function(t){
     var b=document.getElementById('ftab-'+t);
     if(!b) return;
     if(t===tab){
       b.className = 'btn btn-sm btn-primary';
-      if(t==='cancelados') b.style.cssText=''; // reset inline style cuando activo
+      if(t==='cancelados'||t==='completados') b.style.cssText=''; // reset inline style cuando activo
     } else {
       b.className = 'btn btn-sm btn-ghost';
       if(t==='cancelados') b.style.cssText='color:var(--red);border-color:rgba(239,68,68,.3);';
+      if(t==='completados') b.style.cssText='color:var(--green);border-color:rgba(46,160,67,.3);';
     }
   });
   (window.renderProg||renderProg)();
@@ -11424,6 +11426,10 @@ function _renderProgBody(){
       if(!aof || !aof.ops || aof.ops.length===0) return false;
       return aof.ops.every(function(op){return op.status==='done';});
     }
+    if(fStatus==='completados'){
+      // Pedidos marcados en verde con "✓ Completado" (listos para cerrar)
+      return pedidoIsComplete(of.pedido);
+    }
     return true;
   }));
 
@@ -13951,6 +13957,45 @@ async function ftCycleMonitorVis(ofSap){
   }
 }
 
+// ── Filtro por estatus de operación (Tiempo Real · En proceso) ──────────
+// Categorías visibles para el coordinador. "Fin de turno" es un subtipo de 'paused'.
+var SEG_OP_CATS=[
+  {k:'concluidas',l:'✓ Concluidas',          c:'var(--green)'},
+  {k:'activas',   l:'▶ Activas',             c:'var(--accent-l)'},
+  {k:'pausadas',  l:'⏸ Pausadas',            c:'var(--yellow)'},
+  {k:'finturno',  l:'🌙 Fin de turno',       c:'var(--accent-l)'},
+  {k:'aguarda',   l:'⏳ Aguarda confirmación Supervisor', c:'#f59e0b'},
+  {k:'omitidas',  l:'🏁 Omitidas',           c:'#6e7681'},
+  {k:'siniciar',  l:'○ Sin iniciar',         c:'var(--muted)'}
+];
+function _opEstadoCat(op){
+  if(!op) return 'otros';
+  var s=op.status;
+  if(s==='done') return 'concluidas';
+  if(s==='running') return 'activas';
+  if(s==='op_concluded') return 'aguarda';
+  if(s==='omitida') return 'omitidas';
+  if(s==='pending') return 'siniciar';
+  if(s==='paused'){
+    var ft=(op._pauseTipo==='turno')||((op.pauseReason||'').indexOf('🌙')>=0)||((op.pauseReason||'').indexOf('Fin de turno')>=0);
+    return ft?'finturno':'pausadas';
+  }
+  return 'otros'; // validating / retrabajo / chatarra — no filtrables
+}
+function _segOpFilterActive(){
+  return (C.segFilter||'activos')==='activos' && C.segOpFilter && Object.keys(C.segOpFilter).some(function(k){return C.segOpFilter[k];});
+}
+function _opCatSelected(op){ var f=C.segOpFilter||{}; return !!f[_opEstadoCat(op)]; }
+function _ofHasSelectedOp(aof){ return !!(aof && aof.ops && aof.ops.some(function(op){return _opCatSelected(op);})); }
+function toggleSegOpFilter(cat){
+  if(!C.segOpFilter) C.segOpFilter={};
+  C.segOpFilter[cat]=!C.segOpFilter[cat];
+  renderSeg();
+}
+function clearSegOpFilter(){ C.segOpFilter={}; renderSeg(); }
+window.toggleSegOpFilter=toggleSegOpFilter;
+window.clearSegOpFilter=clearSegOpFilter;
+
 function renderSeg(){
   window.renderSeg = renderSeg; // expose globally
 
@@ -13968,6 +14013,29 @@ function renderSeg(){
     h+='<button class="btn btn-sm '+(filterStatus===f?'btn-primary':'btn-ghost')+'" onclick="C.segFilter=\''+f+'\';renderSeg()">'+labels[f]+(f==='ofcerradas'&&_cnt>0?' ('+_cnt+')':'')+'</button>';
   });
   h+='</div>';
+
+  // -- Filtro multi-selección por estatus de operación (solo "En proceso") --
+  if(filterStatus==='activos'){
+    var _ocCounts={};
+    DB.ofs.filter(function(o){return o.programadoHoy && !o.pedidoCerrado && !o.pedidoCierre && !o.ofCerrada;}).forEach(function(of){
+      var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      if(aof&&aof.ops) aof.ops.forEach(function(op){var c=_opEstadoCat(op);_ocCounts[c]=(_ocCounts[c]||0)+1;});
+    });
+    var _fsel=C.segOpFilter||{};
+    var _anySel=Object.keys(_fsel).some(function(k){return _fsel[k];});
+    h+='<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">';
+    h+='<span style="font-size:.72rem;color:var(--dim);margin-right:2px;">Filtrar operaciones:</span>';
+    SEG_OP_CATS.forEach(function(oc){
+      var on=!!_fsel[oc.k];
+      var cnt=_ocCounts[oc.k]||0;
+      h+='<button onclick="toggleSegOpFilter(\''+oc.k+'\')" class="btn btn-sm" style="'
+        +(on?('background:'+oc.c+';color:#0b0f14;border:1px solid '+oc.c+';font-weight:600;')
+            :('background:rgba(255,255,255,.04);color:'+oc.c+';border:1px solid var(--border);'))
+        +'white-space:nowrap;">'+oc.l+' ('+cnt+')</button>';
+    });
+    if(_anySel) h+='<button onclick="clearSegOpFilter()" class="btn btn-sm btn-ghost" style="white-space:nowrap;">✕ Limpiar</button>';
+    h+='</div>';
+  }
 
   var pedidos_to_show;
   if(filterStatus==='activos'){
@@ -14035,7 +14103,13 @@ function renderSeg(){
   // Mapa de OFs visibles en el Monitor (para el indicador 📺)
   var _monVis = (typeof ftComputeMonitorVisible==='function') ? ftComputeMonitorVisible() : {};
 
+  var _segEmitted=0;
   groups.forEach(function(g){
+    // Filtro de operaciones: ocultar pedidos sin ninguna operación del estatus seleccionado
+    if(_segOpFilterActive()){
+      var _gm=(g.ofs||[]).some(function(of){var a=DB.activeOFs.find(function(x){return x.of_sap===of.of_sap;});return _ofHasSelectedOp(a);});
+      if(!_gm) return;
+    }
     var grpDone=0, grpTotal=0, grpAll=0;
     g.ofs.forEach(function(of){
       var aof=DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
@@ -14076,6 +14150,8 @@ function renderSeg(){
 
     g.ofs.forEach(function(of){
       var aof = DB.activeOFs.find(function(a){return a.of_sap===of.of_sap;});
+      // Filtro de operaciones: ocultar OFs sin operaciones del estatus seleccionado
+      if(_segOpFilterActive() && !_ofHasSelectedOp(aof)) return;
       var done = aof ? aof.ops.filter(function(o){return o.status==='done'||o.status==='op_concluded';}).length : 0;
       var totalOps = aof ? aof.ops.length : 0;
       var pct = totalOps>0 ? Math.round(done/totalOps*100) : (filterStatus==='cerrados'?100:0);
@@ -14142,6 +14218,8 @@ function renderSeg(){
       // -- 8: Ops con comentarios --
       h+='<div style="display:flex;flex-direction:column;gap:3px;">';
       aof.ops.forEach(function(op){
+        // Filtro de operaciones: ocultar las que no coincidan con el estatus seleccionado
+        if(_segOpFilterActive() && !_opCatSelected(op)) return;
         var sCol={done:'var(--green)',running:'var(--accent-l)',paused:'var(--yellow)',validating:'var(--purple)',pending:'var(--muted)',retrabajo:'var(--red)',chatarra:'var(--red)',op_concluded:'#f59e0b',omitida:'#6e7681'}[op.status]||'var(--muted)';
         var sIco={done:'✓',running:'▶',paused:'⏸',validating:'🔍',pending:'○',retrabajo:'🔄',chatarra:'🗑',op_concluded:'⏳',omitida:'🏁'}[op.status]||'○';
         var _esOmit = op.status==='omitida';
@@ -14243,10 +14321,11 @@ function renderSeg(){
     });
     h+='</div>'; // close collapsible content
     h+='</div>'; // close group card
+    _segEmitted++;
   });
-  if(!h || h.indexOf('prog-card') === -1 && groups.length===0){
+  if(_segEmitted===0){
     h+='<div style="text-align:center;padding:30px;color:var(--muted);font-size:.82rem;">'+
-      (_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.'))))+'</div>';
+      (_segOpFilterActive()?'Sin operaciones que coincidan con el filtro seleccionado.':(_sq?'Sin resultados para la búsqueda.':(filterStatus==='activos'?'Sin OFs activas hoy.':(filterStatus==='ofcerradas'?'Sin OFs cerradas. Cierra órdenes finalizadas desde 🟢 En proceso para depurar la vista.':(filterStatus==='cierre'?'Sin pedidos en proceso de cierre.':'Sin pedidos cerrados.')))))+'</div>';
   }
   document.getElementById('seg-list').innerHTML=h;
   // Update Carga por Estacion in historial page too
@@ -16763,6 +16842,7 @@ async function ftRptLoad() {
       var ayudantes=ayRaw?ayRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return{of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',nombre:f.Nombre||f.Title||'',estacion:f.Estacion||'',
         tecnico:f.Tecnico||'',ayudantes:ayudantes,status:f.Status||'pending',
+        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',
         qty_total:parseInt(f.Qty_Total||0)||0,qty_ok:parseInt(f.Qty_OK||0)||0,secuencia:parseInt(f.Secuencia||0)||0};
     });
     _rptData.loaded=true;
@@ -16788,6 +16868,18 @@ async function ftRptLoad() {
 }
 
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
+// Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.
+function _rptFechaSolo(s){ if(!s) return ''; return String(s).split('T')[0].split(' ')[0]; }
+// F.Inicio = fecha de inicio de la PRIMERA operación (por secuencia) que ya inició.
+function _rptOpsInicio(ops){
+  var arr=(ops||[]).filter(function(o){return _rptFechaSolo(o.fecha_inicio_real);}).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+  return arr.length?_rptFechaSolo(arr[0].fecha_inicio_real):'';
+}
+// F.Terminación = fecha de fin de la ÚLTIMA operación (por secuencia) que ya terminó.
+function _rptOpsTermino(ops){
+  var arr=(ops||[]).filter(function(o){return _rptFechaSolo(o.fecha_fin_real);}).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+  return arr.length?_rptFechaSolo(arr[arr.length-1].fecha_fin_real):'';
+}
 function ftRptEsUrgente(fEntrega,pct){
   if(!fEntrega||pct>=100)return false;
   var hoy=new Date();hoy.setHours(0,0,0,0);var limite=new Date(hoy);limite.setDate(limite.getDate()+7);
@@ -16835,7 +16927,7 @@ function ftRptBuildData(){
       var operador=Object.keys(personasSet).join(' / ')||'—';
       if(!porEstacion[est])porEstacion[est]=[];
       porEstacion[est].push({of:of,pct:pct,opStatus:opStatus,operador:operador,
-        fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',totalOps:total,termOps:term,noOmit:noOmit,ops:ops});
+        fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',fInicio:_rptOpsInicio(ops),fTermino:_rptOpsTermino(ops),totalOps:total,termOps:term,noOmit:noOmit,ops:ops});
     });
   });
   _rptData.ofs.forEach(function(of){
@@ -16845,7 +16937,7 @@ function ftRptBuildData(){
     // (botón "Finalizar" → status 'Finalizada'), deben verse como Terminadas al 100%, no en Planeación.
     var _fin=(of.status==='Finalizada'||of.status==='En proceso de cierre');
     porEstacion['Sin estación'].push({of:of,pct:_fin?100:0,opStatus:_fin?'Terminada (Sin programar)':'Planeación',operador:'—',
-      fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',totalOps:0,termOps:0,noOmit:0,_finSinProg:_fin,ops:[]});
+      fProg:of.fecha_prog||'',fEntrega:of.fecha_entrega||'',fInicio:'',fTermino:'',totalOps:0,termOps:0,noOmit:0,_finSinProg:_fin,ops:[]});
   });
   Object.keys(porEstacion).forEach(function(est){
     porEstacion[est].sort(function(a,b){
@@ -16979,7 +17071,7 @@ function ftRptRender(){
     if(enP)html+=' <span style="background:rgba(59,130,246,.15);color:#93c5fd;border-radius:20px;padding:1px 8px;font-size:.65rem;">'+enP+' en proceso</span>';
     if(term)html+=' <span style="background:rgba(34,197,94,.12);color:#4ade80;border-radius:20px;padding:1px 8px;font-size:.65rem;">'+term+' term.</span>';
     html+='</div><div class="rpt-section-meta">Avance prom: <strong>'+avg+'%</strong></div></div>';
-    html+='<div style="overflow-x:auto;"><table class="rpt-table"><thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th><th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th><th>F.Prog</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
+    html+='<div style="overflow-x:auto;"><table class="rpt-table"><thead><tr><th>OF SAP</th><th>Pedido</th><th>Cliente</th><th>Descripción</th><th style="text-align:center;">Cant.</th><th>Status</th><th>Operador</th><th>F.Prog</th><th>F.Inicio</th><th>F.Terminación</th><th>F.Entrega</th><th>Avance</th></tr></thead><tbody>';
     rows.forEach(function(r){
       var color=ftRptAvanceColor(r.pct);
       var urgente=ftRptEsUrgente(r.fEntrega,r.pct);
@@ -16992,6 +17084,8 @@ function ftRptRender(){
       html+='<td>'+ftRptStatusPill(r.opStatus)+'</td>';
       html+='<td style="font-size:.67rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+r.operador+'">'+r.operador+'</td>';
       html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fProg)+'</td>';
+      html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fInicio)+'</td>';
+      html+='<td style="font-size:.68rem;white-space:nowrap;">'+ftRptFmtFecha(r.fTermino)+'</td>';
       html+='<td style="font-size:.68rem;white-space:nowrap;">'+fEntHtml+'</td>';
       html+='<td><div class="rpt-avance-wrap"><div class="rpt-avance-bar"><div class="rpt-avance-fill" style="width:'+r.pct+'%;background:'+color+';"></div></div><span class="rpt-avance-pct" style="color:'+color+';">'+r.pct+'%</span></div></td></tr>';
     });
@@ -17033,11 +17127,11 @@ function ftRptExportPDF(){
       doc.text((est||'Sin estación')+' — '+rows.length+' OFs | Avance prom: '+avg+'%',14,yOffset);yOffset+=4;
       var pdfRows=rows.map(function(r){
         return[r.of.of_sap||'',r.of.pedido||'N/A',(r.of.cliente||'').substring(0,22),(r.of.descripcion||'').substring(0,40),
-          String(r.of.cantidad||'—'),r.opStatus,r.operador.substring(0,20),ftRptFmtFecha(r.fProg),ftRptFmtFecha(r.fEntrega),r.pct+'%'];
+          String(r.of.cantidad||'—'),r.opStatus,r.operador.substring(0,20),ftRptFmtFecha(r.fProg),ftRptFmtFecha(r.fInicio),ftRptFmtFecha(r.fTermino),ftRptFmtFecha(r.fEntrega),r.pct+'%'];
       });
-      doc.autoTable({startY:yOffset,head:[['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Entrega','Avance']],
+      doc.autoTable({startY:yOffset,head:[['OF SAP','Pedido','Cliente','Descripción','Cant.','Status','Operador','F.Prog','F.Inicio','F.Term.','F.Entrega','Avance']],
         body:pdfRows,styles:{fontSize:6.5,cellPadding:1.5},headStyles:{fillColor:[26,52,85],textColor:[180,200,230],fontStyle:'bold',fontSize:6},
-        columnStyles:{0:{cellWidth:16},1:{cellWidth:18},2:{cellWidth:28},3:{cellWidth:54},4:{cellWidth:10,halign:'center'},5:{cellWidth:18},6:{cellWidth:26},7:{cellWidth:14},8:{cellWidth:14},9:{cellWidth:12,halign:'right'}},
+        columnStyles:{0:{cellWidth:15},1:{cellWidth:16},2:{cellWidth:24},3:{cellWidth:42},4:{cellWidth:9,halign:'center'},5:{cellWidth:16},6:{cellWidth:22},7:{cellWidth:13},8:{cellWidth:13},9:{cellWidth:13},10:{cellWidth:13},11:{cellWidth:11,halign:'right'}},
         alternateRowStyles:{fillColor:[240,244,250]},margin:{left:14,right:14},theme:'grid'});
       yOffset=doc.lastAutoTable.finalY+6;
     });
@@ -17062,24 +17156,24 @@ function ftRptExportExcel(){
     estaciones.forEach(function(est){
       var rows=porEstacion[est];var wsData=[];var rowMeta=[];
       wsData.push(['ESTACIÓN: '+(est||'Sin estación')]);rowMeta.push({outline:0});
-      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Entrega','Avance %']);rowMeta.push({outline:0});
+      wsData.push(['OF SAP','Pedido','Cliente','Descripción','Cantidad','Status','Operador','F.Prog','F.Inicio','F.Terminación','F.Entrega','Avance %']);rowMeta.push({outline:0});
       rows.forEach(function(r){
-        wsData.push([r.of.of_sap||'',r.of.pedido||'N/A',r.of.cliente||'',r.of.descripcion||'',r.of.cantidad||0,r.opStatus,r.operador,r.fProg||'',r.fEntrega||'',r.pct/100]);
+        wsData.push([r.of.of_sap||'',r.of.pedido||'N/A',r.of.cliente||'',r.of.descripcion||'',r.of.cantidad||0,r.opStatus,r.operador,r.fProg||'',r.fInicio||'',r.fTermino||'',r.fEntrega||'',r.pct/100]);
         rowMeta.push({outline:0});
         var ops=(r.ops||[]).slice().sort(function(a,b){return a.secuencia-b.secuencia;});
         ops.forEach(function(op){
           var opS=(op.status||'').toLowerCase();
           var opLabel=(opS==='done'||opS==='terminada')?'Terminada':opS==='running'?'En Proceso':'Pendiente';
           var opOper=[op.tecnico].concat(op.ayudantes||[]).filter(Boolean).join(' / ')||'—';
-          wsData.push(['  → '+(op.op_id||''),'',op.nombre||'',opLabel,op.qty_total||'',opOper,'','','',op.qty_ok&&op.qty_total?op.qty_ok/op.qty_total:'']);
+          wsData.push(['  → '+(op.op_id||''),'',op.nombre||'',opLabel,op.qty_total||'',opOper,'','',_rptFechaSolo(op.fecha_inicio_real),_rptFechaSolo(op.fecha_fin_real),'',op.qty_ok&&op.qty_total?op.qty_ok/op.qty_total:'']);
           rowMeta.push({outline:1});
         });
         wsData.push(['']);rowMeta.push({outline:0});
       });
       var ws=XLSX.utils.aoa_to_sheet(wsData);
       var range=XLSX.utils.decode_range(ws['!ref']||'A1');
-      for(var R=2;R<=range.e.r;R++){var ca=XLSX.utils.encode_cell({r:R,c:9});if(ws[ca]&&typeof ws[ca].v==='number'){ws[ca].t='n';ws[ca].z='0%';}}
-      ws['!cols']=[{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:10}];
+      for(var R=2;R<=range.e.r;R++){var ca=XLSX.utils.encode_cell({r:R,c:11});if(ws[ca]&&typeof ws[ca].v==='number'){ws[ca].t='n';ws[ca].z='0%';}}
+      ws['!cols']=[{wch:12},{wch:14},{wch:28},{wch:42},{wch:10},{wch:14},{wch:28},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
       ws['!rows']=rowMeta.map(function(m){return m.outline===1?{level:1}:{};});
       XLSX.utils.book_append_sheet(wb,ws,(est||'Sin estacion').replace(/[:\\/\[\]\*\?]/g,'-').substring(0,31));
     });
