@@ -1052,6 +1052,7 @@ tr:last-child td{border-bottom:none;}
     <button class="coord-nav-pill" onclick="coordGoHistorial(this)">📊 Historial & KPIs</button>
     <button class="coord-nav-pill" onclick="showCoordPage('flujos',this)">🔀 Flujos en proceso</button>
     <button class="coord-nav-pill" onclick="showCoordPage('reportes',this);ftRptLoad()">📋 Reportes</button>
+    <button class="coord-nav-pill" onclick="showCoordPage('tablero',this);tableroCfgRender()">📺 Tablero</button>
     <div style="margin-left:auto;position:relative;" id="coord-notif-wrapper">
       <button id="coord-notif-btn" onclick="toggleCoordNotifPanel()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:5px 10px;cursor:pointer;color:var(--text);font-size:.78rem;display:flex;align-items:center;gap:5px;font-family:'Archivo',sans-serif;transition:background .15s;" onmouseenter="this.style.background='rgba(255,255,255,.1)'" onmouseleave="this.style.background='rgba(255,255,255,.06)'">
         🔔
@@ -1148,11 +1149,14 @@ tr:last-child td{border-bottom:none;}
     <div class="coord-modal-bg" id="modal-reprog">
       <div class="coord-modal-box" style="max-width:960px;max-height:92vh;display:flex;flex-direction:column;">
         <div class="coord-modal-title">📆 Reprogramar fechas de entrega</div>
-        <p style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:10px;">
-          Órdenes ordenadas por fecha de entrega (de la más próxima a la más lejana).
-          Al cambiar una fecha, <strong>las órdenes por debajo se recorren el mismo número de días</strong>.
-          Los cambios son solo visuales hasta que confirmes.
-        </p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+          <span style="font-size:.76rem;color:var(--dim);margin-right:2px;">Tipo:</span>
+          <button id="reprog-modo-general"  class="btn btn-sm btn-primary" onclick="reprogSetModo('general')">General (todas)</button>
+          <button id="reprog-modo-estacion" class="btn btn-sm btn-ghost"   onclick="reprogSetModo('estacion')">Por estación</button>
+          <button id="reprog-modo-of"       class="btn btn-sm btn-ghost"   onclick="reprogSetModo('of')">Por orden</button>
+          <select id="reprog-estacion-sel" onchange="reprogSetEstacion(this.value)" style="display:none;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:5px 10px;font-size:.78rem;"></select>
+        </div>
+        <p id="reprog-desc" style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:10px;"></p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
           <input type="text" id="reprog-search" oninput="reprogRender()" placeholder="🔍 OF, pedido, cliente, descripción..." style="flex:1;min-width:180px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;padding:6px 10px;color:var(--text);font-size:.78rem;">
           <span id="reprog-count" style="font-size:.74rem;color:var(--yellow);white-space:nowrap;">0 fechas modificadas</span>
@@ -1302,6 +1306,73 @@ tr:last-child td{border-bottom:none;}
       </div>
       <div id="rpt-loading" style="text-align:center;padding:40px;color:var(--dim,#64748b);font-size:.85rem;">⏳ Cargando datos...</div>
       <div id="rpt-contenido" style="display:none;"></div>
+    </div>
+
+    <div class="coord-page" id="coord-page-tablero">
+      <div class="page-hdr" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div><div class="page-title">📺 Tablero de Producción</div><div class="page-sub">Configura lo que se mostrará en la pantalla del piso</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="tableroGuardarCfg()" id="btn-tablero-save">💾 Guardar configuración</button>
+          <button class="btn btn-primary btn-sm" onclick="tableroAbrirKiosk()" id="btn-tablero-open">📺 Abrir tablero (pantalla completa)</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:12px;">
+        <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
+          <div style="font-weight:700;font-size:.9rem;margin-bottom:4px;">🏭 Estaciones a mostrar</div>
+          <div style="font-size:.74rem;color:var(--dim);margin-bottom:10px;">Se acomodan automáticamente en cuadrantes según cuántas elijas.</div>
+          <div style="display:flex;gap:6px;margin-bottom:10px;">
+            <button class="btn btn-ghost btn-sm" onclick="tableroSelAll(true)">Seleccionar todas</button>
+            <button class="btn btn-ghost btn-sm" onclick="tableroSelAll(false)">Ninguna</button>
+          </div>
+          <div id="tablero-est-list" style="max-height:340px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px;"></div>
+        </div>
+
+        <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
+          <div style="font-weight:700;font-size:.9rem;margin-bottom:10px;">📅 Rango de fechas de entrega</div>
+          <div style="font-size:.74rem;color:var(--dim);margin-bottom:10px;">Muestra las órdenes cuya fecha de entrega cae dentro del rango.</div>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="semana" onchange="tableroRangoChange()"> Próxima semana (7 días)</label>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="mes" onchange="tableroRangoChange()"> Próximo mes (30 días)</label>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="dias" onchange="tableroRangoChange()"> Próximos <input type="number" id="tablero-dias" min="1" max="365" value="15" style="width:60px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.8rem;"> días</label>
+          <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:.84rem;cursor:pointer;"><input type="radio" name="tablero-rango" value="todas" onchange="tableroRangoChange()"> Todas (sin filtro de fecha)</label>
+
+          <div style="font-weight:700;font-size:.9rem;margin:16px 0 8px;">🔄 Intervalo de actualización</div>
+          <select id="tablero-refresh" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.82rem;">
+            <option value="30">Cada 30 segundos</option>
+            <option value="60" selected>Cada 1 minuto</option>
+            <option value="120">Cada 2 minutos</option>
+            <option value="300">Cada 5 minutos</option>
+          </select>
+
+          <div style="font-weight:700;font-size:.9rem;margin:16px 0 6px;">🔁 Rotación de cuadrantes</div>
+          <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px;">La pantalla muestra máximo 4 cuadrantes. Si eliges más de 4 estaciones, se rotan automáticamente cada:</div>
+          <select id="tablero-rotacion" style="background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.82rem;">
+            <option value="10">10 segundos</option>
+            <option value="15">15 segundos</option>
+            <option value="20" selected>20 segundos</option>
+            <option value="30">30 segundos</option>
+            <option value="45">45 segundos</option>
+            <option value="60">60 segundos</option>
+          </select>
+          <div id="tablero-status" style="font-size:.76rem;color:var(--green);margin-top:12px;min-height:16px;"></div>
+        </div>
+
+        <div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:14px;">
+          <div style="font-weight:700;font-size:.9rem;margin-bottom:8px;">🖥️ Transmitir a la pantalla</div>
+          <div style="font-size:.78rem;color:var(--dim-2,var(--dim));line-height:1.6;">
+            1. Conecta al TV un dispositivo con navegador (Fire TV, Android, mini‑PC o Raspberry Pi).<br>
+            2. Abre esta misma aplicación e inicia sesión (de preferencia con una cuenta de solo lectura).<br>
+            3. Abre la URL del tablero (abajo); se mostrará a pantalla completa y se actualiza solo.<br>
+            4. Pon el navegador en modo pantalla completa / kiosco.
+          </div>
+          <div style="font-weight:700;font-size:.8rem;margin:12px 0 4px;">URL del tablero:</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            <input type="text" id="tablero-url" readonly value="" style="flex:1;min-width:180px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:6px 10px;font-size:.76rem;">
+            <button class="btn btn-ghost btn-sm" onclick="tableroCopiarUrl()">📋 Copiar</button>
+          </div>
+          <div style="font-size:.72rem;color:var(--dim);margin-top:8px;">La pantalla lee esta misma configuración, así que cualquier cambio que guardes aquí se reflejará allá al siguiente refresco.</div>
+        </div>
+      </div>
     </div>
 
   </div><!-- coord-main -->
@@ -2299,6 +2370,21 @@ let pendingAction = null;
 // ═══════════════════════════════════════════════════════
 // MSAL — INICIALIZACIÓN
 // ═══════════════════════════════════════════════════════
+// Marca de "sesión cerrada por el usuario": bloquea la reanudación silenciosa
+// hasta que se inicie sesión explícitamente (permite cambiar de cuenta).
+function _ftSignedOut(){ try{ return localStorage.getItem('ft_signed_out')==='1'; }catch(e){ return false; } }
+// Normaliza el email de la cuenta MSAL (incluye el caso de invitados #EXT#).
+function _emailFromMsalAccount(account){
+  var rawEmail = ((account && account.username) || '').toLowerCase();
+  var email = rawEmail;
+  if (rawEmail.includes('#ext#')) {
+    // karim_maderodairysystems.com#EXT#@maderoequipos.com → karim@maderodairysystems.com
+    var sinExt = rawEmail.split('#ext#')[0];
+    var lastUnderscore = sinExt.lastIndexOf('_');
+    if (lastUnderscore > 0) email = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+  }
+  return email;
+}
 async function initMsal() {
   try {
     state.msalInstance = new msal.PublicClientApplication({
@@ -2319,21 +2405,28 @@ async function initMsal() {
 
     if (redirectResult && redirectResult.accessToken) {
       state.token = redirectResult.accessToken;
-      // Los usuarios externos (Guest) tienen username como:
-      // karim_maderodairysystems.com#EXT#@maderoequipos.com
-      // Hay que convertirlo a: karim@maderodairysystems.com
-      var rawEmail = redirectResult.account.username.toLowerCase();
-      var emailParaBuscar = rawEmail;
-      if (rawEmail.includes('#ext#')) {
-        // Extraer la parte antes de #EXT# y convertir _ a @ (solo el primer _)
-        var sinExt = rawEmail.split('#ext#')[0];
-        // El formato es: nombre_dominio.com → nombre@dominio.com
-        var lastUnderscore = sinExt.lastIndexOf('_');
-        if (lastUnderscore > 0) {
-          emailParaBuscar = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+      // Restaurar la intención del tablero que se perdió al redirigir el login.
+      try{ if(sessionStorage.getItem('ft_tablero_pending')==='1'){ sessionStorage.removeItem('ft_tablero_pending'); if(!/[?&]tablero=1\b/.test(location.search)) history.replaceState(null,'',location.pathname+'?tablero=1'); } }catch(e){}
+      await loadUserFromSharePoint(_emailFromMsalAccount(redirectResult.account));
+    } else if (!_ftSignedOut()) {
+      // Reanudar sesión ya guardada en ESTE navegador sin pedir contraseña.
+      // Mantiene la sesión activa tras recargar/reiniciar; solo volverá a pedir
+      // contraseña la primera vez o cuando el token expire y no se pueda renovar.
+      // Si el usuario cerró sesión (marca ft_signed_out), NO se reanuda: así puede
+      // iniciar con otra cuenta.
+      try {
+        var _accts = (state.msalInstance.getAllAccounts && state.msalInstance.getAllAccounts()) || [];
+        if (_accts.length) {
+          var _silent = await state.msalInstance.acquireTokenSilent({ scopes: CONFIG.scopes, account: _accts[0] });
+          if (_silent && _silent.accessToken) {
+            state.token = _silent.accessToken;
+            await loadUserFromSharePoint(_emailFromMsalAccount(_silent.account || _accts[0]));
+          }
         }
+      } catch(_se) {
+        // Silencioso falló (sesión expirada o requiere interacción) → se queda la pantalla de login.
+        console.warn('[MSAL] No se pudo reanudar la sesión en silencio:', _se && _se.message);
       }
-      await loadUserFromSharePoint(emailParaBuscar);
     }
   } catch(e) {
     console.warn('initMsal error:', e);
@@ -2360,9 +2453,13 @@ async function loginMicrosoft() {
   btn.disabled = true;
   status.textContent = 'Redirigiendo a Microsoft…';
   try {
+    try{ localStorage.removeItem('ft_signed_out'); }catch(e){}  // inicio explícito → reactiva recordar sesión
+    // Puentear la intención del tablero a través del redirect (el query se pierde):
+    try{ if(/[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero') sessionStorage.setItem('ft_tablero_pending','1'); else sessionStorage.removeItem('ft_tablero_pending'); }catch(e){}
     await state.msalInstance.loginRedirect({
       scopes:      CONFIG.scopes,
       redirectUri: window.location.origin + window.location.pathname,
+      prompt:      'select_account',   // permite elegir/entrar con otra cuenta
     });
   } catch(e) {
     status.textContent = '';
@@ -3043,6 +3140,8 @@ function enterApp() {
   buildSidebarNav();
   buildWelcomeModules();
   showPage('inicio');
+  // Si se entró por la URL del tablero, abrirlo automáticamente a pantalla completa
+  if (typeof tableroAutoStartSiAplica === 'function') tableroAutoStartSiAplica();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3550,6 +3649,10 @@ function doLogout() {
   document.getElementById('login-error').style.display='none';
   document.getElementById('login-status').textContent='';
   document.getElementById('btn-ms-login').disabled=false;
+  try { localStorage.setItem('ft_signed_out','1'); } catch(e){}   // bloquea reanudación silenciosa hasta próximo login explícito
+  try { sessionStorage.removeItem('ft_tablero_pending'); } catch(e){}
+  try { if (/[?&]tablero=1\b/.test(location.search)) history.replaceState(null,'',location.pathname); } catch(e){} // quitar ?tablero=1 para que al recargar no reabra el tablero
+  try { if (typeof tableroKioskStop==='function') tableroKioskStop(); } catch(e){}
   try { state.msalInstance&&state.msalInstance.clearCache(); } catch(e){}
 }
 
@@ -8797,7 +8900,8 @@ function renderProg(){
       if(C.editingMode && !ofCancelada){
         h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
-        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' disabled title='La fecha de entrega se cambia en «📆 Reprogramar entregas»' style='background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;color:var(--dim);padding:3px 6px;font-size:.72rem;opacity:.65;cursor:not-allowed;'>";
+        h+="<span title='La fecha de entrega ya no se edita aquí. Usa el botón «📆 Reprogramar entregas».' style='font-size:.68rem;color:var(--dim);cursor:help;'>🔒</span>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
         h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
         h+="</div>";
@@ -11524,7 +11628,8 @@ function _renderProgBody(){
       if(C.editingMode && !ofCancelada){
         h+="<div style='display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;'>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;'>📅 Entrega:</label>";
-        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;'>";
+        h+="<input type='date' id='fe-"+esc(of.of_sap)+"' value='"+(of.fecha_entrega||'')+"' disabled title='La fecha de entrega se cambia en «📆 Reprogramar entregas»' style='background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;color:var(--dim);padding:3px 6px;font-size:.72rem;opacity:.65;cursor:not-allowed;'>";
+        h+="<span title='La fecha de entrega ya no se edita aquí. Usa el botón «📆 Reprogramar entregas».' style='font-size:.68rem;color:var(--dim);cursor:help;'>🔒</span>";
         h+="<label style='font-size:.7rem;color:var(--dim);white-space:nowrap;margin-left:4px;'>📦 Cant:</label>";
         h+="<input type='number' id='cant-"+esc(of.of_sap)+"' value='"+(of.cantidad||'')+"' min='1' placeholder='pzas' style='background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;width:65px;'>";
         h+="</div>";
@@ -16879,7 +16984,7 @@ async function ftRptLoad() {
       var ayudantes=ayRaw?ayRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
       return{of_sap:f.OF_SAP||'',op_id:f.Op_ID||'',nombre:f.Nombre||f.Title||'',estacion:f.Estacion||'',
         tecnico:f.Tecnico||'',ayudantes:ayudantes,status:f.Status||'pending',
-        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',
+        fecha_inicio_real:f.Fecha_Inicio||'',fecha_fin_real:f.Fecha_Fin||'',pauseReason:f.PauseReason||'',
         qty_total:parseInt(f.Qty_Total||0)||0,qty_ok:parseInt(f.Qty_OK||0)||0,secuencia:parseInt(f.Secuencia||0)||0};
     });
     _rptData.loaded=true;
@@ -16915,21 +17020,74 @@ function _reprogDaysBetween(a,b){ return Math.round((_reprogToDate(b)-_reprogToD
 function _reprogAddDays(s,d){ var dt=_reprogToDate(s); dt.setDate(dt.getDate()+d); var y=dt.getFullYear(),m=('0'+(dt.getMonth()+1)).slice(-2),dd=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+dd; }
 function _reprogFmt(s){ if(!s) return '<span style="color:var(--dim);">—</span>'; var p=s.split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):s; }
 
-function openReprogramarModal(){
-  var list=(DB.ofs||[]).filter(function(o){
-    if(!o) return false;
-    var s=(o.status||'').toLowerCase();
-    if(s==='cerrado'||s==='cerrada'||s==='pedido cancelado') return false;
-    if(o.pedidoCerrado) return false;
-    return true;
-  });
-  // Orden ascendente por fecha de entrega (más próxima a vencer arriba). Sin fecha → al final.
+function _reprogBaseFiltro(o){
+  if(!o) return false;
+  var s=(o.status||'').toLowerCase();
+  if(s==='cerrado'||s==='cerrada'||s==='pedido cancelado') return false;
+  if(o.pedidoCerrado) return false;
+  return true;
+}
+// Construye las filas de trabajo según el tipo de reprogramación.
+function reprogBuildRows(){
+  var modo=REPROG_STATE.modo||'general';
+  var list;
+  if(modo==='estacion'){
+    var est=REPROG_STATE.estacion;
+    if(!est){ REPROG_STATE.rows=[]; return; }
+    var saps={};
+    (DB.activeOFs||[]).forEach(function(a){ if(a&&a.ops&&a.ops.some(function(op){return (op.estacion||'')===est;})) saps[a.of_sap]=true; });
+    list=(DB.ofs||[]).filter(function(o){ return _reprogBaseFiltro(o) && saps[o.of_sap]; });
+  } else {
+    list=(DB.ofs||[]).filter(_reprogBaseFiltro);
+  }
   list.sort(function(a,b){
     var fa=_reprogIso(a.fecha_entrega)||'', fb=_reprogIso(b.fecha_entrega)||'';
     if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
     return fa<fb?-1:fa>fb?1:0;
   });
   REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f}; });
+}
+function _reprogPoblarEstaciones(){
+  var sel=document.getElementById('reprog-estacion-sel'); if(!sel) return;
+  var set={};
+  (DB.activeOFs||[]).forEach(function(a){ (a&&a.ops||[]).forEach(function(op){ if(op.estacion) set[op.estacion]=true; }); });
+  var ests=Object.keys(set).sort();
+  var cur=REPROG_STATE.estacion||'';
+  sel.innerHTML='<option value="">— Elige estación —</option>'+ests.map(function(e){ return '<option value="'+e.replace(/"/g,'&quot;')+'"'+(e===cur?' selected':'')+'>'+esc(e)+'</option>'; }).join('');
+}
+function _reprogDescTxt(){
+  var modo=REPROG_STATE.modo||'general';
+  if(modo==='estacion') return 'Solo se reacomodan las órdenes de la estación elegida. Al cambiar una fecha, las de abajo (de esa estación) se recorren el mismo número de días.';
+  if(modo==='of') return 'Solo se cambia la fecha de entrega de la orden que edites. No se recorre ninguna otra.';
+  return 'Órdenes ordenadas por fecha de entrega (de la más próxima a la más lejana). Al cambiar una fecha, todas las órdenes por debajo se recorren el mismo número de días.';
+}
+function _reprogUpdateModoUI(){
+  var modo=REPROG_STATE.modo||'general';
+  ['general','estacion','of'].forEach(function(m){
+    var b=document.getElementById('reprog-modo-'+m);
+    if(b) b.className='btn btn-sm '+(m===modo?'btn-primary':'btn-ghost');
+  });
+  var sel=document.getElementById('reprog-estacion-sel'); if(sel) sel.style.display=(modo==='estacion')?'inline-block':'none';
+  var d=document.getElementById('reprog-desc'); if(d) d.innerHTML=_reprogDescTxt();
+}
+function reprogSetModo(modo){
+  REPROG_STATE.modo=modo;
+  if(modo!=='estacion') REPROG_STATE.estacion=null;
+  _reprogUpdateModoUI();
+  reprogBuildRows();
+  reprogRender();
+}
+function reprogSetEstacion(est){
+  REPROG_STATE.estacion=est||null;
+  reprogBuildRows();
+  reprogRender();
+}
+function openReprogramarModal(){
+  REPROG_STATE.modo='general';
+  REPROG_STATE.estacion=null;
+  _reprogPoblarEstaciones();
+  _reprogUpdateModoUI();
+  reprogBuildRows();
   var st=document.getElementById('reprog-status'); if(st) st.textContent='';
   var sb=document.getElementById('reprog-search'); if(sb) sb.value='';
   reprogRender();
@@ -16980,6 +17138,8 @@ function reprogFechaChange(sap){
   var delta=(prevVal&&newVal)?_reprogDaysBetween(prevVal,newVal):0;
   row.val=newVal;
   _reprogMarkRow(idx);
+  // En "Por orden" NO se recorre nada; solo cambia esa fecha.
+  if((REPROG_STATE.modo||'general')==='of'){ _reprogUpdateCount(); return; }
   // Recorrer las órdenes por debajo el mismo número de días
   if(delta!==0){
     for(var j=idx+1;j<REPROG_STATE.rows.length;j++){
@@ -17070,6 +17230,326 @@ window.reprogRender=reprogRender;
 window.reprogFechaChange=reprogFechaChange;
 window.reprogDeshacer=reprogDeshacer;
 window.reprogConfirmar=reprogConfirmar;
+window.reprogSetModo=reprogSetModo;
+window.reprogSetEstacion=reprogSetEstacion;
+
+// ═══════════════════════════════════════════════════════════════════
+// TABLERO DE PRODUCCIÓN (pantalla de piso, modo kiosco) — Coordinador
+// ═══════════════════════════════════════════════════════════════════
+var _TABLERO_CFG_DEFAULT = { estaciones:[], rango:'semana', dias:15, refresh:60, rotacion:20 };
+var _tableroCfgCache = null;
+var _tableroTimer = null;
+var _tableroRotTimer = null;
+var _tableroPage = 0;
+var _TABLERO_PER_PAGE = 4;
+function _tableroRangeDays(cfg){ if(!cfg) return 7; if(cfg.rango==='todas') return null; if(cfg.rango==='mes') return 30; if(cfg.rango==='dias') return parseInt(cfg.dias)||15; return 7; }
+function _tableroIconoEst(e){
+  var ic={'Lavado':'💧','Pintura':'🎨','PINTURA':'🎨','Grabado':'✏️','CNC':'⚙️','Laser':'🔆','TIG':'🔥','MIG':'🔥','Torno':'🔩','Fresadora':'🔩','Electron':'⚡','Sierra':'🪚','Equipo':'🔌','Ensamble':'🧩','Rolado':'🌀','Doblez':'📐','Corte':'✂️','Ayudantes':'🤝'};
+  if(!e||e==='Sin estación') return '📭'; var k=Object.keys(ic).find(function(k){return e.indexOf(k)>=0;}); return k?ic[k]:'🏗️';
+}
+function _tableroURL(){ try{ var u=location.origin+location.pathname+'?tablero=1'; return u; }catch(e){ return '?tablero=1'; } }
+// Estado "vivo" de una OF en su estación, a partir de sus operaciones (como Tiempo Real).
+function _tbLiveStatus(ops){
+  if(!ops||!ops.length) return '';
+  var low=function(o){return (o.status||'').toLowerCase();};
+  if(ops.some(function(o){return low(o)==='running';})) return 'activa';
+  if(ops.some(function(o){return low(o)==='validating';})) return 'valcal';
+  var paused=ops.filter(function(o){return low(o)==='paused';});
+  if(paused.length){
+    var ft=paused.some(function(o){ var pr=o.pauseReason||''; return (o._pauseTipo==='turno')||pr.indexOf('🌙')>=0||pr.indexOf('Fin de turno')>=0; });
+    return ft?'finturno':'pausa';
+  }
+  var nonOmit=ops.filter(function(o){return low(o)!=='omitida';});
+  if(nonOmit.length && nonOmit.every(function(o){var s=low(o);return s==='done'||s==='terminada'||s==='terminado';})) return 'ok';
+  return '';
+}
+var _TB_LIVE_MAP={
+  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true},
+  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true},
+  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true},
+  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true},
+  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false}
+};
+
+// ── Persistencia de configuración en SharePoint (lista Configuracion) ──
+async function _tableroCfgLoad(){
+  try{
+    var res=await flowGet('Configuracion','',200).catch(function(){return null;});
+    var items=res&&res.value?res.value:[];
+    var it=items.find(function(i){var f=i.fields||i; return (f.Title||'')==='tablero_config';});
+    if(it){ var f=it.fields||it; try{ return Object.assign({}, _TABLERO_CFG_DEFAULT, JSON.parse(f.Valor||'{}')); }catch(e){} }
+  }catch(e){ console.warn('[Tablero] load cfg', e&&e.message); }
+  return Object.assign({}, _TABLERO_CFG_DEFAULT);
+}
+async function _tableroCfgSave(cfg){
+  var sid=await getSiteId();
+  var val=JSON.stringify(cfg);
+  var res=await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=200').catch(function(){return null;});
+  var found=res&&res.value?res.value.find(function(i){return (i.fields&&i.fields.Title||'')==='tablero_config';}):null;
+  if(found){ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+found.id+'/fields',{Valor:val}); }
+  else { await graphPost('sites/'+sid+'/lists/Configuracion/items',{fields:{Title:'tablero_config',Valor:val}}); }
+}
+
+// ── Pantalla de gestión ──
+async function tableroCfgRender(){
+  var cont=document.getElementById('tablero-est-list'); if(!cont) return;
+  var urlEl=document.getElementById('tablero-url'); if(urlEl) urlEl.value=_tableroURL();
+  cont.innerHTML='<div style="color:var(--dim);font-size:.8rem;grid-column:1/-1;">Cargando configuración…</div>';
+  var cfg=await _tableroCfgLoad();
+  _tableroCfgCache=cfg;
+  var ests=(window.STATIONS&&window.STATIONS.length?window.STATIONS:STATIONS).slice().sort();
+  var sel=cfg.estaciones||[];
+  var h='';
+  ests.forEach(function(e){
+    var v=e.replace(/"/g,'&quot;');
+    h+='<label style="display:flex;gap:7px;align-items:center;padding:4px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" class="tablero-est-chk" value="'+v+'"'+(sel.indexOf(e)>=0?' checked':'')+'> '+_tableroIconoEst(e)+' '+esc(e)+'</label>';
+  });
+  cont.innerHTML=h||'<div style="color:var(--dim);font-size:.8rem;grid-column:1/-1;">No hay estaciones disponibles.</div>';
+  // Rango
+  var r=cfg.rango||'semana';
+  (document.querySelectorAll('input[name="tablero-rango"]')||[]).forEach(function(inp){ inp.checked=(inp.value===r); });
+  var diasEl=document.getElementById('tablero-dias'); if(diasEl) diasEl.value=cfg.dias||15;
+  var refEl=document.getElementById('tablero-refresh'); if(refEl) refEl.value=String(cfg.refresh||60);
+  var rotEl=document.getElementById('tablero-rotacion'); if(rotEl) rotEl.value=String(cfg.rotacion||20);
+  var st=document.getElementById('tablero-status'); if(st) st.textContent='';
+}
+function tableroSelAll(on){ (document.querySelectorAll('.tablero-est-chk')||[]).forEach(function(c){ c.checked=!!on; }); }
+function tableroRangoChange(){ /* no-op visual; se lee al guardar */ }
+function _tableroLeerUICfg(){
+  var estaciones=[];
+  (document.querySelectorAll('.tablero-est-chk')||[]).forEach(function(c){ if(c.checked) estaciones.push(c.value); });
+  var rango='semana';
+  (document.querySelectorAll('input[name="tablero-rango"]')||[]).forEach(function(inp){ if(inp.checked) rango=inp.value; });
+  var dias=parseInt((document.getElementById('tablero-dias')||{}).value)||15;
+  var refresh=parseInt((document.getElementById('tablero-refresh')||{}).value)||60;
+  var rotacion=parseInt((document.getElementById('tablero-rotacion')||{}).value)||20;
+  return { estaciones:estaciones, rango:rango, dias:dias, refresh:refresh, rotacion:rotacion };
+}
+async function tableroGuardarCfg(){
+  var cfg=_tableroLeerUICfg();
+  if(!cfg.estaciones.length){ alert('Selecciona al menos una estación para mostrar en el tablero.'); return; }
+  var btn=document.getElementById('btn-tablero-save'); var st=document.getElementById('tablero-status');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Guardando...'; }
+  try{
+    await _tableroCfgSave(cfg);
+    _tableroCfgCache=cfg;
+    if(st){ st.style.color='var(--green)'; st.textContent='✓ Configuración guardada. La pantalla se actualizará en el siguiente refresco.'; }
+  }catch(e){
+    if(st){ st.style.color='var(--red)'; st.textContent='⚠️ No se pudo guardar: '+(e&&e.message||e); }
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='💾 Guardar configuración'; }
+  }
+}
+function tableroCopiarUrl(){
+  var el=document.getElementById('tablero-url'); if(!el) return;
+  el.select();
+  try{ navigator.clipboard.writeText(el.value); }catch(e){ try{ document.execCommand('copy'); }catch(e2){} }
+  var st=document.getElementById('tablero-status'); if(st){ st.style.color='var(--green)'; st.textContent='📋 URL copiada.'; }
+}
+async function tableroAbrirKiosk(){
+  // Guardar primero lo que esté en pantalla para que el kiosco use lo más reciente
+  var cfg=_tableroLeerUICfg();
+  if(cfg.estaciones.length){ _tableroCfgCache=cfg; try{ await _tableroCfgSave(cfg); }catch(e){} }
+  _tableroPreview=true;   // vista previa desde el portal → la ✕ NO cierra sesión
+  tableroKioskStart();
+}
+
+// ── Vista kiosco (pantalla completa, autorefresco) ──
+function _tableroEnsureOverlay(){
+  if(document.getElementById('tablero-kiosk')) return;
+  if(!document.getElementById('tablero-kiosk-style')){
+    var stl=document.createElement('style'); stl.id='tablero-kiosk-style';
+    stl.textContent='@keyframes tbPulse{0%,100%{background-color:var(--tbpc,transparent);}50%{background-color:transparent;}}'
+      +'#tablero-k-grid tr.tbrow-live{animation:tbPulse 1.3s ease-in-out infinite;}'
+      +'#tablero-k-legend span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}'
+      +'#tablero-k-legend i{width:11px;height:11px;border-radius:3px;display:inline-block;}';
+    document.head.appendChild(stl);
+  }
+  var d=document.createElement('div');
+  d.id='tablero-kiosk';
+  d.style.cssText='position:fixed;inset:0;z-index:99800;background:#0a0e14;display:none;flex-direction:column;overflow:hidden;';
+  d.innerHTML=''
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#0d1420;border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;">'
+    +'  <div style="display:flex;flex-direction:column;gap:4px;">'
+    +'    <div style="font-size:1.5rem;font-weight:800;color:#e6edf3;letter-spacing:.5px;">📺 PLANEACIÓN Y AVANCE — PISO DE PRODUCCIÓN</div>'
+    +'    <div id="tablero-k-legend" style="display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:#8b949e;">'
+    +'      <span><i style="background:#22c55e;"></i>▶ Activa</span>'
+    +'      <span><i style="background:#facc15;"></i>⏸ Pausa</span>'
+    +'      <span><i style="background:#818cf8;"></i>🌙 Pausa fin de turno</span>'
+    +'      <span><i style="background:#a855f7;"></i>🔍 Val. Calidad</span>'
+    +'      <span><i style="background:#4ade80;"></i>✓ OK</span>'
+    +'    </div>'
+    +'  </div>'
+    +'  <div style="display:flex;align-items:center;gap:16px;">'
+    +'    <div id="tablero-k-page" style="font-size:1.05rem;font-weight:700;color:#c9d1d9;text-transform:capitalize;"></div>'
+    +'    <div id="tablero-k-clock" style="font-size:1.3rem;font-weight:700;color:#58a6ff;font-family:\'DM Mono\',monospace;"></div>'
+    +'    <div id="tablero-k-updated" style="font-size:.8rem;color:#8b949e;"></div>'
+    +'    <button onclick="tableroKioskSalir()" title="Salir del tablero" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;color:#e6edf3;font-size:1.05rem;font-weight:700;padding:4px 13px;cursor:pointer;line-height:1;">✕</button>'
+    +'  </div>'
+    +'</div>'
+    +'<div id="tablero-k-grid" style="flex:1;display:grid;gap:10px;padding:10px;overflow:hidden;"></div>';
+  document.body.appendChild(d);
+}
+// ¿El tablero se abrió como vista previa desde el portal del coordinador?
+// (true = botón "Abrir tablero"; false = kiosco por URL ?tablero=1)
+var _tableroPreview = false;
+// La ✕ del tablero:
+//  - En vista previa (portal): solo cierra el overlay y vuelve a la pestaña Tablero.
+//  - En kiosco (URL ?tablero=1): cierra la sesión.
+function tableroKioskSalir(){
+  if(_tableroPreview){
+    try{ tableroKioskStop(); }catch(e){}
+    if(typeof showCoordPage==='function'){ try{ showCoordPage('tablero', document.querySelector('.coord-nav-pill[onclick*="tablero"]')); }catch(e){} }
+    return;
+  }
+  if(!confirm('¿Cerrar el tablero y cerrar la sesión?')) return;
+  try{ tableroKioskStop(); }catch(e){}
+  if(typeof doLogout==='function') doLogout();
+}
+window.tableroKioskSalir=tableroKioskSalir;
+function tableroKioskStop(){
+  var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='none';
+  try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}  // al salir, el dispositivo vuelve al uso normal
+  if(_tableroTimer){ clearInterval(_tableroTimer); _tableroTimer=null; }
+  if(_tableroRotTimer){ clearInterval(_tableroRotTimer); _tableroRotTimer=null; }
+  if(window._tableroClockT){ clearInterval(window._tableroClockT); window._tableroClockT=null; }
+}
+async function tableroKioskStart(){
+  _tableroEnsureOverlay();
+  var o=document.getElementById('tablero-kiosk'); if(o) o.style.display='flex';
+  var grid=document.getElementById('tablero-k-grid');
+  if(grid) grid.innerHTML='<div style="grid-column:1/-1;align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">⏳ Cargando tablero…</div>';
+  _tableroPage=0;
+  // Reloj + fecha (Vie 9 de oct 2026)
+  function _tick(){
+    var now=new Date();
+    var c=document.getElementById('tablero-k-clock'); if(c) c.textContent=now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    var dEl=document.getElementById('tablero-k-page');
+    if(dEl){ var ds=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'], ms=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      dEl.textContent=ds[now.getDay()]+' '+now.getDate()+' de '+ms[now.getMonth()]+' '+now.getFullYear(); }
+  }
+  _tick();
+  if(window._tableroClockT){ clearInterval(window._tableroClockT); }
+  window._tableroClockT=setInterval(_tick, 30000);
+  if(_tableroTimer){ clearInterval(_tableroTimer); }
+  if(_tableroRotTimer){ clearInterval(_tableroRotTimer); }
+  if(!_tableroCfgCache){ _tableroCfgCache=await _tableroCfgLoad(); }
+  await tableroRefresh();
+  var secs=(_tableroCfgCache&&_tableroCfgCache.refresh)||60;
+  _tableroTimer=setInterval(function(){ _tick(); tableroRefresh(); }, Math.max(15,secs)*1000);
+  // Rotación de cuadrantes (solo re-renderiza con datos en memoria, sin recargar de SP)
+  var rot=(_tableroCfgCache&&_tableroCfgCache.rotacion)||20;
+  _tableroRotTimer=setInterval(function(){ _tick(); _tableroPage++; try{ tableroRender(); }catch(e){} }, Math.max(5,rot)*1000);
+}
+async function tableroRefresh(){
+  try{
+    _tableroCfgCache=await _tableroCfgLoad();   // releer config por si el coordinador la cambió
+    await ftRptLoad();                          // recarga OFs+Ops en _rptData (tiempo real)
+  }catch(e){ console.warn('[Tablero] refresh', e&&e.message); }
+  try{ tableroRender(); }catch(e){ console.warn('[Tablero] render', e&&e.message); }
+}
+function tableroRender(){
+  var grid=document.getElementById('tablero-k-grid'); if(!grid) return;
+  var cfg=_tableroCfgCache||_TABLERO_CFG_DEFAULT;
+  var ests=(cfg.estaciones||[]).slice();
+  if(!ests.length){ grid.style.gridTemplateColumns='1fr'; grid.innerHTML='<div style="align-self:center;text-align:center;color:#8b949e;font-size:1.2rem;">Sin estaciones configuradas. Ve a la pestaña 📺 Tablero y selecciona estaciones.</div>'; return; }
+  var built=(typeof ftRptBuildData==='function')?ftRptBuildData().porEstacion:{};
+  var rangeDays=_tableroRangeDays(cfg);
+  var cutoff=null;
+  if(rangeDays!=null){ var d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()+rangeDays); var y=d.getFullYear(),m=('0'+(d.getMonth()+1)).slice(-2),dd=('0'+d.getDate()).slice(-2); cutoff=y+'-'+m+'-'+dd; }
+  function _feIso(s){ return (s||'').split('T')[0]; }
+  // Paginación: máximo 4 cuadrantes por pantalla; si hay más, se rotan.
+  var n=ests.length;
+  var pages=Math.max(1, Math.ceil(n/_TABLERO_PER_PAGE));
+  var page=((_tableroPage % pages)+pages)%pages;
+  _tableroPage=page;
+  var pageEsts=ests.slice(page*_TABLERO_PER_PAGE, page*_TABLERO_PER_PAGE+_TABLERO_PER_PAGE);
+  var cnt=pageEsts.length;
+  var cols=cnt<=1?1:2;                 // 1 → 1 col; 2,3,4 → 2 cols (2x2 para 4)
+  grid.style.gridTemplateColumns='repeat('+cols+',1fr)';
+  grid.style.gridTemplateRows='repeat('+Math.ceil(cnt/cols)+',1fr)';
+  grid.style.gridAutoRows='';
+  var h='';
+  pageEsts.forEach(function(est){
+    var rows=(built[est]||[]).slice();
+    // Filtro por rango de fecha de entrega
+    if(cutoff){ rows=rows.filter(function(r){ var f=_feIso(r.fEntrega); return f && f<=cutoff; }); }
+    rows.sort(function(a,b){ var fa=_feIso(a.fEntrega)||'', fb=_feIso(b.fEntrega)||''; if(!fa&&!fb)return 0; if(!fa)return 1; if(!fb)return -1; return fa<fb?-1:fa>fb?1:0; });
+    var avg=rows.length?Math.round(rows.reduce(function(s,r){return s+r.pct;},0)/rows.length):0;
+    var enP=rows.filter(function(r){return r.opStatus==='En Proceso';}).length;
+    var term=rows.filter(function(r){return r.opStatus.indexOf('Terminada')===0;}).length;
+    var avgCol=avg>=100?'#4ade80':avg>=60?'#60a5fa':avg>=30?'#facc15':'#f87171';
+    h+='<div style="background:#0f1824;border:1px solid rgba(255,255,255,.1);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;min-height:0;">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:rgba(88,166,255,.10);border-bottom:1px solid rgba(255,255,255,.08);flex:0 0 auto;">';
+    h+='<div style="font-size:1.25rem;font-weight:800;color:#e6edf3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+_tableroIconoEst(est)+' '+esc(est)+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;white-space:nowrap;">';
+    h+='<span style="font-size:.95rem;color:#8b949e;">'+rows.length+' OF</span>';
+    if(enP) h+='<span style="font-size:.9rem;color:#93c5fd;">▶ '+enP+'</span>';
+    if(term) h+='<span style="font-size:.9rem;color:#4ade80;">✓ '+term+'</span>';
+    h+='<span style="font-size:1.4rem;font-weight:800;color:'+avgCol+';">'+avg+'%</span>';
+    h+='</div></div>';
+    h+='<div style="flex:1;overflow:auto;min-height:0;">';
+    if(!rows.length){
+      h+='<div style="padding:18px;text-align:center;color:#6e7681;font-size:1rem;">Sin órdenes en el rango.</div>';
+    } else {
+      h+='<table style="width:100%;border-collapse:collapse;font-size:1rem;">';
+      rows.forEach(function(r){
+        var col=r.pct>=100?'#4ade80':r.pct>=60?'#60a5fa':r.pct>=30?'#facc15':'#f87171';
+        var feIso=_feIso(r.fEntrega);
+        var feTxt='—'; var feCol='#8b949e';
+        if(feIso){ var p=feIso.split('-'); feTxt=p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):feIso;
+          var hoy=new Date();hoy.setHours(0,0,0,0); var fd=new Date(feIso+'T00:00:00'); var dd=Math.round((fd-hoy)/86400000);
+          if(r.pct<100){ if(dd<0){feCol='#f87171';} else if(dd<=3){feCol='#facc15';} }
+        }
+        var _oper=r.operador&&r.operador!=='—'?r.operador:'';
+        var _live=_tbLiveStatus(r.ops); var _lv=_TB_LIVE_MAP[_live];
+        var _trClass=(_lv&&_lv.blink)?' class="tbrow-live"':'';
+        var _trStyle='border-top:1px solid rgba(255,255,255,.06);'+(_lv?('--tbpc:'+_lv.tint+';'+(_lv.blink?'':'background-color:'+_lv.tint+';')):'');
+        var _firstBorder=_lv?('border-left:5px solid '+_lv.c+';'):'';
+        h+='<tr'+_trClass+' style="'+_trStyle+'">';
+        h+='<td style="padding:7px 10px;'+_firstBorder+'font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
+        h+='<td style="padding:7px 10px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
+        h+='<td style="padding:7px 10px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;" title="'+esc(_oper)+'">'+(_oper?('👷 '+esc(_oper)):'')+'</td>';
+        h+='<td style="padding:7px 10px;white-space:nowrap;color:'+feCol+';font-weight:600;">📅 '+feTxt+'</td>';
+        h+='<td style="padding:7px 10px;white-space:nowrap;width:140px;"><div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:9px;background:rgba(255,255,255,.12);border-radius:5px;overflow:hidden;min-width:60px;"><div style="height:100%;width:'+r.pct+'%;background:'+col+';"></div></div><span style="color:'+col+';font-weight:700;min-width:42px;text-align:right;">'+r.pct+'%</span></div></td>';
+        h+='</tr>';
+      });
+      h+='</table>';
+    }
+    h+='</div></div>';
+  });
+  grid.innerHTML=h;
+  var up=document.getElementById('tablero-k-updated'); if(up) up.textContent='Actualizado '+new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+window.tableroCfgRender=tableroCfgRender;
+window.tableroSelAll=tableroSelAll;
+window.tableroRangoChange=tableroRangoChange;
+window.tableroGuardarCfg=tableroGuardarCfg;
+window.tableroCopiarUrl=tableroCopiarUrl;
+window.tableroAbrirKiosk=tableroAbrirKiosk;
+window.tableroKioskStart=tableroKioskStart;
+window.tableroKioskStop=tableroKioskStop;
+window.tableroRefresh=tableroRefresh;
+// Limpia una marca persistente antigua que hacía que el portal normal abriera
+// el tablero (ya no se usa; la intención la controla SOLO la URL).
+try{ localStorage.removeItem('ft_tablero_kiosk'); }catch(e){}
+// ¿La URL pide abrir directamente el tablero? (?tablero=1 o #tablero)
+// El puenteo del login de Microsoft (que quita el query al redirigir) se hace con
+// sessionStorage 'ft_tablero_pending' + restaurando el parámetro tras el login.
+function _tableroWantsKiosk(){
+  try{ return /[?&]tablero=1\b/.test(location.search) || location.hash==='#tablero'; }catch(e){ return false; }
+}
+window._tableroWantsKiosk=_tableroWantsKiosk;
+// Lanza el kiosco tras iniciar sesión (lo invoca enterApp). El tablero carga sus
+// propios datos vía ftRptLoad, así que no depende del módulo en que caiga el usuario.
+function tableroAutoStartSiAplica(){
+  if(!_tableroWantsKiosk()) return;
+  _tableroPreview=false;  // kiosco por URL → la ✕ cierra sesión
+  // Inmediato (sin setTimeout) para que el overlay cubra la pantalla principal
+  // en el mismo ciclo que enterApp y no se vea el "parpadeo" del inicio.
+  try{ tableroKioskStart(); }catch(e){ console.warn('[Tablero] auto-start', e&&e.message); }
+}
+window.tableroAutoStartSiAplica=tableroAutoStartSiAplica;
 
 function ftRptFmtFecha(s){if(!s)return'—';var p=s.split('-');if(p.length<3)return s;return p[2]+'/'+p[1]+'/'+p[0].slice(2);}
 // Fecha (solo día) de inicio/terminación de las operaciones de una fila del reporte.
