@@ -17272,22 +17272,39 @@ var _TB_LIVE_MAP={
 };
 
 // ── Persistencia de configuración en SharePoint (lista Configuracion) ──
+// La columna Valor de Configuracion es texto de una sola línea (~255). Para que
+// quepa la config completa (muchas estaciones), se guarda PARTIDA en varios
+// registros: tablero_config (0), tablero_config#1, tablero_config#2, …
+var _TBCFG_KEY='tablero_config';
+var _TBCFG_CHUNK=240;
+function _tbcfgIdx(title){ if(title===_TBCFG_KEY) return 0; var p=title.split('#'); return parseInt(p[1]||'-1'); }
+function _tbcfgIsKey(title){ return title===_TBCFG_KEY || title.indexOf(_TBCFG_KEY+'#')===0; }
 async function _tableroCfgLoad(){
   try{
-    var res=await flowGet('Configuracion','',200).catch(function(){return null;});
+    var res=await flowGet('Configuracion','',500).catch(function(){return null;});
     var items=res&&res.value?res.value:[];
-    var it=items.find(function(i){var f=i.fields||i; return (f.Title||'')==='tablero_config';});
-    if(it){ var f=it.fields||it; try{ return Object.assign({}, _TABLERO_CFG_DEFAULT, JSON.parse(f.Valor||'{}')); }catch(e){} }
+    var parts=items.filter(function(i){ var t=((i.fields||i).Title)||''; return _tbcfgIsKey(t); });
+    if(!parts.length) return Object.assign({}, _TABLERO_CFG_DEFAULT);
+    parts.sort(function(a,b){ return _tbcfgIdx(((a.fields||a).Title)||'') - _tbcfgIdx(((b.fields||b).Title)||''); });
+    var val=parts.map(function(p){ return ((p.fields||p).Valor)||''; }).join('');
+    try{ return Object.assign({}, _TABLERO_CFG_DEFAULT, JSON.parse(val||'{}')); }catch(e){ console.warn('[Tablero] JSON config inválido'); }
   }catch(e){ console.warn('[Tablero] load cfg', e&&e.message); }
   return Object.assign({}, _TABLERO_CFG_DEFAULT);
 }
 async function _tableroCfgSave(cfg){
   var sid=await getSiteId();
   var val=JSON.stringify(cfg);
-  var res=await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=200').catch(function(){return null;});
-  var found=res&&res.value?res.value.find(function(i){return (i.fields&&i.fields.Title||'')==='tablero_config';}):null;
-  if(found){ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+found.id+'/fields',{Valor:val}); }
-  else { await graphPost('sites/'+sid+'/lists/Configuracion/items',{fields:{Title:'tablero_config',Valor:val}}); }
+  var chunks=[]; for(var i=0;i<val.length;i+=_TBCFG_CHUNK) chunks.push(val.substr(i,_TBCFG_CHUNK));
+  if(!chunks.length) chunks=[''];
+  var res=await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=500').catch(function(){return null;});
+  var byTitle={}; (res&&res.value?res.value:[]).forEach(function(it){ var t=(it.fields&&it.fields.Title)||''; if(_tbcfgIsKey(t)) byTitle[t]=it; });
+  for(var c=0;c<chunks.length;c++){
+    var title=c===0?_TBCFG_KEY:(_TBCFG_KEY+'#'+c);
+    if(byTitle[title]){ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+byTitle[title].id+'/fields',{Valor:chunks[c]}); }
+    else { await graphPost('sites/'+sid+'/lists/Configuracion/items',{fields:{Title:title,Valor:chunks[c]}}); }
+  }
+  // Limpiar registros sobrantes de una configuración anterior más larga.
+  for(var t2 in byTitle){ if(_tbcfgIdx(t2)>=chunks.length){ try{ await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+byTitle[t2].id+'/fields',{Valor:''}); }catch(e){} } }
 }
 
 // ── Pantalla de gestión ──
