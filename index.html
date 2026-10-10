@@ -17281,12 +17281,12 @@ function _tbLiveStatus(ops){
   return '';
 }
 var _TB_LIVE_MAP={
-  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true},
-  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true},
-  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true},
-  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true},
-  aguarda: {c:'#f59e0b', tint:'rgba(245,158,11,.18)', blink:true},
-  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false}
+  activa:  {c:'#22c55e', tint:'rgba(34,197,94,.16)',  blink:true,  ico:'▶'},
+  pausa:   {c:'#facc15', tint:'rgba(250,204,21,.16)', blink:true,  ico:'⏸'},
+  finturno:{c:'#818cf8', tint:'rgba(129,140,248,.18)',blink:true,  ico:'🌙'},
+  valcal:  {c:'#a855f7', tint:'rgba(168,85,247,.16)', blink:true,  ico:'🔍'},
+  aguarda: {c:'#f59e0b', tint:'rgba(245,158,11,.18)', blink:true,  ico:'⏳'},
+  ok:      {c:'#4ade80', tint:'rgba(74,222,128,.12)', blink:false, ico:'✓'}
 };
 
 // ── Persistencia de configuración en SharePoint (lista Configuracion) ──
@@ -17602,6 +17602,7 @@ function tableroRender(){
         var _firstBorder=_lv?('border-left:5px solid '+_lv.c+';'):'';
         h+='<tr'+_trClass+' style="'+_trStyle+'">';
         h+='<td style="padding:7px 8px;'+_firstBorder+'color:#6e7681;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;">'+(ri+1)+'</td>';
+        h+='<td style="padding:7px 6px;text-align:center;white-space:nowrap;color:'+(_lv?_lv.c:'#6e7681')+';font-weight:700;">'+(_lv?_lv.ico:'○')+'</td>';
         h+='<td style="padding:7px 10px;font-family:\'DM Mono\',monospace;color:#58a6ff;white-space:nowrap;font-weight:600;">'+esc(r.of.of_sap||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d1d9;" title="'+esc(r.of.descripcion||'')+'">'+esc(r.of.descripcion||r.of.cliente||'—')+'</td>';
         h+='<td style="padding:7px 10px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#9ca3af;" title="'+esc(_oper)+'">'+(_oper?('👷 '+esc(_oper)):'')+'</td>';
