@@ -1170,6 +1170,7 @@ tr:last-child td{border-bottom:none;}
               <th style="padding:7px 8px;text-align:left;">Pedido</th>
               <th style="padding:7px 8px;text-align:left;">Cliente</th>
               <th style="padding:7px 8px;text-align:left;">Descripción</th>
+              <th style="padding:7px 8px;text-align:center;">OF Programada</th>
               <th style="padding:7px 8px;text-align:left;">Fecha actual</th>
               <th style="padding:7px 8px;text-align:left;">Nueva fecha</th>
             </tr></thead>
@@ -17059,7 +17060,7 @@ function reprogBuildRows(){
     if(!fa&&!fb) return 0; if(!fa) return 1; if(!fb) return -1;
     return fa<fb?-1:fa>fb?1:0;
   });
-  REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f}; });
+  REPROG_STATE.rows=list.map(function(o){ var f=_reprogIso(o.fecha_entrega); return {of_sap:o.of_sap,pedido:o.pedido||'',cliente:o.cliente||'',descripcion:o.descripcion||'',orig:f,val:f,prog:(o.programadoHoy===true)}; });
 }
 function _reprogPoblarEstaciones(){
   var sel=document.getElementById('reprog-estacion-sel'); if(!sel) return;
@@ -17121,11 +17122,14 @@ function reprogRender(){
     h+='<td style="padding:5px 8px;color:var(--dim);white-space:nowrap;">'+esc(r.pedido||'N/A')+'</td>';
     h+='<td style="padding:5px 8px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.cliente)+'">'+esc(r.cliente||'—')+'</td>';
     h+='<td style="padding:5px 8px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r.descripcion)+'">'+esc(r.descripcion||'—')+'</td>';
+    h+='<td style="padding:5px 8px;text-align:center;white-space:nowrap;">'+(r.prog
+        ?'<span style="background:rgba(46,160,67,.15);color:var(--green);border:1px solid rgba(46,160,67,.3);border-radius:10px;padding:1px 8px;font-size:.68rem;">✓ Sí</span>'
+        :'<span style="background:rgba(148,163,184,.12);color:var(--dim);border:1px solid rgba(148,163,184,.2);border-radius:10px;padding:1px 8px;font-size:.68rem;">○ No</span>')+'</td>';
     h+='<td style="padding:5px 8px;white-space:nowrap;'+(changed?'color:var(--dim);text-decoration:line-through;':'')+'">'+_reprogFmt(r.orig)+'</td>';
     h+='<td style="padding:5px 8px;white-space:nowrap;"><input type="date" id="reprog-fe-'+cssId+'" value="'+(r.val||'')+'" onchange="reprogFechaChange(\''+esc(r.of_sap)+'\')" style="background:rgba(255,255,255,.06);border:1px solid '+(changed?'var(--yellow)':'var(--border)')+';border-radius:5px;color:var(--text);padding:3px 6px;font-size:.72rem;"></td>';
     h+='</tr>';
   });
-  tb.innerHTML=h||'<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--dim);">Sin órdenes para mostrar.</td></tr>';
+  tb.innerHTML=h||'<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--dim);">Sin órdenes para mostrar.</td></tr>';
   _reprogUpdateCount();
 }
 function _reprogMarkRow(idx){
