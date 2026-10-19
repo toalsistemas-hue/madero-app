@@ -904,7 +904,6 @@ async function cdGuardar(){
 
   var fields={
     Title:nombre, Codigo:codigo, Tipo_Doc:tipo, Version:version,
-    Fecha_Cambio: fecha ? (fecha+'T12:00:00Z') : '',
     Departamento: areaGuardar,
     Acceso_Todos: todos ? 'Sí' : 'No',
     Accesos: todos ? '' : accesos,
@@ -912,6 +911,8 @@ async function cdGuardar(){
     Descarga_Todos: todos ? (descTodos ? 'Sí' : 'No') : 'No',
     Estatus:'Vigente'
   };
+  // Solo enviar la fecha si existe: una cadena vacía en una columna de fecha provoca 400 en Graph
+  if(fecha) fields.Fecha_Cambio = fecha+'T12:00:00Z';
   if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(fields);
 
   var btn=document.getElementById('cd-ok'); CD_BUSY=true; btn.disabled=true; btn.textContent='Guardando…';
@@ -959,7 +960,9 @@ async function cdGuardar(){
     await cdCargar();
     cdCerrarModal();
   }catch(e){
-    err.textContent='No se pudo guardar. Intenta de nuevo.';
+    console.error('[CD] Error al guardar documento:', e, '\nfields=', fields);
+    var det=(e && (e.message||e.detalle||e.toString())) || '';
+    err.textContent='No se pudo guardar. '+(det?('Detalle: '+det):'Intenta de nuevo.');
   }finally{ CD_BUSY=false; btn.disabled=false; btn.textContent='Guardar'; }
 }
 
