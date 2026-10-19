@@ -965,7 +965,14 @@ async function cdGuardar(){
   }catch(e){
     console.error('[CD] Error al guardar documento:', e, '\nfields=', fields);
     var det=(e && (e.message||e.detalle||e.toString())) || '';
-    err.textContent='No se pudo guardar. '+(det?('Detalle: '+det):'Intenta de nuevo.');
+    // Diagnóstico al PRINCIPIO (por si el mensaje de Graph se trunca al copiarlo):
+    var diag='modo='+(todos?'todos':'usuarios')
+      +' · accesos='+((fields.Accesos||'').length)+'c'
+      +' · descargas='+((fields.Descargas||'').length)+'c'
+      +' · tipo="'+(tipo||'')+'"'
+      +' · ver='+(version||'')
+      +' · campos=['+Object.keys(fields).join(',')+']';
+    err.textContent='No se pudo guardar. ['+diag+'] '+(det?('Detalle: '+det):'Intenta de nuevo.');
   }finally{ CD_BUSY=false; btn.disabled=false; btn.textContent='Guardar'; }
 }
 
