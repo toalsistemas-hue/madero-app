@@ -965,19 +965,41 @@ async function cdGuardar(){
   }catch(e){
     console.error('[CD] Error al guardar documento:', e, '\nfields=', fields);
     var det=(e && (e.message||e.detalle||e.toString())) || '';
-    // Diagnóstico al PRINCIPIO (por si el mensaje de Graph se trunca al copiarlo):
-    var dupCod=(CD_ITEMS||[]).some(function(d){ return (d.codigo||'').toUpperCase()===(codigo||'').toUpperCase() && d.id!==CD_EDIT_ID; });
-    var diag='op='+(CD_EDIT_ID?'actualizar':'crear')
-      +' · modo='+(todos?'todos':'usuarios')
-      +' · cod="'+(codigo||'')+'"'+(dupCod?' (YA EXISTE)':'')
-      +' · tipo="'+(tipo||'')+'"'
-      +' · ver="'+(version||'')+'"'
-      +' · accesos='+((fields.Accesos||'').length)+'c'
-      +' · descargas='+((fields.Descargas||'').length)+'c'
-      +' · area="'+(fields.Departamento||'')+'"'
-      +' · campos=['+Object.keys(fields).join(',')+']';
-    err.textContent='No se pudo guardar. ['+diag+'] '+(det?('Detalle: '+det):'Intenta de nuevo.');
+    // Causa más común al CREAR: el código ya existe (la columna Codigo exige valores únicos).
+    var dup=(CD_ITEMS||[]).filter(function(d){ return (d.codigo||'').toUpperCase()===(codigo||'').toUpperCase() && d.id!==CD_EDIT_ID; })[0];
+    if(!CD_EDIT_ID && dup){
+      var sug=cdSiguienteCodigoLibre(codigo);
+      err.innerHTML='El código <b>'+cdEsc(codigo)+'</b> ya existe en Control Documental'
+        +(dup.nombre?(' («'+cdEsc(dup.nombre)+'»'+(dup.estatus?(', '+cdEsc(dup.estatus)):'')+')'):'')
+        +'. No se puede crear otro documento con el mismo código.'
+        +(sug?(' El siguiente consecutivo libre es <b>'+cdEsc(sug)+'</b> — corrige el código y vuelve a intentar.'):'');
+    } else {
+      // Diagnóstico al PRINCIPIO (por si el mensaje de Graph se trunca al copiarlo):
+      var diag='op='+(CD_EDIT_ID?'actualizar':'crear')
+        +' · modo='+(todos?'todos':'usuarios')
+        +' · cod="'+(codigo||'')+'"'
+        +' · tipo="'+(tipo||'')+'"'
+        +' · ver="'+(version||'')+'"'
+        +' · accesos='+((fields.Accesos||'').length)+'c'
+        +' · descargas='+((fields.Descargas||'').length)+'c'
+        +' · area="'+(fields.Departamento||'')+'"'
+        +' · campos=['+Object.keys(fields).join(',')+']';
+      err.textContent='No se pudo guardar. ['+diag+'] '+(det?('Detalle: '+det):'Intenta de nuevo.');
+    }
   }finally{ CD_BUSY=false; btn.disabled=false; btn.textContent='Guardar'; }
+}
+// Dado un código con consecutivo final (p.ej. MEO-RHE-FOR-002), devuelve el
+// siguiente consecutivo libre con el mismo prefijo revisando los ya existentes.
+function cdSiguienteCodigoLibre(codigo){
+  var m=/^(.*?)(\d+)\s*$/.exec(codigo||''); if(!m) return '';
+  var prefijo=m[1], anchoN=m[2].length;
+  var max=0;
+  (CD_ITEMS||[]).forEach(function(d){
+    var mm=/^(.*?)(\d+)\s*$/.exec(d.codigo||'');
+    if(mm && mm[1].toUpperCase()===prefijo.toUpperCase()){ var n=parseInt(mm[2],10)||0; if(n>max) max=n; }
+  });
+  var sig=max+1;
+  return prefijo+String(sig).padStart(anchoN,'0');
 }
 
 async function cdDarBaja(idx){
