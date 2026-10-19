@@ -933,12 +933,14 @@ async function cdGuardar(){
         catch(exArch){ /* si el histórico falla, no se bloquea la publicación */ }
       }
     }
-    if(itemId){
-      await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:fields });
-    } else {
-      var cr=await window.SGD.sp('create',{ lista:cdLista(), fields:fields });
-      itemId=(cr && cr.id!==undefined)?cr.id:null;
-    }
+    try{
+      if(itemId){
+        await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:fields });
+      } else {
+        var cr=await window.SGD.sp('create',{ lista:cdLista(), fields:fields });
+        itemId=(cr && cr.id!==undefined)?cr.id:null;
+      }
+    }catch(exDoc){ throw new Error('['+(CD_EDIT_ID?'actualizar':'crear')+' documento] '+(exDoc&&exDoc.message||exDoc)); }
     // Subir archivos (si se seleccionaron) y guardar sus URLs
     var urls={};
     if(itemId && pdf){ btn.textContent='Subiendo autorizado…'; var b1=await cdFileB64(pdf); var up1=await window.SGD.sp('uploadAttachment',{ carpeta:'SGD_Documentos', itemId:itemId, fileName:pdf.name, contentBase64:b1 }); if(up1&&up1.id) urls.Documento_URL=up1.id; }
@@ -950,7 +952,8 @@ async function cdGuardar(){
     else if(itemId && CD_PREFILL && CD_PREFILL.fuente){ urls.Documento_Word_URL=CD_PREFILL.fuente; }   // editable del pendiente
     if(itemId && (urls.Documento_URL || urls.Documento_Word_URL || urls.Documento_Copia_URL)){
       if(window.SGD.stampAuditoria) window.SGD.stampAuditoria(urls);
-      await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls });
+      try{ await window.SGD.sp('update',{ lista:cdLista(), itemId:itemId, fields:urls }); }
+      catch(exUrls){ console.error('[CD] Falló guardar URLs de archivos:', exUrls, '\nurls=', urls); throw new Error('[guardar archivos] '+(exUrls&&exUrls.message||exUrls)); }
     }
     // Al publicar desde un pendiente, marca la solicitud como Publicada para sacarla de "Pendientes"
     if(CD_PREFILL && CD_PREFILL.solicitudId){
