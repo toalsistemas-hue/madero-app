@@ -2259,6 +2259,40 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: TICKETS DE INGENIERÍA -->
+<div class="page" id="page-TicketsIngenieria" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="tkt-iframe"
+    src="tickets-ingenieria.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Tickets de Ingeniería">
+  </iframe>
+</div>
+
+<!-- PAGE: SOLICITAR TICKET (misma pantalla en modo solicitar) -->
+<div class="page" id="page-SolicitarTicket" style="padding:0;margin:0;position:relative;">
+  <iframe
+    id="stk-iframe"
+    src="tickets-ingenieria.html?modo=solicitar"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Solicitar Ticket">
+  </iframe>
+</div>
+
+<!-- PAGE: GARANTÍAS (Ingeniería) -->
+<div class="page" id="page-Garantias" style="padding:0;margin:0;position:relative;">
+  <iframe id="gar-iframe" src="garantias.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Garantías"></iframe>
+</div>
+
+<!-- PAGE: SOLICITUD DE GARANTÍAS (misma pantalla en modo solicitar) -->
+<div class="page" id="page-SolicitarGarantia" style="padding:0;margin:0;position:relative;">
+  <iframe id="sgar-iframe" src="solicitar-garantias.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Solicitud de garantías"></iframe>
+</div>
+
 
 <!-- Modal -->
 <div class="modal-overlay" id="modal-overlay">
@@ -2798,7 +2832,9 @@ async function graphGet(endpoint, retry) {
     endpoint = endpoint.replace('/sites/undefined/', '/sites/'+(FT_SITE_ID||'')+'/');
   }
   const url   = endpoint.startsWith('https') ? endpoint : `https://graph.microsoft.com/v1.0/${endpoint}`;
-  const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
+  // Prefer: permite filtrar/ordenar por columnas de lista (p. ej. $filter=fields/Title eq '...').
+  // Es inofensivo para las demás consultas (Graph lo ignora cuando no aplica).
+  const res   = await fetch(url, { headers:{ Authorization:`Bearer ${token}`, 'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly' } });
 
   // Si 401 o 403 y no hemos reintentado — limpiar cache y renovar token
   if ((res.status === 401 || res.status === 403) && !retry) {
@@ -3328,6 +3364,75 @@ function navigateToPantalla(pantallaID) {
     if (cdocIfrm) cdocIfrm.style.display = 'none';
     var pcalIfrm = document.getElementById('pcal-iframe');
     if (pcalIfrm) pcalIfrm.style.display = 'none';
+    var tktIfrm = document.getElementById('tkt-iframe');
+    if (tktIfrm) tktIfrm.style.display = 'none';
+    var stkIfrm = document.getElementById('stk-iframe');
+    if (stkIfrm) stkIfrm.style.display = 'none';
+    var garIfrm = document.getElementById('gar-iframe');
+    if (garIfrm) garIfrm.style.display = 'none';
+    var sgarIfrm = document.getElementById('sgar-iframe');
+    if (sgarIfrm) sgarIfrm.style.display = 'none';
+
+    function _pushGar(ifrm, pid){
+      if(!ifrm) return;
+      ifrm.style.display='block';
+      setTimeout(function(){
+        if(ifrm && ifrm.contentWindow){
+          var nivelG=(state.currentUser && state.currentUser.pantallas)?(state.currentUser.pantallas[pid]||''):'';
+          if(state.currentUser && state.currentUser.esAdmin) nivelG='completo';
+          ifrm.contentWindow.postMessage({ type:'SGD_AUTH',
+            user:{ nombre:state.currentUser?state.currentUser.nombre:'', correo:state.currentUser?(state.currentUser.email||''):'', puesto:state.currentUser?(state.currentUser.puesto||''):'', esAdmin:state.currentUser?!!state.currentUser.esAdmin:false },
+            nivel:nivelG, isDemoMode:state.isDemoMode||false }, '*');
+        }
+      }, 400);
+    }
+    if (pantallaID==='Garantias') { _pushGar(garIfrm, 'Garantias'); }
+    if (pantallaID==='SolicitarGarantia') { _pushGar(sgarIfrm, 'SolicitarGarantia'); }
+
+    if (pantallaID==='SolicitarTicket') {
+      if (stkIfrm) {
+        stkIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (stkIfrm && stkIfrm.contentWindow) {
+            stkIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: '',
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
+
+    if (pantallaID==='TicketsIngenieria') {
+      if (tktIfrm) {
+        tktIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (tktIfrm && tktIfrm.contentWindow) {
+            var nivelTkt = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIngenieria'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelTkt = 'completo';
+            tktIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: nivelTkt,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
 
     if (pantallaID==='PlaneacionCalidad') {
       if (pcalIfrm) {
@@ -3699,6 +3804,14 @@ function doLogout() {
   if (cdocIfrmL) cdocIfrmL.style.display = 'none';
   var pcalIfrmL = document.getElementById('pcal-iframe');
   if (pcalIfrmL) pcalIfrmL.style.display = 'none';
+  var tktIfrmL = document.getElementById('tkt-iframe');
+  if (tktIfrmL) tktIfrmL.style.display = 'none';
+  var stkIfrmL = document.getElementById('stk-iframe');
+  if (stkIfrmL) stkIfrmL.style.display = 'none';
+  var garIfrmL = document.getElementById('gar-iframe');
+  if (garIfrmL) garIfrmL.style.display = 'none';
+  var sgarIfrmL = document.getElementById('sgar-iframe');
+  if (sgarIfrmL) sgarIfrmL.style.display = 'none';
   document.getElementById('login-email').value='';
   document.getElementById('login-pass').value='';
   document.getElementById('login-error').style.display='none';
@@ -6588,6 +6701,47 @@ window.addEventListener('message', function (e) {
   } catch (_) {}
 });
 
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'GAR_READY') return;
+  try {
+    var _sgar = document.getElementById('sgar-iframe');
+    var _pidG = (_sgar && e.source === _sgar.contentWindow) ? 'SolicitarGarantia' : 'Garantias';
+    var nivelG = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas[_pidG] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelG = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelG,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'TKT_READY') return;
+  try {
+    var nivelTk = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIngenieria'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelTk = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelTk,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
 window.addEventListener('message', async function(e) {
   if (!e.data || e.data.type !== 'SP_BRIDGE_REQUEST') return;
   var callId = e.data.callId;
@@ -6606,6 +6760,34 @@ window.addEventListener('message', async function(e) {
     if (op === 'list') {
       var r = await spGet(args.lista, args.queryParams);
       reply(null, { value: (r && r.value) ? r.value : [] });
+
+    } else if (op === 'usuariosConAcceso') {
+      // Devuelve los usuarios ACTIVOS que tienen acceso a una pantalla (args.pantallaID),
+      // resolviendo: Pantallas del puesto + Excepciones del usuario (misma lógica del login).
+      try {
+        var pid = args.pantallaID || '';
+        var uRes = await spGet('Usuarios', '$expand=fields&$top=1000');
+        var sidP = await getSiteId();
+        var pRes = await graphGet('sites/'+sidP+'/lists/Puestos/items?$expand=fields&$top=500');
+        var puestos = {};
+        (pRes.value || []).forEach(function (p) { var f = p.fields || {}; if (f.PuestoID) puestos[f.PuestoID] = f; });
+        function _parsePant(raw) { raw = raw || '[]'; try { return JSON.parse(String(raw).replace(/\\"/g, '"').replace(/^"|"$/g, '')); } catch (e) { try { return JSON.parse(raw); } catch (e2) { return []; } } }
+        var out = [];
+        (uRes.value || []).forEach(function (u) {
+          var f = u.fields || {};
+          if (!(f.Activo === true || f.Activo === 'true' || f.Activo === 1)) return;
+          var pf = puestos[f.PuestoID] || {};
+          var map = {};
+          _parsePant(pf.Pantallas || pf.pantallas).forEach(function (x) { if (x && x.pantallaID) map[x.pantallaID] = x.nivel; });
+          var exc = []; try { exc = JSON.parse(f.Excepciones || '[]'); } catch (e) {}
+          exc.forEach(function (x) { if (!x || !x.pantallaID) return; if (x.accion === 'agregar') map[x.pantallaID] = x.nivel; if (x.accion === 'quitar') delete map[x.pantallaID]; });
+          var esAdmin = pf.EsAdministrador === true || pf.EsAdministrador === 'true';
+          if (map[pid] || esAdmin) {
+            out.push({ nombre: f.NombreCompleto || f.Title || f.Email || '', correo: (f.Email || f.Title || '').toLowerCase() });
+          }
+        });
+        reply(null, { value: out });
+      } catch (eU) { reply('usuariosConAcceso_' + (eU && eU.message ? eU.message.slice(0,60) : 'error'), null); }
 
     } else if (op === 'get') {
       var sidG = await getSiteId();
