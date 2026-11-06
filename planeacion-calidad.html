@@ -11,6 +11,21 @@
   --green:#2ea043; --green-l:#4ade80; --yellow:#d4a017; --red:#ef4444; --purple:#a855f7; --orange:#f59e0b;
   --r:12px;
 }
+html[data-theme="claro"]{
+  --bg:#ffffff; --panel:#f5f7f9; --card:#ffffff; --border:#d7dee6;
+  --text:#1b2733; --dim:#5a6b7b; --muted:#8a97a5; --accent:#00528b; --accent-l:#00528b;
+  --green:#007a33; --green-l:#007a33; --yellow:#9a7400; --red:#b4303a; --purple:#5a4a86; --orange:#b5760b;
+}
+html[data-theme="claro"] .btn{ background:#eef2f6; color:var(--text); }
+html[data-theme="claro"] .btn-primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+html[data-theme="claro"] .inp{ background:#ffffff; }
+html[data-theme="claro"] .toast{ background:#1b2733; color:#fff; }
+html[data-theme="claro"] .spin{ border-color:rgba(0,0,0,.15); border-top-color:var(--accent); }
+/* Barra superior en azul institucional */
+html[data-theme="claro"] .topbar{ background:#00528b; border-bottom-color:#004074; color:#fff; }
+html[data-theme="claro"] .topbar .btn{ background:rgba(255,255,255,.15); color:#fff; border-color:rgba(255,255,255,.35); }
+html[data-theme="claro"] .topbar .btn-primary{ background:#fff; color:#00528b; border-color:#fff; }
+html[data-theme="claro"] .topbar .avatar{ background:#fff; color:#00528b; }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;}
 button{font-family:inherit;cursor:pointer;}
@@ -355,6 +370,7 @@ function _parent(){ return (window.parent && window.parent!==window) ? window.pa
 window.addEventListener('message', function(e){
   var d=e.data||{};
   if(d.type==='SGD_AUTH'){ onAuth(d); return; }
+  if(d.type==='SET_THEME'){ try{ if(d.tema==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(_){} return; }
   if(d.type==='SP_BRIDGE_RESPONSE'){
     var p=_bridge.pend[d.callId]; if(!p) return; delete _bridge.pend[d.callId];
     if(d.error) p.rej(new Error(d.error)); else p.res(d.result);
@@ -407,6 +423,7 @@ function boot(){
   }
   // Solicitar la sesión al portal (reintenta por si el padre aún no está listo)
   par.postMessage({ type:'PCAL_READY' }, '*');
+  try{ par.postMessage({ type:'GET_THEME' }, '*'); }catch(e){}
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'PCAL_READY' }, '*'); } }, 1200);
   setTimeout(function(){ if(!S.user){ par.postMessage({ type:'PCAL_READY' }, '*'); } }, 3000);
 }
