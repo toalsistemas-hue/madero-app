@@ -436,6 +436,7 @@ function renderTabla(tipo){
 /* ---------- nuevo folio ---------- */
 function selOpts(arr,val){ return '<option value="">Selecciona…</option>'+arr.map(function(x){return '<option'+(val===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); }
 function abrirNuevo(){
+  S.editId=null; S.editFotos=[];
   document.getElementById('new-err').textContent='';
   document.getElementById('new-ttl').textContent=(MODO==='solicitar')?'Nueva solicitud de garantía':'Nuevo folio de garantía';
   document.getElementById('f-tec').value=S.user.nombre;
@@ -457,6 +458,32 @@ function abrirNuevo(){
   S.artDraft=[nuevoArt()]; artRender();
   document.getElementById('new-ok').textContent=(MODO==='solicitar')?'Enviar solicitud':'Crear folio';
   abrir('m-new');
+}
+// El técnico de garantías puede editar los datos de una solicitud (corregir lo que el solicitante capturó mal)
+function abrirEditar(){
+  var t=S.curFolio; if(!t) return;
+  S.editId=t.id; S.editFotos=(t.fotos||[]).slice();
+  document.getElementById('new-err').textContent='';
+  document.getElementById('new-ttl').textContent='Editar solicitud '+t.folio;
+  document.getElementById('f-tec').value=t.usuarioSolicitaNombre||t.solicita||'';
+  var tl=document.querySelector('#m-new label'); if(tl) tl.innerHTML='Usuario que solicita';
+  document.getElementById('f-solicita').value=t.solicita||'';
+  document.getElementById('f-origen').innerHTML=selOpts(ORIGENES, t.tipoOrigen||'');
+  document.getElementById('f-sucursal').innerHTML=selOpts(SUCURSALES, t.sucursal||'');
+  document.getElementById('f-depto').value=t.departamento||'';
+  document.getElementById('f-establo').value=t.establo||'';
+  S.fotoDraft=[]; document.getElementById('f-fotos').value='';
+  document.getElementById('f-fotos-lista').innerHTML=(t.fotos&&t.fotos.length)?('📷 '+t.fotos.length+' foto(s) ya cargada(s). Las nuevas se agregarán.'):'';
+  document.getElementById('f-tipodoc').innerHTML=selOpts(TIPODOC, t.tipoDoc||'');
+  document.getElementById('f-numdoc').value=t.numDoc||'';
+  document.getElementById('f-numcli').value=t.numCliente||'';
+  document.getElementById('f-cli').value=t.clienteNombre||'';
+  var selEnv=document.getElementById('f-enviar'); selEnv.innerHTML='<option value="">Selecciona…</option>'+S.enviarUsers.map(function(x){return '<option value="'+esc(x.correo)+'"'+(lc(x.correo)===lc(t.enviarACorreo)?' selected':'')+' data-nom="'+esc(x.nombre)+'">'+esc(x.nombre)+'</option>';}).join('');
+  selEnv.value=t.enviarACorreo||''; document.getElementById('f-enviar-mail').value=t.enviarACorreo||'';
+  var envRow=document.getElementById('f-enviar-row'); if(envRow) envRow.style.display=(MODO==='solicitar')?'none':'';
+  S.artDraft=(t.articulos||[]).map(function(a){ return Object.assign(nuevoArt(), a); }); if(!S.artDraft.length) S.artDraft=[nuevoArt()]; artRender();
+  document.getElementById('new-ok').textContent='Guardar cambios';
+  cerrar('m-det'); abrir('m-new');
 }
 function enviarChange(){ var s=document.getElementById('f-enviar'); document.getElementById('f-enviar-mail').value=s.value||''; }
 function fotosChange(){ var inp=document.getElementById('f-fotos'); var n=inp.files?Array.prototype.slice.call(inp.files):[]; n.forEach(function(f){ S.fotoDraft.push(f); }); try{ inp.value=''; }catch(e){} document.getElementById('f-fotos-lista').innerHTML=S.fotoDraft.length? ('📷 '+S.fotoDraft.map(function(f){return esc(f.name);}).join(', ')) : ''; }
@@ -544,7 +571,7 @@ async function crearFolio(){
   if(!tipodoc){ err.textContent='Selecciona el tipo de documento.'; return; }
   if(!numdoc){ err.textContent='Escribe el número de documento.'; return; }
   if(!numcli){ err.textContent='Escribe el número de cliente.'; return; }
-  if(MODO!=='solicitar' && !envCorreo){ err.textContent='Selecciona a quién enviar el folio ("Enviar a").'; return; }
+  if(MODO!=='solicitar' && !S.editId && !envCorreo){ err.textContent='Selecciona a quién enviar el folio ("Enviar a").'; return; }
   if(!S.artDraft.length){ err.textContent='Agrega al menos un artículo.'; return; }
   for(var k=0;k<S.artDraft.length;k++){ var a=S.artDraft[k], n=k+1;
     if(!(a.num||'').trim()){ err.textContent='Artículo '+n+': falta el número de artículo.'; return; }
@@ -554,11 +581,31 @@ async function crearFolio(){
     if(!a.fVenta){ err.textContent='Artículo '+n+': falta la fecha de venta / instalación.'; return; }
     if(!a.fFalla){ err.textContent='Artículo '+n+': falta la fecha de falla.'; return; }
     if(!a.fReclamacion){ err.textContent='Artículo '+n+': falta la fecha de reclamación.'; return; }
-    if(MODO!=='solicitar' && !a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
+    if(MODO!=='solicitar' && !S.editId && !a.tipoGarantia){ err.textContent='Artículo '+n+': selecciona el tipo de garantía.'; return; }
   }
   var esSolic=(MODO==='solicitar');
   var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Guardando…';
   try{
+    // ----- MODO EDICIÓN: actualizar la solicitud existente (no crea folio nuevo) -----
+    if(S.editId){
+      var upd={
+        GrSolicita:solicita, GrTipoOrigen:origen,
+        GrSucursal:sucursal, GrDepartamento:depto, GrEstablo:establo,
+        GrTipoDocumento:tipodoc, GrNumeroDocumento:numdoc,
+        GrNumeroCliente:numcli, GrClienteNombre:cli,
+        GrArticulos:JSON.stringify(S.artDraft)
+      };
+      if(MODO!=='solicitar' && envCorreo){ upd.GrEnviarANombre=envNombre; upd.GrEnviarACorreo=envCorreo; }
+      await listUpdate(L_FOLIOS, S.editId, upd);
+      if(S.fotoDraft.length){
+        btn.textContent='Subiendo fotos…'; var refsE=(S.editFotos||[]).slice();
+        for(var fe=0;fe<S.fotoDraft.length;fe++){ try{ var rfe=await subirArchivo('GAR_Fotos',S.editId,S.fotoDraft[fe],'E'+Date.now()+'_'+(fe+1)+'_'); if(rfe) refsE.push(rfe); }catch(ef){} }
+        try{ await listUpdate(L_FOLIOS,S.editId,{ GrFotos:JSON.stringify(refsE) }); }catch(e){}
+      }
+      S.editId=null; S.editFotos=[];
+      cerrar('m-new'); await loadData(); toast('Solicitud actualizada');
+      return;
+    }
     var folio=esSolic?numeroNuevo('SOL'):numeroNuevo('GAR');
     var fields={
       Title: folio,
@@ -661,6 +708,7 @@ function pintarDetalle(){
   var R=rolGar(t), est=t.estatus;
   var bPrim=function(fn,txt){ return '<button class="btn btn-sm btn-primary" onclick="'+fn+'">'+txt+'</button>'; };
   if(R.esIng && t.origen==='Solicitud' && est==='En proceso'){
+    b+='<button class="btn btn-sm" onclick="abrirEditar()">✏️ Editar datos</button>';
     b+='<button class="btn btn-sm btn-danger" onclick="accPedir(\'rechazar\')">✕ Rechazar</button>';
     b+='<button class="btn btn-sm" style="background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.4);color:var(--green-l);" onclick="autorizar()">✔ Autorizar</button>';
   }
