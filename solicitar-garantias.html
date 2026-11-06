@@ -177,6 +177,28 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   </div>
 </div>
 
+<!-- Modal: agregar artículo al catálogo (Articulos_Sap) -->
+<div class="modal-bg" id="m-artcat">
+  <div class="modal" style="width:520px;">
+    <div class="modal-hd"><h3>Agregar artículo al catálogo</h3><button class="x" onclick="cerrar('m-artcat')">✕</button></div>
+    <div class="modal-bd">
+      <div style="color:var(--dim);font-size:.8rem;margin-bottom:10px;">Da de alta un artículo que falte en <b>Articulos_Sap</b>. Se validará que no exista ya.</div>
+      <div class="fld"><label>Número de artículo <span class="req">*</span></label><input class="inp" id="ac-num" placeholder="EO100162" oninput="this.value=this.value.toUpperCase();"></div>
+      <div class="fld"><label>Descripción <span class="req">*</span></label><input class="inp" id="ac-desc" placeholder="Descripción del artículo"></div>
+      <div class="grid3">
+        <div class="fld"><label>Número de proveedor</label><input class="inp" id="ac-numprov" placeholder="P0001738"></div>
+        <div class="fld"><label>Proveedor</label><input class="inp" id="ac-prov" placeholder="Nombre del proveedor"></div>
+        <div class="fld"><label>Tipo de proveedor</label><select class="inp" id="ac-tipoprov"><option value="">Selecciona…</option><option>Nacional</option><option>Extranjero</option></select></div>
+      </div>
+      <div style="color:#fca5a5;font-size:.82rem;min-height:18px;margin-top:6px;" id="ac-err"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="cerrar('m-artcat')">Cancelar</button>
+      <button class="btn btn-primary" id="ac-ok" onclick="guardarArtCatalogo()">Guardar artículo</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: detalle folio -->
 <div class="modal-bg" id="m-det">
   <div class="modal">
@@ -498,6 +520,7 @@ function artRender(){
         +fDis(i,'desc','Descripción')
         +fInp(i,'cantidad','Cantidad *','',null,'type="number" min="1" oninput="S.artDraft['+i+'].cantidad=this.value;"')
       +'</div>'
+      +((a.desc==='(no encontrado)'&&puedeCatalogar())?('<div style="margin:-2px 0 8px;"><button class="btn btn-sm" type="button" onclick="abrirArtCat('+i+')">➕ Agregar al catálogo</button> <span style="color:var(--dim);font-size:.74rem;">Este artículo no está en Articulos_Sap.</span></div>'):'')
       +'<div class="grid3">'
         +fDis(i,'numProv','Número de proveedor')
         +fDis(i,'proveedor','Proveedor')
@@ -536,6 +559,47 @@ async function artLookup(i){
     else { a.desc='(no encontrado)'; a.numProv=a.proveedor=a.tipoProv=''; }
   }catch(e){ a.desc='(no se pudo buscar)'; console.warn('[art]',e&&e.message); }
   artRender();
+}
+// ¿El usuario puede dar de alta artículos en el catálogo? (técnico de garantías con acceso completo)
+function puedeCatalogar(){ return MODO!=='solicitar' && !!(S.completo || (S.user&&S.user.esAdmin)); }
+var _catTargetIdx=-1;
+function abrirArtCat(i){
+  if(!puedeCatalogar()) return;
+  _catTargetIdx=(typeof i==='number')?i:-1;
+  var pre=(_catTargetIdx>=0 && S.artDraft[_catTargetIdx])?(S.artDraft[_catTargetIdx].num||''):'';
+  document.getElementById('ac-err').textContent='';
+  document.getElementById('ac-num').value=pre;
+  document.getElementById('ac-desc').value='';
+  document.getElementById('ac-numprov').value='';
+  document.getElementById('ac-prov').value='';
+  document.getElementById('ac-tipoprov').value='';
+  abrir('m-artcat');
+}
+async function guardarArtCatalogo(){
+  var err=document.getElementById('ac-err'); err.textContent='';
+  var num=(document.getElementById('ac-num').value||'').trim().toUpperCase();
+  var desc=(document.getElementById('ac-desc').value||'').trim();
+  var numprov=(document.getElementById('ac-numprov').value||'').trim();
+  var prov=(document.getElementById('ac-prov').value||'').trim();
+  var tipoprov=document.getElementById('ac-tipoprov').value;
+  if(!num){ err.textContent='Escribe el número de artículo.'; return; }
+  if(!desc){ err.textContent='Escribe la descripción.'; return; }
+  var btn=document.getElementById('ac-ok'); btn.disabled=true; btn.textContent='Validando…';
+  try{
+    // Evitar duplicados: buscar si ya existe ese número de artículo
+    var dup=await spCall('list',{lista:L_ARTICULOS, queryParams:"$expand=fields&$top=1&$filter=fields/Title eq '"+num.replace(/'/g,"''")+"'"});
+    if(dup&&dup.value&&dup.value.length){ err.textContent='Ese artículo ya existe en el catálogo.'; btn.disabled=false; btn.textContent='Guardar artículo'; return; }
+    btn.textContent='Guardando…';
+    await listCreate(L_ARTICULOS, { Title:num, Descripcion:desc, NumeroProveedor:numprov, Proveedor:prov, TipoProveedor:tipoprov });
+    // Si se abrió desde un artículo del folio, rellenar sus datos automáticamente
+    if(_catTargetIdx>=0 && S.artDraft[_catTargetIdx]){
+      var a=S.artDraft[_catTargetIdx];
+      a.num=num; a.desc=desc; a.numProv=numprov; a.proveedor=prov; a.tipoProv=tipoprov;
+      artRender();
+    }
+    cerrar('m-artcat'); toast('Artículo agregado al catálogo: '+num);
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+  finally{ btn.disabled=false; btn.textContent='Guardar artículo'; }
 }
 async function cliLookup(){
   var inp=document.getElementById('f-numcli'), out=document.getElementById('f-cli');
