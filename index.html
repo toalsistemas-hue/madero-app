@@ -96,6 +96,32 @@ html[data-theme="claro"] .welcome-sub{ color:rgba(255,255,255,.85); }
 html[data-theme="claro"] .welcome-puesto{ color:rgba(255,255,255,.72); }
 html[data-theme="claro"] .welcome-avatar{ background:#fff; color:#00528b; }
 
+/* ===== TEMA CLARO: Fabricaciones (FabTracker) ===== */
+html[data-theme="claro"] #page-Fabricaciones{
+  --bg:#ffffff; --card:#f5f7f9; --hover:#e9eef3; --border:#d7dee6; --border2:#e2e8f0;
+  --text:#1b2733; --dim:#5a6b7b; --muted:#8a97a5;
+  --accent:#00528b; --accent-l:#00528b; --green:#007a33; --yellow:#9a7400; --red:#b4303a; --purple:#5a4a86; --orange:#b5760b;
+  --abg:#ffffff; --asurface:#f5f7f9; --acard:#ffffff; --aborder:#d7dee6;
+  --atext:#1b2733; --adim:#5a6b7b; --amuted:#8a97a5; --aaccent:#00528b; --aaccent2:#004074;
+}
+/* Barra lateral interna en azul */
+html[data-theme="claro"] #page-Fabricaciones .sidebar{ background:#00528b; border-right-color:#004074; }
+html[data-theme="claro"] #page-Fabricaciones .sb-brand{ border-bottom-color:rgba(255,255,255,.2); }
+html[data-theme="claro"] #page-Fabricaciones .sb-title{ color:#fff; }
+html[data-theme="claro"] #page-Fabricaciones .sb-sub,
+html[data-theme="claro"] #page-Fabricaciones .sb-section{ color:rgba(255,255,255,.7); }
+html[data-theme="claro"] #page-Fabricaciones .sb-item{ color:rgba(255,255,255,.85); }
+html[data-theme="claro"] #page-Fabricaciones .sb-item:hover{ background:rgba(255,255,255,.12); color:#fff; }
+html[data-theme="claro"] #page-Fabricaciones .sb-item.active{ background:rgba(255,255,255,.2); color:#fff; }
+html[data-theme="claro"] #page-Fabricaciones .sb-logo{ background:#fff; color:#00528b; }
+/* Pestañas y pills */
+html[data-theme="claro"] #page-Fabricaciones .ft-tab-btn{ background:#eef2f6; border-color:#d7dee6; color:var(--text); }
+html[data-theme="claro"] #page-Fabricaciones .ft-tab-btn.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+html[data-theme="claro"] #page-Fabricaciones .coord-nav-pill{ background:#eef2f6; border-color:#d7dee6; color:var(--text); }
+html[data-theme="claro"] #page-Fabricaciones .coord-nav-pill:hover{ background:#e3e9ef; color:var(--text); }
+html[data-theme="claro"] #page-Fabricaciones .coord-nav-pill.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+html[data-theme="claro"] #page-Fabricaciones .btn-primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
 
@@ -1131,7 +1157,7 @@ tr:last-child td{border-bottom:none;}
         <span style="color:var(--text-dim);font-size:.7rem;" id="notif-btn-label">Sin notificaciones</span>
         <span style="color:var(--text-dim);font-size:.6rem;" id="notif-caret">▼</span>
       </button>
-      <div id="coord-notif-panel" style="display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;max-height:420px;overflow-y:auto;background:#0f1623;border:1px solid rgba(255,255,255,.12);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:9999;padding:8px;">
+      <div id="coord-notif-panel" style="display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;max-height:420px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.2);z-index:9999;padding:8px;">
         <div id="coord-notifs" class="coord-notif-area"></div>
       </div>
     </div>
@@ -1235,7 +1261,7 @@ tr:last-child td{border-bottom:none;}
         </div>
         <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px;">
           <table class="tabla1" id="reprog-table" style="width:100%;border-collapse:collapse;font-size:.74rem;">
-            <thead><tr style="position:sticky;top:0;background:#161b22;z-index:2;">
+            <thead><tr style="position:sticky;top:0;background:var(--card);z-index:2;">
               <th style="padding:7px 8px;text-align:left;">#</th>
               <th style="padding:7px 8px;text-align:left;">OF SAP</th>
               <th style="padding:7px 8px;text-align:left;">Pedido</th>
@@ -1360,11 +1386,11 @@ tr:last-child td{border-bottom:none;}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:9px;">
         <div style="position:relative;" class="rpt-ms">
           <button type="button" id="rpt-ms-est-btn" onclick="rptMSToggle('est')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:170px;text-align:left;cursor:pointer;">Todas las estaciones ▾</button>
-          <div id="rpt-ms-est-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px;max-height:280px;overflow:auto;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
+          <div id="rpt-ms-est-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px;max-height:280px;overflow:auto;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.45);"></div>
         </div>
         <div style="position:relative;" class="rpt-ms">
           <button type="button" id="rpt-ms-status-btn" onclick="rptMSToggle('status')" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:7px;padding:5px 10px;color:var(--text);font-size:.78rem;min-width:150px;text-align:left;cursor:pointer;">Todos los status ▾</button>
-          <div id="rpt-ms-status-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px;min-width:175px;box-shadow:0 8px 24px rgba(0,0,0,.45);">
+          <div id="rpt-ms-status-panel" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px;min-width:175px;box-shadow:0 8px 24px rgba(0,0,0,.45);">
             <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="En Proceso" onchange="rptMSChange('status')"> En Proceso</label>
             <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="Planeación (prog.)" onchange="rptMSChange('status')"> Planeación (prog.)</label>
             <label style="display:flex;gap:8px;align-items:center;padding:5px 6px;font-size:.78rem;cursor:pointer;color:var(--text);"><input type="checkbox" value="Planeación" onchange="rptMSChange('status')"> Planeación (sin prog.)</label>
@@ -5739,7 +5765,7 @@ async function ftConfirmExcelLoad() {
 function ftManualOFOpen(){
   if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
   var ex=document.getElementById('modal-of-manual'); if(ex) ex.remove();
-  var inp='width:100%;box-sizing:border-box;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:8px 10px;color:var(--text);font-size:.82rem;';
+  var inp='width:100%;box-sizing:border-box;background:var(--card);border:1px solid var(--border);border-radius:7px;padding:8px 10px;color:var(--text);font-size:.82rem;';
   var lbl='font-size:.72rem;color:var(--dim);margin:0 0 3px 2px;display:block;';
   var d=document.createElement('div'); d.id='modal-of-manual'; d.className='coord-modal-bg show';
   d.innerHTML='<div class="coord-modal-box" style="max-width:560px;max-height:90vh;overflow:auto;">'+
@@ -15074,7 +15100,7 @@ function _kpiFilterOverlay(show, msg){
   if(!ov){
     ov=document.createElement('div'); ov.id='kpi-filter-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:99998;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);cursor:progress;';
-    ov.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.5);">'+
+    ov.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 28px rgba(0,0,0,.5);">'+
       '<span style="display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.2);border-top-color:#58a6ff;border-radius:50%;animation:kpispin .7s linear infinite;"></span>'+
       '<span id="kpi-overlay-msg" style="color:#e6edf3;font-size:.85rem;font-weight:600;">Filtrando…</span></div>';
     document.body.appendChild(ov);
@@ -18542,7 +18568,7 @@ function ftRptPDFCodigosChooser(){
   var ex=document.getElementById('rptcod-modo-modal'); if(ex) ex.remove();
   var d=document.createElement('div'); d.id='rptcod-modo-modal';
   d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
-  d.innerHTML='<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:14px;width:min(430px,94vw);padding:20px;">'+
+  d.innerHTML='<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:min(430px,94vw);padding:20px;">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'+
       '<div style="font-weight:700;font-size:1rem;color:#e6edf3;">🔳 PDF con códigos</div>'+
       '<button onclick="_rptCodModoClose()" style="background:none;border:none;color:#8b949e;font-size:1.3rem;cursor:pointer;line-height:1;">✕</button>'+
@@ -18572,7 +18598,7 @@ function _ftRptShowPrintPreview(doc, fname){
   var d=document.createElement('div'); d.id='ftrpt-print-modal';
   d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px;';
   d.innerHTML=
-    '<div style="background:#161b22;border:1px solid rgba(255,255,255,.14);border-radius:14px;width:min(900px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;">'+
+    '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;width:min(900px,96vw);max-height:94vh;display:flex;flex-direction:column;overflow:hidden;">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.1);">'+
         '<div style="font-weight:700;font-size:1rem;color:#e6edf3;">🖨 Imprimir — Operaciones con código QR</div>'+
         '<button onclick="_ftRptClosePrint()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
