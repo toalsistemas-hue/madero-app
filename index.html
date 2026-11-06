@@ -61,6 +61,12 @@ html[data-theme="claro"] {
   --purple:       #5a4a86;
   --purple-dim:   rgba(90,74,134,0.10);
 }
+/* La tarjeta de inicio de sesión siempre es oscura → texto claro en ambos temas */
+html[data-theme="claro"] .login-brand-name,
+html[data-theme="claro"] .login-title{ color:#eef4fb; }
+html[data-theme="claro"] .login-brand-sub,
+html[data-theme="claro"] .login-sub{ color:#9fb6cf; }
+html[data-theme="claro"] .login-version{ color:#7a93ad; }
 /* En tema claro, íconos/emojis del menú sin color (monocromáticos) */
 html[data-theme="claro"] .nav-icon,
 html[data-theme="claro"] .nav-mod-icon,
@@ -71,7 +77,7 @@ html[data-theme="claro"] #sidebar{ background:#00528b; border-right-color:#00407
 html[data-theme="claro"] .sidebar-brand{ border-bottom-color:rgba(255,255,255,.18); }
 html[data-theme="claro"] .sidebar-brand-text{ color:#fff; }
 html[data-theme="claro"] .sidebar-brand-sub{ color:rgba(255,255,255,.72); }
-html[data-theme="claro"] .sidebar-icon{ background:#fff; filter:grayscale(1); }
+html[data-theme="claro"] .sidebar-icon{ background:#fff; }
 html[data-theme="claro"] .sidebar-section-label{ color:rgba(255,255,255,.58); }
 html[data-theme="claro"] .nav-item,
 html[data-theme="claro"] .nav-modulo-header,
@@ -133,6 +139,11 @@ html[data-theme="claro"] #page-Fabricaciones .ftab-btn{ background:#eef2f6; bord
 /* Modales de Fabricaciones: fondo sólido (evita transparencia) */
 html[data-theme="claro"] .coord-modal-box{ background:#ffffff; border-color:#d7dee6; }
 html[data-theme="claro"] .coord-modal-bg{ background:rgba(0,0,0,.45); }
+/* Filas de las listas de Administración (Artículos, Operaciones, Técnicos, Estaciones) */
+html[data-theme="claro"] #ft-art-list > div,
+html[data-theme="claro"] #ft-op-list > div,
+html[data-theme="claro"] #ft-tecnicos-list > div,
+html[data-theme="claro"] #ft-estaciones-list > div{ background:#ffffff!important; border-color:#d7dee6!important; }
 
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
@@ -657,12 +668,14 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 
   <!-- SIDEBAR -->
   <div id="sidebar">
-    <div class="sidebar-brand">
+    <div class="sidebar-brand" style="position:relative;">
       <div class="sidebar-icon">⚙️</div>
       <div>
         <div class="sidebar-brand-text">Automatizaciones</div>
         <div class="sidebar-brand-sub">Madero Equipos</div>
       </div>
+      <button id="btn-editar-logo" onclick="editarLogo()" title="Cambiar logo de la compañía"
+        style="display:none;position:absolute;top:2px;right:2px;width:22px;height:22px;padding:0;border:none;border-radius:6px;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;font-size:11px;line-height:22px;text-align:center;">✏️</button>
     </div>
 
     <div class="sidebar-section-label">Navegación</div>
@@ -3315,10 +3328,16 @@ function enterApp() {
   document.getElementById('welcome-title').textContent  = `Hola, ${u.nombre.split(' ')[0]} 👋`;
   document.getElementById('welcome-sub').textContent    = 'Bienvenido a Automatizaciones Madero';
   document.getElementById('welcome-puesto').textContent = u.puesto;
+  // Si el usuario tiene foto en Microsoft, mostrarla en los avatares (si no, quedan las iniciales)
+  cargarFotoUsuario();
 
   // Config visible solo para admins
   document.getElementById('nav-config-item').style.display = u.esAdmin ? 'block' : 'none';
   var _ncu=document.getElementById('nav-config-user-item'); if(_ncu) _ncu.style.display = u.esAdmin ? 'none' : 'block';
+
+  // Logo editable: cargar el guardado y mostrar el lápiz solo al Administrador General
+  cargarLogoURL();
+  var _bel=document.getElementById('btn-editar-logo'); if(_bel) _bel.style.display = u.esAdmin ? 'block' : 'none';
 
   // Marcar la página de Fabricaciones con clase de nivel de acceso ANTES de mostrar nada
   var _fabPage = document.getElementById('page-Fabricaciones');
@@ -3469,6 +3488,71 @@ async function guardarTema(t){
 // Si un iframe pide el tema, respondérselo
 window.addEventListener('message', function(e){ if(e&&e.data&&e.data.type==='GET_THEME'){ try{ e.source.postMessage({type:'SET_THEME',tema:window._temaActual},'*'); }catch(_){} } });
 
+// Logo de la empresa: pon aquí la URL del logo (hospedado en SharePoint/Site Assets).
+// Si queda vacío, se muestra el engrane ⚙️ como hasta ahora.
+var COMPANY_LOGO_URL = '';
+function aplicarLogo(){
+  if(!COMPANY_LOGO_URL) return;
+  document.querySelectorAll('.login-icon, .sidebar-icon').forEach(function(el){
+    el.innerHTML = '<img src="'+COMPANY_LOGO_URL+'" alt="Logo" style="width:100%;height:100%;object-fit:contain;border-radius:inherit;display:block;">';
+    el.style.background = '#ffffff';
+  });
+}
+document.addEventListener('DOMContentLoaded', aplicarLogo);
+// Logo guardado en la lista Configuracion (Title='LogoURL', Valor=<url>). Aplica para todos.
+var _logoItemId = null;
+async function cargarLogoURL(){
+  try{
+    var sid = await getSiteId(); if(!sid) return;
+    var res = await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50').catch(function(){ return null; });
+    var it = res && res.value ? res.value.find(function(i){ return (i.fields&&i.fields.Title||'')==='LogoURL'; }) : null;
+    if(it){ _logoItemId = it.id; var u=(it.fields.Valor||'').trim(); if(u){ COMPANY_LOGO_URL=u; aplicarLogo(); } }
+  }catch(e){ /* sin config → logo por defecto */ }
+}
+async function guardarLogoURL(url){
+  var sid = await getSiteId(); if(!sid) throw new Error('No se pudo obtener el sitio');
+  if(!_logoItemId){
+    var res = await graphGet('sites/'+sid+'/lists/Configuracion/items?$expand=fields&$top=50').catch(function(){ return null; });
+    var it = res && res.value ? res.value.find(function(i){ return (i.fields&&i.fields.Title||'')==='LogoURL'; }) : null;
+    if(it) _logoItemId = it.id;
+  }
+  if(_logoItemId){
+    await graphPatch('sites/'+sid+'/lists/Configuracion/items/'+_logoItemId+'/fields', { Valor: url });
+  } else {
+    var created = await graphPost('sites/'+sid+'/lists/Configuracion/items', { fields: { Title:'LogoURL', Valor: url } });
+    if(created && created.id) _logoItemId = created.id;
+  }
+  COMPANY_LOGO_URL = url; aplicarLogo();
+}
+async function editarLogo(){
+  if(!(state.currentUser && state.currentUser.esAdmin)) return;
+  var actual = COMPANY_LOGO_URL || '';
+  var url = window.prompt('Pega el enlace (URL) de la imagen del logo.\nDéjalo vacío para quitar el logo y volver al ícono por defecto.', actual);
+  if(url===null) return; // canceló
+  url = url.trim();
+  try{
+    await guardarLogoURL(url);
+    if(!url){
+      // Restaurar ícono por defecto en esta sesión
+      document.querySelectorAll('.login-icon, .sidebar-icon').forEach(function(el){ el.innerHTML='⚙️'; el.style.background=''; });
+    }
+    alert('Logo actualizado. Los demás usuarios lo verán al recargar la plataforma.');
+  }catch(e){ alert('No se pudo guardar el logo: '+(e.message||e)); }
+}
+// Foto de perfil del usuario (Microsoft Graph). Si no tiene, se dejan las iniciales.
+async function cargarFotoUsuario(){
+  try{
+    var tok = await getToken(); if(!tok) return;
+    var r = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', { headers:{ Authorization:'Bearer '+tok } });
+    if(!r.ok) return; // 404 = sin foto → quedan las iniciales
+    var blob = await r.blob(); if(!blob || !blob.size) return;
+    var url = URL.createObjectURL(blob);
+    ['welcome-avatar','user-avatar'].forEach(function(id){
+      var el=document.getElementById(id); if(!el) return;
+      el.textContent=''; el.style.backgroundImage='url('+url+')'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; el.style.backgroundRepeat='no-repeat';
+    });
+  }catch(e){ /* sin foto o sin permiso → iniciales */ }
+}
 function toggleConfigMenu(which){
   var sub=document.getElementById('cfg-sub-'+which), chev=document.getElementById('cfg-chev-'+which);
   if(!sub) return; var abierto=(sub.style.display!=='none');
@@ -19123,7 +19207,7 @@ window._ftRptDoPrint=_ftRptDoPrint;
     var d=document.createElement('div');
     d.id='fab-load-overlay';
     d.style.cssText='display:none;position:fixed;inset:0;z-index:99000;background:rgba(3,8,16,.72);flex-direction:column;align-items:center;justify-content:center;gap:16px;';
-    d.innerHTML='<span class="fab-spinner"></span><div style="color:var(--text,#e6edf3);font-size:.9rem;font-weight:600;">Cargando datos de Fabricación…</div>';
+    d.innerHTML='<span class="fab-spinner"></span><div style="color:#ffffff;font-size:.9rem;font-weight:600;">Cargando datos de Fabricación…</div>';
     document.body.appendChild(d);
   }
   window._fabShowLoadOverlay=function(){ ensure(); var o=document.getElementById('fab-load-overlay'); if(o) o.style.display='flex'; };
