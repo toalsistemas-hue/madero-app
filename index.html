@@ -6772,6 +6772,51 @@ async function _spGraphLeerLista(lista, top){
   }
   return { value: out };
 }
+// Lectura OPTIMIZADA: trae de una lista grande (FT_Operaciones / FT_Cola_Estacion) SOLO las filas
+// de las OFs indicadas, filtrando en el SERVIDOR (requiere índice en OF_SAP). Esto evita descargar
+// toda la lista en cada ciclo. Si el usuario no tiene Graph directo o algo falla, cae automáticamente
+// al método anterior (leer completo con tope alto y filtrar en memoria), para no romper nada.
+async function ftLeerPorOFs(lista, ofSaps, fallbackTop){
+  fallbackTop = fallbackTop || 15000;
+  var lst = []; var _vis={};
+  (ofSaps||[]).forEach(function(o){ o=(o==null?'':String(o)); if(o && !_vis[o]){ _vis[o]=1; lst.push(o); } });
+  if(!lst.length) return { value: [] };
+  var _fallback = async function(){
+    var full = await flowGet(lista, '', fallbackTop);
+    var set = {}; lst.forEach(function(o){ set[o]=1; });
+    return { value: (full.value||[]).filter(function(it){ return set[(it.fields||{}).OF_SAP]; }) };
+  };
+  _graphCapLoad();
+  var puedeGraph = window._SP_GRAPH_DIRECT_ENABLED && window._graphCap[lista] !== false;
+  if(!puedeGraph) return _fallback();
+  try{
+    var sid = await getSiteId();
+    var token = await getToken();
+    var out = [], seen = {};
+    for(var b=0; b<lst.length; b+=20){
+      var grp = lst.slice(b, b+20);
+      var fil = grp.map(function(o){ return "fields/OF_SAP eq '"+o.replace(/'/g,"''")+"'"; }).join(' or ');
+      var url = 'https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items?$expand=fields&$top=500&$filter='+encodeURIComponent(fil);
+      var guard=0, retries=0;
+      while(url && guard<200){
+        guard++;
+        var res = await fetch(url, { headers:{ Authorization:'Bearer '+token, 'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly' } });
+        if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph '+res.status+' '+lista); e._authFail=true; throw e; }
+        if((res.status===429||res.status===503) && retries<4){ retries++; await new Promise(function(r){setTimeout(r,retries*2000);}); continue; }
+        if(!res.ok) throw new Error('Graph '+res.status+' '+lista);
+        retries=0;
+        var data = await res.json();
+        (data.value||[]).forEach(function(it){ var k=String(it.id||''); if(!seen[k]){ seen[k]=1; out.push({ id:k, fields: it.fields||{} }); } });
+        url = data['@odata.nextLink'] || null;
+      }
+    }
+    if(window._graphCap[lista]!==true){ window._graphCap[lista]=true; _graphCapSave(); }
+    return { value: out };
+  }catch(err){
+    if(err && err._authFail){ window._graphCap[lista]=false; _graphCapSave(); }
+    return _fallback();
+  }
+}
 // Escritura por Graph directo (crear/actualizar). Usa fetch directo (NO graphPatch/graphPost) para evitar re-ruteo.
 async function _spGraphEscribirLista(lista, operacion, itemId, datos){
   const sid = await getSiteId();
@@ -7179,10 +7224,10 @@ async function ftLoadDataFromSP() {
     const empty = function(){ return {value:[], _error:true}; };
     const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes, calTiemposRes] = await Promise.all([
       flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
-      flowGet('FT_Operaciones', '', 5000).catch(empty),
+      flowGet('FT_Operaciones', '', 15000).catch(empty),
       flowGet('FT_Tecnicos', '', 200).catch(empty),
       flowGet('FT_Estaciones', '', 100).catch(empty),
-      flowGet('FT_Cola_Estacion', '', 5000).catch(empty),
+      flowGet('FT_Cola_Estacion', '', 15000).catch(empty),
       flowGet('FT_Status_Estacion', '', 100).catch(empty),
       flowGet('FT_Timers', '', 2000).catch(empty),
       flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
@@ -7728,7 +7773,7 @@ async function ftLoadDataFromSP() {
           // ── Pre-cleanup: delete any existing FT_Cola_Estacion records for these OFs ──
           // Prevents stale/duplicate records from previous failed or partial runs
           try {
-            var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 5000);
+            var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 15000);
             var _existingColaItems = (_existingColaRaw.value || []).filter(function(item) {
               return _ofsToCreate.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
             });
@@ -7927,7 +7972,11 @@ async function ftLoadDataFromSP() {
         // Firma de contenido de las operaciones. Antes se usaba lastModifiedDateTime (solo disponible
         // por Graph directo); como FT_Operaciones es lista protegida y se resuelve por el flujo,
         // ese metadato no llega. Calculamos una firma con el contenido para detectar cambios.
-        var opsRes = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=5000');
+        // OPTIMIZADO: traer SOLO las operaciones de las OFs activas (filtro en servidor).
+        var _ofSapsAct = (DB.activeOFs||[]).map(function(a){return a.of_sap;}).filter(Boolean);
+        var opsRes = _ofSapsAct.length
+          ? await ftLeerPorOFs('FT_Operaciones', _ofSapsAct, 15000)
+          : await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Operaciones/items?$expand=fields&$top=15000');
         var allOps = (opsRes.value||[]).map(function(i){return i.fields;});
         // GUARDA: si la lectura vuelve vacía (fallo/lentitud transitoria del flujo protegido),
         // NO tocar las operaciones en memoria — reconstruir con [] borraría el avance de TODAS las OFs.
@@ -7983,7 +8032,9 @@ async function ftLoadDataFromSP() {
           });
           // Recargar FT_Cola_Estacion para reflejar reordenamientos desde app móvil
           try {
-            var colaResPoll = await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=5000');
+            var colaResPoll = _ofSapsAct.length
+              ? await ftLeerPorOFs('FT_Cola_Estacion', _ofSapsAct, 15000)
+              : await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=15000');
             window.DB_STATION_QUEUE = {};
             window.STATIONS.forEach(function(s){ window.DB_STATION_QUEUE[s]=[]; });
             var colaItemsPoll = (colaResPoll.value||[]).sort(function(a,b){return (a.fields.Posicion||0)-(b.fields.Posicion||0);});
@@ -8320,7 +8371,7 @@ async function ftSaveQueueToSP(of_sap) {
     // ── Step 1: Load existing FT_Cola_Estacion items via Flow ──────────────
     if(!window._queueSpIdCache) window._queueSpIdCache = {};
     try {
-      var existingRes = await flowGet('FT_Cola_Estacion', '', 5000);
+      var existingRes = await flowGet('FT_Cola_Estacion', '', 15000);
       (existingRes.value||[]).forEach(function(item){
         var opId = item.fields && item.fields.Op_ID;
         if(opId) window._queueSpIdCache[opId] = item.id;
@@ -8401,7 +8452,7 @@ async function ftBorrarColaDeOF(of_sap){
   if(!of_sap) return;
   try{
     if(!FT_SITE_ID){ try{ FT_SITE_ID = await getSiteId(); }catch(_e){} }
-    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var raw = await flowGet('FT_Cola_Estacion', '', 15000);
     var sap = String(of_sap).trim();
     var ids = ((raw && raw.value) ? raw.value : [])
       .filter(function(it){ var f=it.fields||it; return String(f.OF_SAP||'').trim()===sap; })
@@ -8430,7 +8481,7 @@ window.ftBorrarColaDeOF = ftBorrarColaDeOF;
 async function ftDiagnosticoCola(){
   try{
     console.log('%c[Diag Cola] Leyendo FT_Cola_Estacion completa… (solo lectura)', 'color:#2f75a8;font-weight:bold');
-    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var raw = await flowGet('FT_Cola_Estacion', '', 15000);
     var items = (raw && raw.value) ? raw.value : [];
     var total = items.length;
 
@@ -8514,7 +8565,7 @@ window.ftDiagnosticoCola = ftDiagnosticoCola;
 async function ftDedupCola(){
   try{
     console.log('%c[Dedup Cola] Leyendo FT_Cola_Estacion completa…', 'color:#2f75a8;font-weight:bold');
-    var raw = await flowGet('FT_Cola_Estacion', '', 5000);
+    var raw = await flowGet('FT_Cola_Estacion', '', 15000);
     var items = (raw && raw.value) ? raw.value : [];
     var grupos = {};   // "OF_SAP__Op_ID" -> [{id, pos, numId}]
     items.forEach(function(it){
@@ -11614,7 +11665,7 @@ function confirmProgMain() {
         showLoadingModal('Guardando programación','Paso 1/3: Registrando operaciones...\nNo cierres esta ventana.');
         var _existingOpsMap = {};
         try {
-          var _opsRes = await flowGet('FT_Operaciones','',5000);
+          var _opsRes = await flowGet('FT_Operaciones','',15000);
           (_opsRes.value||[]).forEach(function(item){
             var f=item.fields||{};
             var key=(f.OF_SAP||'')+'__'+(f.Op_ID||'');
@@ -11644,7 +11695,7 @@ function confirmProgMain() {
                   // Idempotencia: si el intento previo alcanzó a crear la op pero se perdió la respuesta,
                   // re-leer y adoptar su _spId para ACTUALIZAR en vez de crear un duplicado.
                   if(!op._spId){
-                    try{ var _rk=await flowGet('FT_Operaciones','',5000); var _rh=(_rk.value||[]).find(function(it){var f=it.fields||{}; return String(f.OF_SAP||'')===String(sap) && String(f.Op_ID||'')===String(op.id);}); if(_rh) op._spId=_rh.id; }catch(_e){}
+                    try{ var _rk=await flowGet('FT_Operaciones','',15000); var _rh=(_rk.value||[]).find(function(it){var f=it.fields||{}; return String(f.OF_SAP||'')===String(sap) && String(f.Op_ID||'')===String(op.id);}); if(_rh) op._spId=_rh.id; }catch(_e){}
                   }
                 }
                 try { await ftSaveOpToSP(sap,op.id); _saved=true; }
@@ -11671,7 +11722,7 @@ function confirmProgMain() {
         showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
 
         // Fetch existing cola records via Flow
-        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 5000).catch(function(){return {value:[]};});
+        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 15000).catch(function(){return {value:[]};});
         var _colaRes = _colaFlowRes;
         var _existingColaMap = {};
         var _dups = [];
@@ -11740,7 +11791,7 @@ function confirmProgMain() {
               // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
               // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
               if(!(w.existing&&w.existing.spId)){
-                try{ var _cc=await flowGet('FT_Cola_Estacion','',5000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
+                try{ var _cc=await flowGet('FT_Cola_Estacion','',15000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
               }
             }
             try{
@@ -11804,7 +11855,7 @@ function confirmProgMain() {
 
         // ── Verificación post-registro (Fase B): detectar ops faltantes o duplicadas ──
         try{
-          var _verRes = await flowGet('FT_Operaciones','',5000).catch(function(){return {value:[]};});
+          var _verRes = await flowGet('FT_Operaciones','',15000).catch(function(){return {value:[]};});
           var _problemas = [];
           _newSapsSorted.forEach(function(sap){
             var _esperado = (_opsSnapshot[sap]||[]).length;
@@ -13372,7 +13423,7 @@ function saveTplModal(){
                   return op.nombre !== _dOp.nombre;
                 });
                 // Eliminar de cola en SP
-                var _qRes = await flowGet('FT_Cola_Estacion','',5000);
+                var _qRes = await flowGet('FT_Cola_Estacion','',15000);
                 (_qRes&&_qRes.value||[]).forEach(async function(qItem){
                   var qf=qItem.fields||qItem;
                   if(qf.Estacion===_dOp.estacion && qf.OF_SAP===_aof.of_sap){
@@ -16374,7 +16425,7 @@ async function portalSaveColaToSP(estacion){
   // Always reload _queueSpIdCache from SP to get latest item IDs
   window._queueSpIdCache = {};
   try {
-    var existRes = await flowGet('FT_Cola_Estacion', '', 5000);
+    var existRes = await flowGet('FT_Cola_Estacion', '', 15000);
     (existRes.value||[]).forEach(function(item){
       if(item.fields && item.fields.Op_ID) window._queueSpIdCache[item.fields.Op_ID] = item.id;
     });
@@ -17490,7 +17541,7 @@ async function ftRptLoad() {
   if(contenido) contenido.style.display='none';
   try {
     var empty=function(){return{value:[]};};
-    var res=await Promise.all([flowGet('FT_OrdenesFabricacion','',2000).catch(empty),flowGet('FT_Operaciones','',5000).catch(empty)]);
+    var res=await Promise.all([flowGet('FT_OrdenesFabricacion','',2000).catch(empty),flowGet('FT_Operaciones','',15000).catch(empty)]);
     _rptData.ofs=(res[0].value||[]).map(function(i){
       var f=i.fields||{};
       return{id:i.id,of_sap:f.OF_SAP||f.Title||'',pedido:f.Numero_Pedido||f.Pedido||'',cliente:f.Cliente||'',
