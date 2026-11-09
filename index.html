@@ -7222,12 +7222,10 @@ async function ftLoadDataFromSP() {
 
     // Load OFs and Operaciones in parallel
     const empty = function(){ return {value:[], _error:true}; };
-    const [ofsRes, opsRes, tecRes, estRes, colaRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes, calTiemposRes] = await Promise.all([
+    const [ofsRes, tecRes, estRes, stStatusRes, timersRes, tplRes, articulosRes, opCatRes, calTiemposRes] = await Promise.all([
       flowGet('FT_OrdenesFabricacion', '', 2000).catch(empty),
-      flowGet('FT_Operaciones', '', 15000).catch(empty),
       flowGet('FT_Tecnicos', '', 200).catch(empty),
       flowGet('FT_Estaciones', '', 100).catch(empty),
-      flowGet('FT_Cola_Estacion', '', 15000).catch(empty),
       flowGet('FT_Status_Estacion', '', 100).catch(empty),
       flowGet('FT_Timers', '', 2000).catch(empty),
       flowGet('FT_Plantillas_Operaciones', '', 500).catch(empty),
@@ -7235,6 +7233,8 @@ async function ftLoadDataFromSP() {
       flowGet('FT_Catalogo_Operaciones', '', 5000).catch(empty),
       flowGet('FT_CalTiempos', '', 2000).catch(empty),
     ]);
+    // Operaciones y cola se leen DESPUÉS, filtradas por las OFs activas (optimización de carga).
+    var opsRes = {value:[]}, colaRes = {value:[]};
 
     // Preservar la data existente si la lectura de OFs vuelve vacía/con error
     // (504/timeout del flujo). Antes exigía que TAMBIÉN fallaran las ops, lo que
@@ -7247,6 +7247,19 @@ async function ftLoadDataFromSP() {
 
     // Build DB.ofs from SharePoint (conservar el id del item SP en _spId)
     const ofs = (ofsRes.value||[]).map(function(i){ var f=i.fields||{}; if(i.id!=null) f._spId=i.id; return f; });
+    // OPTIMIZADO: leer operaciones y cola SOLO de las OFs activas (mismo criterio que DB.activeOFs).
+    var _activeSaps = ofs.filter(function(f){
+      if(f.Programado_Hoy===true) return true;
+      var s=(f.Status||'').trim();
+      return s==='Planeacion'||s==='Planeación'||s==='En Fabricacion'||s==='Sin programar'||s==='Sin Programar';
+    }).map(function(f){ return f.OF_SAP||f.Title||''; }).filter(Boolean);
+    if(_activeSaps.length){
+      var _oc = await Promise.all([
+        ftLeerPorOFs('FT_Operaciones', _activeSaps, 15000).catch(empty),
+        ftLeerPorOFs('FT_Cola_Estacion', _activeSaps, 15000).catch(empty)
+      ]);
+      opsRes = _oc[0]||{value:[]}; colaRes = _oc[1]||{value:[]};
+    }
     DB.ofs = ofs.map(f => ({
       of_sap: f.OF_SAP || f.Title || '',
       articulo: f.Numero_Articulo || '',
