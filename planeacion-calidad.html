@@ -555,8 +555,10 @@ function snapAvanceBoard(b, cur){
   }
   return { lastPct:lastPct, delta:(lastPct!=null ? (cur-lastPct) : null) };
 }
-// Descarga un reporte (Excel) de las tareas del tablero actual con estatus y % de avance.
-function descargarReporteTablero(){
+// Carga ExcelJS (CDN) una sola vez.
+function cargarExcelJS(){ return new Promise(function(res,rej){ if(window.ExcelJS) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload=function(){ res(); }; sc.onerror=function(){ rej(new Error('No se pudo cargar ExcelJS')); }; document.head.appendChild(sc); }); }
+// Descarga un reporte (.xlsx con formato) de las tareas del tablero actual con estatus y % de avance.
+async function descargarReporteTablero(){
   var b=curBoardObj(); if(!b){ toast('Selecciona un tablero'); return; }
   var ts=S.tasks.filter(function(t){return t.tableroID===b.id;});
   if(!ts.length){ toast('Este tablero no tiene tareas'); return; }
@@ -564,39 +566,55 @@ function descargarReporteTablero(){
   var ov=boardProgress(b);
   var hoy=new Date();
   var fh=('0'+hoy.getDate()).slice(-2)+'/'+('0'+(hoy.getMonth()+1)).slice(-2)+'/'+hoy.getFullYear();
-  var cc=function(s){ s=String(s==null?'':s); return /[",\n\r]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s; };
   var compl=ts.filter(function(t){return t.estatus==='Completada';}).length;
-  var lineas=[];
-  lineas.push('sep=,'); // indica a Excel que el separador es la coma (independiente del idioma)
-  lineas.push(cc('Reporte de tablero: '+b.nombre));
-  lineas.push(cc('Tipo: '+_tipoLbl(b.tipo))+','+cc('Generado: '+fh));
-  lineas.push(cc('Avance general: '+ov+'%')+','+cc('Tareas: '+ts.length)+','+cc('Completadas: '+compl));
-  lineas.push('');
-  lineas.push(['#','Tarea','Responsable(s)','Estatus','Prioridad','Inicio','Fin','Avance','Categorías'].map(cc).join(','));
-  ts.forEach(function(t,i){
-    var p=calcProgreso(t);
-    var cats=(t.categorias||[]).map(function(c){ return c.nombre+' ('+(c.estatus||(c.hecho?'Completada':'Sin iniciar'))+', '+(parseInt(c.pct)||0)+'%)'; }).join(' | ');
-    var resp=(t.asignados||[]).map(nameOf).join(', ');
-    lineas.push([
-      (i+1),
-      (t.esHito?'◆ ':'')+t.nombre,
-      resp||'—',
-      t.estatus,
-      t.prioridad,
-      t.ini?fmtD(t.ini):'',
-      effFin(t)?(fmtD(effFin(t))+(!t.fin?' (comp.)':'')):'',
-      p+'%',
-      cats
-    ].map(cc).join(','));
-  });
-  var blob=new Blob(['﻿'+lineas.join('\r\n')],{type:'text/csv;charset=utf-8'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');
-  var safe=(b.nombre||'tablero').replace(/[^\w\- áéíóúÁÉÍÓÚñÑ]/g,'_');
-  a.href=url; a.download='Reporte_'+safe+'_'+hoy.getFullYear()+('0'+(hoy.getMonth()+1)).slice(-2)+('0'+hoy.getDate()).slice(-2)+'.csv';
-  document.body.appendChild(a); a.click();
-  setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },1500);
-  toast('Reporte descargado');
+  toast('Generando reporte…');
+  try{ await cargarExcelJS(); }catch(e){ toast('No se pudo cargar la librería de Excel'); return; }
+  try{
+    var hx=function(c){ return (c||'#6e7681').replace('#','FF'); }; // #RRGGBB → ARGB
+    var wb=new ExcelJS.Workbook(); wb.creator='Planeación Calidad'; wb.created=new Date();
+    var ws=wb.addWorksheet('Reporte');
+    ws.columns=[{width:5},{width:40},{width:24},{width:14},{width:11},{width:13},{width:16},{width:9},{width:50}];
+    // Título y resumen
+    ws.mergeCells('A1:I1'); var c1=ws.getCell('A1'); c1.value='Reporte de tablero: '+b.nombre; c1.font={bold:true,size:15};
+    ws.mergeCells('A2:I2'); ws.getCell('A2').value='Tipo: '+_tipoLbl(b.tipo)+'   ·   Generado: '+fh;
+    ws.mergeCells('A3:I3'); var c3=ws.getCell('A3'); c3.value='Avance general: '+ov+'%   ·   Tareas: '+ts.length+'   ·   Completadas: '+compl; c3.font={bold:true};
+    // Encabezados
+    var hdrRow=5;
+    var hdr=['#','Tarea','Responsable(s)','Estatus','Prioridad','Inicio','Fin','Avance','Categorías'];
+    var hr=ws.getRow(hdrRow); hr.values=hdr;
+    hr.eachCell(function(cell){ cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF00528B'}}; cell.font={bold:true,color:{argb:'FFFFFFFF'}}; cell.alignment={vertical:'middle',horizontal:'center'}; });
+    // Filas
+    ts.forEach(function(t,i){
+      var p=calcProgreso(t);
+      var cats=(t.categorias||[]).map(function(c){ return c.nombre+' ('+(c.estatus||(c.hecho?'Completada':'Sin iniciar'))+', '+(parseInt(c.pct)||0)+'%)'; }).join(' | ');
+      var resp=(t.asignados||[]).map(nameOf).join(', ');
+      var r=ws.getRow(hdrRow+1+i);
+      r.values=[ (i+1), (t.esHito?'◆ ':'')+t.nombre, resp||'—', t.estatus, t.prioridad,
+        t.ini?fmtD(t.ini):'', effFin(t)?(fmtD(effFin(t))+(!t.fin?' (comp.)':'')):'', (p/100), cats ];
+      r.getCell(8).numFmt='0%';
+      r.getCell(8).alignment={horizontal:'center'};
+      // Color del estatus
+      var col=ST_COLOR[t.estatus]||'#6e7681';
+      var ec=r.getCell(4);
+      ec.fill={type:'pattern',pattern:'solid',fgColor:{argb:hx(col)}};
+      ec.font={bold:true,color:{argb:'FFFFFFFF'}};
+      ec.alignment={horizontal:'center'};
+      r.getCell(9).alignment={wrapText:true};
+    });
+    // Bordes finos a toda la tabla
+    var lastRow=hdrRow+ts.length;
+    for(var rr=hdrRow; rr<=lastRow; rr++){ var row=ws.getRow(rr); for(var cc2=1; cc2<=9; cc2++){ row.getCell(cc2).border={top:{style:'thin',color:{argb:'FFD7DEE6'}},left:{style:'thin',color:{argb:'FFD7DEE6'}},bottom:{style:'thin',color:{argb:'FFD7DEE6'}},right:{style:'thin',color:{argb:'FFD7DEE6'}}}; } }
+    ws.views=[{state:'frozen',ySplit:hdrRow}];
+    var buf=await wb.xlsx.writeBuffer();
+    var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    var safe=(b.nombre||'tablero').replace(/[^\w\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+    a.href=url; a.download='Reporte_'+safe+'_'+hoy.getFullYear()+('0'+(hoy.getMonth()+1)).slice(-2)+('0'+hoy.getDate()).slice(-2)+'.xlsx';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },1500);
+    toast('Reporte descargado');
+  }catch(e){ console.warn('[Reporte]',e); toast('No se pudo generar el reporte'); }
 }
 function renderBoard(){
   var b=curBoardObj();
