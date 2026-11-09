@@ -466,7 +466,7 @@ async function loadData(silent){
   S.boards = bs.map(function(i){ var f=i.fields||{}; return {
     id:i.id, nombre:f.Title||'(sin nombre)', tipo:f.PcTipo||'compartido', descripcion:f.PcDescripcion||'',
     participantes:_pj(f.PcParticipantes,[]), color:f.PcColor||'#58a6ff', estatus:f.PcEstatus||'activo', orden:f.PcOrden||0,
-    responsable:(f.PcResponsable||'').toLowerCase()
+    responsable:(f.PcResponsable||'').toLowerCase(), snapAvance:_pj(f.PcSnapAvance,null)
   }; }).filter(function(b){ return b.estatus!=='archivado'; });
   var ts = await listGet(L_TAREAS);
   S.tasks = ts.map(function(i){ var f=i.fields||{}; return {
@@ -524,6 +524,82 @@ function selectBoard(id){ if(!id) return; var b=S.boards.find(function(x){return
 // ═══════════════ RENDER TABLERO ═══════════════
 function curBoardObj(){ return S.boards.find(function(b){return b.id===S.curBoard;})||null; }
 function boardTasks(){ var b=curBoardObj(); if(!b) return []; var t=S.tasks.filter(function(x){return x.tableroID===b.id;}); if(S.soloMias){ t=t.filter(function(x){return (x.asignados||[]).indexOf(S.user.email)>=0;}); } return t; }
+// Avance general del tablero = promedio del % de avance de todas sus tareas.
+function boardProgress(b){
+  if(!b) return 0;
+  var ts=S.tasks.filter(function(t){return t.tableroID===b.id;});
+  if(!ts.length) return 0;
+  var sum=0; ts.forEach(function(t){ sum+=calcProgreso(t); });
+  return Math.round(sum/ts.length);
+}
+// Clave de semana ISO (YYYY-Www) para comparar avance semana a semana.
+function isoWeekKey(d){
+  d=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  var day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day);
+  var yStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  var wk=Math.ceil((((d-yStart)/86400000)+1)/7);
+  return d.getUTCFullYear()+'-W'+('0'+wk).slice(-2);
+}
+// Devuelve el avance de la "semana anterior" y la diferencia vs. el avance actual.
+// Guarda una foto semanal en el tablero (PcSnapAvance). La persiste solo el líder (acceso completo).
+function snapAvanceBoard(b, cur){
+  var wk=isoWeekKey(new Date());
+  var snap=b.snapAvance, lastPct=null;
+  if(!snap || snap.week!==wk){
+    lastPct = (snap && snap.pct!=null) ? snap.pct : null;   // lo registrado la semana pasada
+    var nuevo = { week:wk, pct:cur, prevWeek:(snap?snap.week:''), prevPct:lastPct };
+    b.snapAvance = nuevo;
+    if(S.completo){ try{ listUpdate(L_TABLEROS, b.id, { PcSnapAvance: JSON.stringify(nuevo) }); }catch(e){} }
+  } else {
+    lastPct = (snap.prevPct!=null) ? snap.prevPct : null;
+  }
+  return { lastPct:lastPct, delta:(lastPct!=null ? (cur-lastPct) : null) };
+}
+// Descarga un reporte (Excel) de las tareas del tablero actual con estatus y % de avance.
+function descargarReporteTablero(){
+  var b=curBoardObj(); if(!b){ toast('Selecciona un tablero'); return; }
+  var ts=S.tasks.filter(function(t){return t.tableroID===b.id;});
+  if(!ts.length){ toast('Este tablero no tiene tareas'); return; }
+  ts=ts.slice().sort(function(a,c){ return (a.ini||effFin(a)||'')<(c.ini||effFin(c)||'')?-1:1; });
+  var ov=boardProgress(b);
+  var hoy=new Date();
+  var fh=('0'+hoy.getDate()).slice(-2)+'/'+('0'+(hoy.getMonth()+1)).slice(-2)+'/'+hoy.getFullYear();
+  var e2=function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  var rows2='';
+  ts.forEach(function(t,i){
+    var p=calcProgreso(t);
+    var cats=(t.categorias||[]).map(function(c){ return c.nombre+' ('+(c.estatus||(c.hecho?'Completada':'Sin iniciar'))+', '+(parseInt(c.pct)||0)+'%)'; }).join(' | ');
+    var resp=(t.asignados||[]).map(nameOf).join(', ');
+    rows2+='<tr>'
+      +'<td>'+(i+1)+'</td>'
+      +'<td>'+e2((t.esHito?'◆ ':'')+t.nombre)+'</td>'
+      +'<td>'+e2(resp||'—')+'</td>'
+      +'<td>'+e2(t.estatus)+'</td>'
+      +'<td>'+e2(t.prioridad)+'</td>'
+      +'<td>'+e2(t.ini?fmtD(t.ini):'')+'</td>'
+      +'<td>'+e2(effFin(t)?(fmtD(effFin(t))+(!t.fin?' (comp.)':'')):'')+'</td>'
+      +'<td style="text-align:center;">'+p+'%</td>'
+      +'<td>'+e2(cats)+'</td></tr>';
+  });
+  var compl=ts.filter(function(t){return t.estatus==='Completada';}).length;
+  var html='<html><head><meta charset="UTF-8"></head><body>'
+    +'<table border="1" cellspacing="0" cellpadding="4">'
+    +'<tr><td colspan="9" style="font-size:16px;font-weight:bold;">Reporte de tablero: '+e2(b.nombre)+'</td></tr>'
+    +'<tr><td colspan="9">Tipo: '+e2(_tipoLbl(b.tipo))+' &nbsp;·&nbsp; Generado: '+fh+'</td></tr>'
+    +'<tr><td colspan="9">Avance general: '+ov+'% &nbsp;·&nbsp; Tareas: '+ts.length+' &nbsp;·&nbsp; Completadas: '+compl+'</td></tr>'
+    +'<tr><td colspan="9"></td></tr>'
+    +'<tr style="background:#00528b;color:#ffffff;font-weight:bold;">'
+      +'<td>#</td><td>Tarea</td><td>Responsable(s)</td><td>Estatus</td><td>Prioridad</td><td>Inicio</td><td>Fin</td><td>Avance</td><td>Categorías</td></tr>'
+    +rows2+'</table></body></html>';
+  var blob=new Blob(['﻿'+html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  var safe=(b.nombre||'tablero').replace(/[^\w\- áéíóúÁÉÍÓÚñÑ]/g,'_');
+  a.href=url; a.download='Reporte_'+safe+'_'+hoy.getFullYear()+('0'+(hoy.getMonth()+1)).slice(-2)+('0'+hoy.getDate()).slice(-2)+'.xls';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },1500);
+  toast('Reporte descargado');
+}
 function renderBoard(){
   var b=curBoardObj();
   var sub=document.getElementById('b-sub'), tools=document.getElementById('b-tools'), body=document.getElementById('b-body');
@@ -534,6 +610,7 @@ function renderBoard(){
   sub.innerHTML='<span class="chip">'+_tipoLbl(b.tipo)+'</span> '+(b.participantes.length)+' participante(s)';
   tools.innerHTML=''
     +'<label style="font-size:.74rem;color:var(--dim);display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" '+(S.soloMias?'checked':'')+' onchange="S.soloMias=this.checked;renderBoard();"> Solo mis tareas</label>'
+    +'<button class="btn btn-sm" onclick="descargarReporteTablero()">⬇ Reporte</button>'
     +(S.completo?('<button class="btn btn-sm" onclick="openBoardModal(\''+b.id+'\')">⚙ Editar tablero</button>'
     +'<button class="btn btn-sm btn-primary" onclick="openTaskModal()">＋ Nueva tarea</button>'):'');
   // Preservar la posición de scroll (sobre todo el Gantt) al re-dibujar por refresco
@@ -664,7 +741,22 @@ function renderGantt(body,b){
     }
     rows+='</div></div>';
   });
-  body.innerHTML='<div class="gantt">'+head+rows+'</div>';
+  // Indicador de avance del proyecto + comparación con la semana anterior
+  var _ov=boardProgress(b);
+  var _sn=snapAvanceBoard(b,_ov);
+  var _deltaTxt = (_sn.lastPct==null)
+    ? '<span style="color:var(--dim);">Sin dato de la semana anterior</span>'
+    : ('Semana anterior: <b>'+_sn.lastPct+'%</b> &nbsp;·&nbsp; '
+        +(_sn.delta>0 ? '<span style="color:#4ade80;font-weight:700;">▲ +'+_sn.delta+'%</span>'
+         : _sn.delta<0 ? '<span style="color:#f87171;font-weight:700;">▼ '+_sn.delta+'%</span>'
+         : '<span style="color:var(--dim);">sin cambio</span>'));
+  var prog='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px;border:1px solid var(--border-color,rgba(255,255,255,.12));border-radius:10px;background:var(--bg-card,rgba(255,255,255,.03));">'
+    +'<div style="font-weight:800;font-size:.9rem;">📈 Avance del proyecto</div>'
+    +'<div style="flex:1;min-width:160px;max-width:340px;"><div style="height:14px;border-radius:7px;background:rgba(125,140,160,.25);overflow:hidden;"><div style="height:100%;width:'+_ov+'%;background:'+semColorSolid(_ov)+';transition:width .3s;"></div></div></div>'
+    +'<div style="font-weight:800;font-size:1.15rem;color:'+semColorSolid(_ov)+';">'+_ov+'%</div>'
+    +'<div style="font-size:.8rem;color:var(--muted);">'+_deltaTxt+'</div>'
+    +'</div>';
+  body.innerHTML=prog+'<div class="gantt">'+head+rows+'</div>';
 }
 
 // ═══════════════ MODAL TABLERO ═══════════════
