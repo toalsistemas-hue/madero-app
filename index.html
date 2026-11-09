@@ -17554,15 +17554,18 @@ async function ftRptLoad() {
   if(contenido) contenido.style.display='none';
   try {
     var empty=function(){return{value:[]};};
-    var res=await Promise.all([flowGet('FT_OrdenesFabricacion','',2000).catch(empty),flowGet('FT_Operaciones','',15000).catch(empty)]);
-    _rptData.ofs=(res[0].value||[]).map(function(i){
+    var ofsR=await flowGet('FT_OrdenesFabricacion','',2000).catch(empty);
+    _rptData.ofs=(ofsR.value||[]).map(function(i){
       var f=i.fields||{};
       return{id:i.id,of_sap:f.OF_SAP||f.Title||'',pedido:f.Numero_Pedido||f.Pedido||'',cliente:f.Cliente||'',
         articulo:f.Numero_Articulo||'',
         descripcion:f.Descripcion_Articulo||'',cantidad:parseFloat(String(f.Cantidad||'').replace(',','.'))||0,status:f.Status||'Sin programar',
         fecha_prog:(f.Fecha_Programacion||'').split('T')[0],fecha_entrega:(f.Fecha_Entrega||'').split('T')[0],prioridad:f.Prioridad||'Normal'};
     }).filter(function(of){var s=(of.status||'').toLowerCase();return s!=='cerrado'&&s!=='pedido cancelado'&&s!=='cerrada';});
-    _rptData.ops=(res[1].value||[]).map(function(i){
+    // OPTIMIZADO: traer operaciones SOLO de las OFs no cerradas que se mostrarán en el reporte.
+    var _rptSaps=_rptData.ofs.map(function(o){return o.of_sap;}).filter(Boolean);
+    var opsR=_rptSaps.length ? await ftLeerPorOFs('FT_Operaciones', _rptSaps, 15000).catch(empty) : {value:[]};
+    _rptData.ops=(opsR.value||[]).map(function(i){
       var f=i.fields||{};
       var ayRaw=f.Ayudantes_JSON||f.Ayudantes||'';
       var ayudantes=ayRaw?ayRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
