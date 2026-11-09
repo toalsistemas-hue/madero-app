@@ -564,38 +564,36 @@ function descargarReporteTablero(){
   var ov=boardProgress(b);
   var hoy=new Date();
   var fh=('0'+hoy.getDate()).slice(-2)+'/'+('0'+(hoy.getMonth()+1)).slice(-2)+'/'+hoy.getFullYear();
-  var e2=function(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
-  var rows2='';
+  var cc=function(s){ s=String(s==null?'':s); return /[",\n\r]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s; };
+  var compl=ts.filter(function(t){return t.estatus==='Completada';}).length;
+  var lineas=[];
+  lineas.push('sep=,'); // indica a Excel que el separador es la coma (independiente del idioma)
+  lineas.push(cc('Reporte de tablero: '+b.nombre));
+  lineas.push(cc('Tipo: '+_tipoLbl(b.tipo))+','+cc('Generado: '+fh));
+  lineas.push(cc('Avance general: '+ov+'%')+','+cc('Tareas: '+ts.length)+','+cc('Completadas: '+compl));
+  lineas.push('');
+  lineas.push(['#','Tarea','Responsable(s)','Estatus','Prioridad','Inicio','Fin','Avance','Categorías'].map(cc).join(','));
   ts.forEach(function(t,i){
     var p=calcProgreso(t);
     var cats=(t.categorias||[]).map(function(c){ return c.nombre+' ('+(c.estatus||(c.hecho?'Completada':'Sin iniciar'))+', '+(parseInt(c.pct)||0)+'%)'; }).join(' | ');
     var resp=(t.asignados||[]).map(nameOf).join(', ');
-    rows2+='<tr>'
-      +'<td>'+(i+1)+'</td>'
-      +'<td>'+e2((t.esHito?'◆ ':'')+t.nombre)+'</td>'
-      +'<td>'+e2(resp||'—')+'</td>'
-      +'<td>'+e2(t.estatus)+'</td>'
-      +'<td>'+e2(t.prioridad)+'</td>'
-      +'<td>'+e2(t.ini?fmtD(t.ini):'')+'</td>'
-      +'<td>'+e2(effFin(t)?(fmtD(effFin(t))+(!t.fin?' (comp.)':'')):'')+'</td>'
-      +'<td style="text-align:center;">'+p+'%</td>'
-      +'<td>'+e2(cats)+'</td></tr>';
+    lineas.push([
+      (i+1),
+      (t.esHito?'◆ ':'')+t.nombre,
+      resp||'—',
+      t.estatus,
+      t.prioridad,
+      t.ini?fmtD(t.ini):'',
+      effFin(t)?(fmtD(effFin(t))+(!t.fin?' (comp.)':'')):'',
+      p+'%',
+      cats
+    ].map(cc).join(','));
   });
-  var compl=ts.filter(function(t){return t.estatus==='Completada';}).length;
-  var html='<html><head><meta charset="UTF-8"></head><body>'
-    +'<table border="1" cellspacing="0" cellpadding="4">'
-    +'<tr><td colspan="9" style="font-size:16px;font-weight:bold;">Reporte de tablero: '+e2(b.nombre)+'</td></tr>'
-    +'<tr><td colspan="9">Tipo: '+e2(_tipoLbl(b.tipo))+' &nbsp;·&nbsp; Generado: '+fh+'</td></tr>'
-    +'<tr><td colspan="9">Avance general: '+ov+'% &nbsp;·&nbsp; Tareas: '+ts.length+' &nbsp;·&nbsp; Completadas: '+compl+'</td></tr>'
-    +'<tr><td colspan="9"></td></tr>'
-    +'<tr style="background:#00528b;color:#ffffff;font-weight:bold;">'
-      +'<td>#</td><td>Tarea</td><td>Responsable(s)</td><td>Estatus</td><td>Prioridad</td><td>Inicio</td><td>Fin</td><td>Avance</td><td>Categorías</td></tr>'
-    +rows2+'</table></body></html>';
-  var blob=new Blob(['﻿'+html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  var blob=new Blob(['﻿'+lineas.join('\r\n')],{type:'text/csv;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var a=document.createElement('a');
   var safe=(b.nombre||'tablero').replace(/[^\w\- áéíóúÁÉÍÓÚñÑ]/g,'_');
-  a.href=url; a.download='Reporte_'+safe+'_'+hoy.getFullYear()+('0'+(hoy.getMonth()+1)).slice(-2)+('0'+hoy.getDate()).slice(-2)+'.xls';
+  a.href=url; a.download='Reporte_'+safe+'_'+hoy.getFullYear()+('0'+(hoy.getMonth()+1)).slice(-2)+('0'+hoy.getDate()).slice(-2)+'.csv';
   document.body.appendChild(a); a.click();
   setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); },1500);
   toast('Reporte descargado');
