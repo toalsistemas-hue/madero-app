@@ -120,6 +120,17 @@ html[data-theme="claro"] #monitor-screen [style*="#1a1a1a"]{ background:#ffffff 
 html[data-theme="claro"] #monitor-screen [style*="rgba(255,255,255,.06)"],
 html[data-theme="claro"] #monitor-screen [style*="rgba(255,255,255,.05)"]{ background:#eef2f6 !important; }
 html[data-theme="claro"] #monitor-screen [style*="rgba(255,255,255,.12)"]{ border-color:#d7dee6 !important; }
+/* Menús/dropdowns que se montan por id (fuera del shell): forzarlos claros por id */
+html[data-theme="claro"] #app-gear-menu,
+html[data-theme="claro"] #monitor-gear-menu,
+html[data-theme="claro"] #ar-ms-est-panel,
+html[data-theme="claro"] #ar-ms-status-panel{ background:#ffffff !important; border:1px solid #d7dee6 !important; color:#1b2733 !important; }
+html[data-theme="claro"] #app-gear-menu *,
+html[data-theme="claro"] #monitor-gear-menu *,
+html[data-theme="claro"] #ar-ms-est-panel *,
+html[data-theme="claro"] #ar-ms-status-panel *{ color:#1b2733 !important; }
+/* Barra de filtros del Monitor (fondo negro fijo) */
+html[data-theme="claro"] #monitor-filter-bar{ background:#ffffff !important; border-bottom-color:#d7dee6 !important; }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:"Archivo",sans-serif;background:#060e18;color:var(--text);min-height:100vh;overflow:hidden;}
 
