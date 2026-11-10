@@ -2522,6 +2522,14 @@ async function appRenderLauncher() {
     pantallas = APP_PANTALLAS_FALLBACK;
   }
 
+  // Garantías móvil: para administradores, añadir el acceso aunque no esté en su puesto (para pruebas/soporte).
+  // Para el técnico, agrégala como pantalla en FT_PantallasMovil y asígnala a su puesto móvil.
+  try{
+    if(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin && !pantallas.some(function(p){ return (p.PantallaID||p.pantallaID)==='Garantias'; })){
+      pantallas = pantallas.concat([{ PantallaID:'Garantias', Nombre:'Garantías', Icono_App:'🛡️', Descripcion:'Seguimiento de garantías (técnico)', Color:'#00528b' }]);
+    }
+  }catch(_g){}
+
   if (loading) loading.style.display = 'none';
   if (!grid) return;
 
@@ -2568,6 +2576,10 @@ function appLaunchPantalla(pantallaID) {
   }
   if (pantallaID === 'MonitorEstacion') {
     monitorInit();
+    return;
+  }
+  if (pantallaID === 'Garantias') {
+    garMobileOpen();
     return;
   }
   // Futuras pantallas se manejarán aquí
@@ -7747,6 +7759,19 @@ var appToken = null;
 var appSiteId = null;
 var appCurrentUser = null;
 
+// Normaliza el correo de la cuenta MSAL, incluyendo invitados B2B (#EXT#).
+// Ej: juanperez_gmail.com#EXT#@maderoequipos.com  →  juanperez@gmail.com
+function appEmailFromAccount(account) {
+  var raw = ((account && account.username) || '').toLowerCase();
+  var email = raw;
+  if (raw.indexOf('#ext#') >= 0) {
+    var sinExt = raw.split('#ext#')[0];
+    var lastUnderscore = sinExt.lastIndexOf('_');
+    if (lastUnderscore > 0) email = sinExt.substring(0, lastUnderscore) + '@' + sinExt.substring(lastUnderscore + 1);
+  }
+  return email;
+}
+
 // Detect if running on HTTP (non-secure) — affects MSAL PKCE
 var APP_IS_SECURE = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -7927,7 +7952,7 @@ async function appInitMsal() {
       loginDbg('Login redirect OK: ' + redirect.account.username);
       appToken = redirect.accessToken;
       appCurrentUser = {
-        email:  redirect.account.username.toLowerCase(),
+        email:  appEmailFromAccount(redirect.account),
         nombre: redirect.account.name || redirect.account.username
       };
       await appLoginSuccess();
@@ -7958,7 +7983,7 @@ async function appInitMsal() {
           loginDbg('Silent token OK: ' + silent.account.username);
           appToken = silent.accessToken;
           appCurrentUser = {
-            email:  silent.account.username.toLowerCase(),
+            email:  appEmailFromAccount(silent.account),
             nombre: silent.account.name || silent.account.username
           };
           await appLoginSuccess();
@@ -8248,6 +8273,126 @@ async function appGetSiteId() {
   const res = await appGraphGet('sites/' + APP_CONFIG.siteHost + ':' + APP_CONFIG.sitePath);
   appSiteId = res.id;
   return appSiteId;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GARANTÍAS MÓVIL — pantalla embebida (iframe garantias.html) + escaneo QR
+// Reutiliza toda la lógica de la pantalla web mediante el puente SP_BRIDGE.
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('message', async function(e){
+  var d=e.data||{};
+  // Identidad para el iframe de Garantías (lo pide al cargar con GAR_READY)
+  if(d.type==='GAR_READY'){
+    try{
+      if(e.source) e.source.postMessage({
+        type:'SGD_AUTH',
+        user:{
+          nombre:(APP_USER_PROFILE&&APP_USER_PROFILE.nombre)||'',
+          correo:(APP_USER_PROFILE&&(APP_USER_PROFILE.email||APP_USER_PROFILE.usuario))||'',
+          puesto:(APP_USER_PROFILE&&APP_USER_PROFILE.puesto)||'',
+          esAdmin:!!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin)
+        },
+        nivel:'completo',
+        isDemoMode:false
+      },'*');
+    }catch(_){}
+    return;
+  }
+  if(d.type!=='SP_BRIDGE_REQUEST') return;
+  var callId=d.callId, op=d.op, args=d.args||{};
+  function reply(error,result){ try{ if(e.source) e.source.postMessage({type:'SP_BRIDGE_RESPONSE',callId:callId,error:error||null,result:(result!==undefined?result:null)},'*'); }catch(_){}}
+  try{
+    var sid;
+    if(op==='list'){
+      sid=await appGetSiteId();
+      var qp=args.queryParams||'$expand=fields&$top=2000';
+      var r=await appGraphGet('sites/'+sid+'/lists/'+args.lista+'/items?'+qp);
+      reply(null,{value:(r&&r.value)?r.value:[]});
+    } else if(op==='create'){
+      sid=await appGetSiteId();
+      var cr=await appGraphPost('sites/'+sid+'/lists/'+args.lista+'/items',{fields:args.fields});
+      var nid=(cr&&cr.id!==undefined)?cr.id:((cr&&cr.ID!==undefined)?cr.ID:null);
+      reply(null,{id:nid,raw:cr});
+    } else if(op==='update'){
+      sid=await appGetSiteId();
+      await appGraphPatch('sites/'+sid+'/lists/'+args.lista+'/items/'+args.itemId+'/fields',args.fields);
+      reply(null,{ok:true});
+    } else if(op==='delete'){
+      sid=await appGetSiteId();
+      await appGraphDelete('sites/'+sid+'/lists/'+args.lista+'/items/'+args.itemId);
+      reply(null,{ok:true});
+    } else if(op==='uploadAttachment'){
+      sid=await appGetSiteId(); var tok=await appGetToken();
+      var bytes=Uint8Array.from(atob(args.contentBase64||''),function(c){return c.charCodeAt(0);});
+      var path=args.carpeta+'/'+args.itemId+'/'+encodeURIComponent(args.fileName);
+      var up=await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/root:/'+path+':/content',{method:'PUT',headers:{Authorization:'Bearer '+tok,'Content-Type':'application/octet-stream'},body:bytes});
+      if(!up.ok){ reply('upload_'+up.status,null); return; }
+      reply(null, await up.json());
+    } else if(op==='getFileBase64'){
+      sid=await appGetSiteId(); var tokF=await appGetToken();
+      var resF=await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/items/'+encodeURIComponent(args.driveId)+'/content',{headers:{Authorization:'Bearer '+tokF}});
+      if(!resF.ok){ reply('file_'+resF.status,null); return; }
+      var bufF=await resF.arrayBuffer(); var bytesF=new Uint8Array(bufF),binF='',CH=0x8000;
+      for(var iF=0;iF<bytesF.length;iF+=CH){ binF+=String.fromCharCode.apply(null,bytesF.subarray(iF,iF+CH)); }
+      reply(null,{base64:btoa(binF),mime:(resF.headers.get('content-type')||'application/octet-stream')});
+    } else if(op==='usuariosConAcceso'){
+      reply(null,{value:[]});
+    } else {
+      reply('op_desconocida:'+op,null);
+    }
+  }catch(err){ reply(String(err&&err.message?err.message:err),null); }
+});
+
+function garMobileOpen(){
+  var ov=document.getElementById('gar-mobile-overlay');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='gar-mobile-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:700;background:#0b1220;display:flex;flex-direction:column;';
+    ov.innerHTML=''+
+      '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#00528b;color:#fff;flex:0 0 auto;">'+
+        '<button onclick="garMobileClose()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:1rem;cursor:pointer;">‹ Volver</button>'+
+        '<div style="font-weight:800;font-size:1rem;flex:1;">🛡️ Garantías</div>'+
+        '<button onclick="garScanOpen()" style="background:#ffffff;color:#00528b;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:.85rem;cursor:pointer;">📷 Escanear folio</button>'+
+      '</div>'+
+      '<iframe id="gar-mobile-iframe" src="garantias.html" style="flex:1;width:100%;border:0;background:#fff;"></iframe>';
+    document.body.appendChild(ov);
+  } else { ov.style.display='flex'; }
+}
+function garMobileClose(){ var ov=document.getElementById('gar-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
+
+var _garScanner=null;
+function garScanOpen(){
+  function go(){
+    var ex=document.getElementById('gar-scan-modal'); if(ex) ex.remove();
+    var d=document.createElement('div'); d.id='gar-scan-modal';
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:760;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+    d.innerHTML='<div style="width:min(360px,94vw);">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'+
+        '<div style="font-weight:700;font-size:1rem;color:#fff;">📷 Escanear folio de garantía</div>'+
+        '<button onclick="garScanClose()" style="background:none;border:none;color:#8b949e;font-size:1.4rem;cursor:pointer;line-height:1;">✕</button>'+
+      '</div>'+
+      '<div id="gar-scan-reader" style="width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:230px;"></div>'+
+      '<div id="gar-scan-msg" style="color:#8b949e;font-size:.8rem;text-align:center;margin-top:10px;min-height:18px;">Apunta la cámara al QR del folio</div>'+
+    '</div>';
+    document.body.appendChild(d);
+    try{
+      _garScanner=new Html5Qrcode("gar-scan-reader");
+      _garScanner.start({facingMode:"environment"},{fps:10,qrbox:{width:230,height:230}},
+        function(txt){ garScanHandle(txt); },
+        function(){}
+      ).catch(function(e){ var m=document.getElementById('gar-scan-msg'); if(m){ m.style.color='#f59e0b'; m.textContent='No se pudo abrir la cámara: '+(e&&e.message||e); } });
+    }catch(e){ var m2=document.getElementById('gar-scan-msg'); if(m2){ m2.style.color='#f59e0b'; m2.textContent='No se pudo iniciar el escáner: '+e.message; } }
+  }
+  if(window.Html5Qrcode){ go(); }
+  else{ var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'; s.onload=go; s.onerror=function(){ alert('No se pudo cargar el escáner QR.'); }; document.head.appendChild(s); }
+}
+function garScanClose(){ try{ if(_garScanner){ _garScanner.stop().then(function(){ try{_garScanner.clear();}catch(e){} _garScanner=null; }).catch(function(){ _garScanner=null; }); } }catch(e){ _garScanner=null; } var m=document.getElementById('gar-scan-modal'); if(m) m.remove(); }
+function garScanHandle(txt){
+  var folio=String(txt||'').trim();
+  if(!folio) return;
+  garScanClose();
+  var ifr=document.getElementById('gar-mobile-iframe');
+  if(ifr && ifr.contentWindow){ try{ ifr.contentWindow.postMessage({type:'GAR_OPEN_FOLIO', folio:folio},'*'); }catch(e){} }
 }
 
 // ═══════════════════════════════════════════════════════════════════

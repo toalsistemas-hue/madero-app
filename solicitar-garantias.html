@@ -292,6 +292,7 @@ window.addEventListener('message', function(e){
   var d=e.data||{};
   if(d.type==='SGD_AUTH'){ onAuth(d); return; }
   if(d.type==='SET_THEME'){ aplicarTemaLocal(d.tema); return; }
+  if(d.type==='GAR_OPEN_FOLIO'){ abrirFolioPorNumero(d.folio); return; }
   if(d.type==='SP_BRIDGE_RESPONSE'){ var p=_bridge.pend[d.callId]; if(!p) return; delete _bridge.pend[d.callId]; if(d.error) p.rej(new Error(d.error)); else p.res(d.result); }
 });
 function aplicarTemaLocal(t){ try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){} }
@@ -408,7 +409,7 @@ function debRender(fn, focusId){
   _debFocus=focusId; if(_debT) clearTimeout(_debT);
   _debT=setTimeout(function(){ fn(); if(_debFocus){ var el=document.getElementById(_debFocus); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} } } }, 280);
 }
-function setView(v){ S.view=v;
+function setView(v){ S.view=v; S.qrSel={};
   var a=document.getElementById('tab-folios'), b=document.getElementById('tab-solicitudes'), c=document.getElementById('tab-kpis'), d=document.getElementById('tab-rechazadas');
   if(a)a.classList.toggle('active',v==='folios'); if(b)b.classList.toggle('active',v==='solicitudes'); if(c)c.classList.toggle('active',v==='kpis'); if(d)d.classList.toggle('active',v==='rechazadas');
   render();
@@ -433,12 +434,16 @@ function renderTabla(tipo){
   if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
   document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':(tipo==='rechazadas'?' rechazada(s)':' folio(s)'));
-  var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button></div>';
+  var selQR = puedeQR() && (tipo==='folios');
+  var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button>'
+    +(selQR?'<button class="btn btn-sm" id="qr-print-btn" style="display:none;" onclick="imprimirQRSeleccion()">🏷️ Imprimir QR (0)</button><button class="btn btn-sm btn-ghost" onclick="S.qrSel={};render();">Quitar selección</button>':'')+'</div>';
   if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':(tipo==='rechazadas'?'solicitudes rechazadas':'folios'))+'.</div>'; body.innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="gtab"><tr>'
+    +(selQR?'<th style="width:30px;">🏷️</th>':'')
     +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Solicita</th><th>Sucursal</th><th>Cliente</th><th>Tipo doc.</th><th>Nº doc.</th><th>Artículos</th><th>Técnico</th></tr>';
   h+=items.map(function(t){
     return '<tr class="click" onclick="abrirFolio(\''+t.id+'\')">'
+      +(selQR?('<td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" '+((S.qrSel&&S.qrSel[t.id])?'checked':'')+' onclick="qrToggle(\''+t.id+'\',event)"></td>'):'')
       +'<td><b>'+esc(t.folio)+'</b></td>'
       +'<td>'+fmtD(t.fechaRegistro)+'</td>'
       +'<td><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></td>'
@@ -453,7 +458,43 @@ function renderTabla(tipo){
   }).join('');
   h+='</table></div>';
   body.innerHTML=h;
+  if(selQR) _qrUpdBar();
 }
+
+/* ---------- Impresión de códigos QR (técnico con acceso completo) ---------- */
+function puedeQR(){ return MODO!=='solicitar' && !!(S.completo || (S.user&&S.user.esAdmin)); }
+function cargarQrious(){ return new Promise(function(res,rej){ if(window.QRious) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; sc.onload=function(){res();}; sc.onerror=function(){rej(new Error('No se pudo cargar QRious'));}; document.head.appendChild(sc); }); }
+function _qrDataURL(texto){ var q=new QRious({ value:String(texto||''), size:420, level:'H', padding:8, background:'#ffffff', foreground:'#000000' }); return q.toDataURL('image/png'); }
+function _labelHTML(folio){ return '<div class="lbl"><div class="qrwrap"><img src="'+_qrDataURL(folio)+'"><div class="ctr">'+esc(folio)+'</div></div></div>'; }
+async function imprimirQRLista(folios, copias){
+  if(!folios||!folios.length){ toast('No hay folios para imprimir'); return; }
+  copias=Math.max(1, parseInt(copias||1)||1);
+  toast('Preparando etiquetas…');
+  try{ await cargarQrious(); }catch(e){ toast('No se pudo cargar la librería de QR'); return; }
+  var labels='';
+  folios.forEach(function(fol){ for(var c=0;c<copias;c++){ labels+=_labelHTML(fol); } });
+  var css='@page{margin:8mm;} *{box-sizing:border-box;} body{margin:0;font-family:Arial,Helvetica,sans-serif;} '
+    +'.sheet{display:flex;flex-wrap:wrap;gap:6mm;align-content:flex-start;padding:4mm;} '
+    +'.lbl{width:45mm;height:45mm;display:flex;align-items:center;justify-content:center;border:1px dashed #ccc;padding:2mm;} '
+    +'.qrwrap{position:relative;width:100%;height:100%;} '
+    +'.qrwrap img{width:100%;height:100%;display:block;} '
+    +'.ctr{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #000;border-radius:3px;padding:1px 4px;font-weight:bold;font-size:9pt;white-space:nowrap;line-height:1.1;} '
+    +'@media print{ .no-print{display:none;} .lbl{border:1px dashed #e5e5e5;} }';
+  var win=window.open('','_blank');
+  if(!win){ toast('Permite las ventanas emergentes para imprimir'); return; }
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Etiquetas QR Garantías</title><style>'+css+'</style></head><body>'
+    +'<div class="no-print" style="padding:8px 10px;font-family:Arial;background:#f1f5f9;border-bottom:1px solid #ddd;">'
+    +'<button onclick="window.print()" style="padding:6px 14px;font-weight:bold;cursor:pointer;">🖨️ Imprimir</button> '
+    +'<span style="color:#555;font-size:13px;margin-left:8px;">'+folios.length+' folio(s) · '+copias+' copia(s) c/u</span></div>'
+    +'<div class="sheet">'+labels+'</div>'
+    +'<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.print();}catch(e){}},500);};</scr'+'ipt>'
+    +'</body></html>');
+  win.document.close();
+}
+function imprimirQRDetalle(){ var t=S.curFolio; if(!t) return; var copias=window.prompt('¿Cuántas copias de la etiqueta de '+t.folio+'?','1'); if(copias===null) return; imprimirQRLista([t.folio], copias); }
+function qrToggle(id,ev){ if(ev&&ev.stopPropagation)ev.stopPropagation(); if(!S.qrSel)S.qrSel={}; if(S.qrSel[id])delete S.qrSel[id]; else S.qrSel[id]=true; _qrUpdBar(); }
+function _qrUpdBar(){ var n=S.qrSel?Object.keys(S.qrSel).length:0; var b=document.getElementById('qr-print-btn'); if(b){ b.style.display=n?'inline-block':'none'; b.textContent='🏷️ Imprimir QR ('+n+')'; } }
+function imprimirQRSeleccion(){ var ids=S.qrSel?Object.keys(S.qrSel):[]; var fols=ids.map(function(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); return t?t.folio:null; }).filter(Boolean); if(!fols.length){ toast('Selecciona al menos un folio'); return; } imprimirQRLista(fols, 1); }
 
 /* ---------- nuevo folio ---------- */
 function selOpts(arr,val){ return '<option value="">Selecciona…</option>'+arr.map(function(x){return '<option'+(val===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); }
@@ -701,6 +742,14 @@ async function crearFolio(){
 
 /* ---------- detalle ---------- */
 function abrirFolio(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); if(!t) return; S.curFolio=t; pintarDetalle(); abrir('m-det'); }
+// Abrir un folio por su NÚMERO (usado por el escaneo de QR desde la app móvil)
+function abrirFolioPorNumero(num){
+  num=String(num||'').trim().toUpperCase();
+  if(!num) return;
+  var t=(S.folios||[]).find(function(x){ return String(x.folio||'').trim().toUpperCase()===num; });
+  if(t){ S.curFolio=t; pintarDetalle(); abrir('m-det'); }
+  else { if(typeof toast==='function') toast('Folio '+num+' no encontrado'); S.filtros=S.filtros||{}; S.filtros.q=num; try{ render(); }catch(e){} }
+}
 function dF(l,v){ return '<div class="d-field"><span class="lbl">'+esc(l)+'</span><span class="val">'+esc(v||'—')+'</span></div>'; }
 function pintarDetalle(){
   var t=S.curFolio; if(!t) return;
@@ -803,6 +852,7 @@ function pintarDetalle(){
   if(MODO!=='solicitar' && hayEnv && (R.esAlmacen||R.esAdmin)){
     b+=bPrim("abrirCierre()",'✅ Confirmar recepción');
   }
+  if(puedeQR()){ b+='<button class="btn btn-sm" onclick="imprimirQRDetalle()">🏷️ Imprimir QR</button>'; }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
 }
