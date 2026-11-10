@@ -59,6 +59,41 @@ html[data-theme="claro"] #app-launcher [style*="color:#58a6ff"]{ color:#00528b !
 html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.05)"]{ background:#ffffff !important; border-color:#d7dee6 !important; }
 html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.1)"]{ border-color:#d7dee6 !important; color:#5a6b7b !important; }
 html[data-theme="claro"] #app-tema-btn{ background:#ffffff !important; border-color:#d7dee6 !important; color:#00528b !important; }
+/* ─── FabTracker (app shell) en tema claro ─── */
+html[data-theme="claro"] #app-shell-mobile{ background:#eef2f6; }
+html[data-theme="claro"] .app-hdr{ background:#ffffff !important; border-bottom-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-hdr-title{ color:#1b2733 !important; }
+html[data-theme="claro"] .app-bnav{ background:#ffffff !important; border-top-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-rp{ border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-ds{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-ofc{ background:#ffffff !important; border-bottom-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-ops-panel{ border-top-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-sa-card{ border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-sc{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-fnode{ border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-fnode-pending{ background:#f0f3f7 !important; }
+html[data-theme="claro"] .app-fi, html[data-theme="claro"] .app-fsel{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-ms, html[data-theme="claro"] .app-confirm-box{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] .app-prio-normal, html[data-theme="claro"] .app-c-est{ background:#eef2f6 !important; }
+html[data-theme="claro"] .app-xbtn, html[data-theme="claro"] .app-mv-btn, html[data-theme="claro"] .app-add-op-btn{ border-color:#d7dee6 !important; }
+/* Estilos en línea con rgba blancas → hacerlas visibles en claro (app + monitor) */
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.05)"],
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.04)"],
+html[data-theme="claro"] #monitor-screen [style*="rgba(255,255,255,.05)"]{ background:#ffffff !important; }
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.03)"]{ background:#f6f8fa !important; }
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.12)"],
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.1)"],
+html[data-theme="claro"] #app-shell-mobile [style*="rgba(255,255,255,.08)"],
+html[data-theme="claro"] #monitor-screen [style*="rgba(255,255,255,.1)"]{ border-color:#d7dee6 !important; }
+/* Encabezados de tablas (reporte por estación) */
+html[data-theme="claro"] #app-shell-mobile thead,
+html[data-theme="claro"] #app-shell-mobile th{ background:#00528b !important; color:#ffffff !important; }
+/* ─── Monitor de Producción en tema claro (base) ─── */
+html[data-theme="claro"] #monitor-screen{ background:#eef2f6 !important; color:#1b2733 !important; }
+html[data-theme="claro"] #monitor-screen [style*="#0a0f1a"],
+html[data-theme="claro"] #monitor-screen [style*="#0d1117"],
+html[data-theme="claro"] #monitor-screen [style*="#111820"],
+html[data-theme="claro"] #monitor-screen [style*="#16202b"]{ background:#ffffff !important; }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:"Archivo",sans-serif;background:#060e18;color:var(--text);min-height:100vh;overflow:hidden;}
 
