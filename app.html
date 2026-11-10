@@ -6,8 +6,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="FabTracker">
-<meta name="application-name" content="FabTracker">
+<meta name="apple-mobile-web-app-title" content="Madero">
+<meta name="application-name" content="Madero">
 <meta name="theme-color" content="#060e18">
 <meta name="description" content="FabTracker — Seguimiento de línea de producción Madero Equipos">
 <link rel="manifest" href="manifest.json">
@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <!-- Ícono estándar -->
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<title>FabTracker App v2.99</title>
+<title>Madero</title>
 
 <!-- MSAL Browser -->
 
@@ -39,6 +39,26 @@ body{background:#0d1117;color:#c9d1d9;font-family:'DM Sans',-apple-system,BlinkM
   --aaccent:#00b4d8;--aaccent2:#0077a8;--agreen:#22c55e;--ayellow:#f59e0b;
   --ared:#ef4444;--apurple:#a855f7;--aorange:#f97316;
 }
+/* ─── TEMA CLARO (colores institucionales) ─── */
+html[data-theme="claro"]{
+  --bg:#f5f7f9;--card:#ffffff;--hover:#eef3f8;--border:#d7dee6;--border2:#e2e8ef;
+  --text:#1b2733;--dim:#5a6b7b;--muted:#8094a6;
+  --accent:#00528b;--accent-l:#00528b;--green:#007a33;--yellow:#b8860b;
+  --red:#cf3333;--purple:#6b46c1;--orange:#c96a1e;
+  --abg:#eef2f6;--asurface:#ffffff;--acard:#ffffff;--aborder:rgba(0,0,0,.12);
+  --atext:#1b2733;--adim:#5a6b7b;--amuted:#8094a6;
+  --aaccent:#00528b;--aaccent2:#00406e;--agreen:#007a33;--ayellow:#b8860b;
+  --ared:#cf3333;--apurple:#6b46c1;--aorange:#c96a1e;
+}
+html[data-theme="claro"] body{ background:#eef2f6; color:var(--text); }
+/* Launcher (menú) en tema claro — usa colores en línea, por eso se sobreescriben puntualmente */
+html[data-theme="claro"] #app-launcher{ background:#eef2f6 !important; color:#1b2733 !important; }
+html[data-theme="claro"] #app-launcher [style*="color:#e6edf3"]{ color:#1b2733 !important; }
+html[data-theme="claro"] #app-launcher [style*="color:#8b949e"]{ color:#5a6b7b !important; }
+html[data-theme="claro"] #app-launcher [style*="color:#58a6ff"]{ color:#00528b !important; }
+html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.05)"]{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.1)"]{ border-color:#d7dee6 !important; color:#5a6b7b !important; }
+html[data-theme="claro"] #app-tema-btn{ background:#ffffff !important; border-color:#d7dee6 !important; color:#00528b !important; }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:"Archivo",sans-serif;background:#060e18;color:var(--text);min-height:100vh;overflow:hidden;}
 
@@ -848,8 +868,12 @@ tr:last-child td{border-bottom:none;}
         <div id="launcher-user" style="font-size:.7rem;color:#8b949e;"></div>
       </div>
     </div>
-    <button onclick="appGearLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.1);
-            color:#8b949e;padding:5px 12px;border-radius:6px;font-size:.7rem;cursor:pointer;">Salir</button>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button id="app-tema-btn" onclick="appToggleTema()" style="background:transparent;border:1px solid rgba(255,255,255,.1);
+              color:#8b949e;padding:5px 12px;border-radius:6px;font-size:.7rem;cursor:pointer;">☀️ Claro</button>
+      <button onclick="appGearLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.1);
+              color:#8b949e;padding:5px 12px;border-radius:6px;font-size:.7rem;cursor:pointer;">Salir</button>
+    </div>
   </div>
 
   <!-- Bienvenida -->
@@ -898,7 +922,7 @@ tr:last-child td{border-bottom:none;}
   <div class="app-hdr">
     <div class="app-hdr-brand">
       <div class="app-hdr-logo" onclick="_onAvatarTap()" style="cursor:pointer;user-select:none;">FM</div>
-      <div><div class="app-hdr-title">FabTracker</div><div class="app-hdr-sub" id="app-role-sub">Supervisor de Línea</div></div>
+      <div><div class="app-hdr-title">Madero</div><div class="app-hdr-sub" id="app-role-sub">Supervisor de Línea</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:6px;">
       <div class="app-role-pills">
@@ -2553,6 +2577,42 @@ async function appRenderLauncher() {
   }).join('');
 }
 
+// ─── Tema claro/oscuro en la app móvil ───
+window._appTema = 'oscuro';
+function appAplicarTema(t){
+  t=(t==='claro')?'claro':'oscuro';
+  window._appTema=t;
+  try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){}
+  try{ var ifr=document.getElementById('gar-mobile-iframe'); if(ifr&&ifr.contentWindow) ifr.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
+  var b=document.getElementById('app-tema-btn'); if(b) b.textContent=(t==='claro'?'🌙 Oscuro':'☀️ Claro');
+}
+async function appGuardarTema(t){
+  appAplicarTema(t);
+  try{ localStorage.setItem('app_tema', t); }catch(e){}
+  try{
+    if(APP_USER_PROFILE && APP_USER_PROFILE._spItemId){
+      var sid=await appGetSiteId();
+      await appGraphPatch('sites/'+sid+'/lists/Usuarios/items/'+APP_USER_PROFILE._spItemId+'/fields', { TemaPreferido: t });
+      APP_USER_PROFILE.tema=t;
+    }
+  }catch(e){ console.warn('[Tema] no se pudo guardar en perfil:', e.message); }
+}
+function appToggleTema(){ appGuardarTema(window._appTema==='claro'?'oscuro':'claro'); }
+// Pre-aplicar desde localStorage lo antes posible (evita parpadeo)
+(function(){ try{ var t=localStorage.getItem('app_tema'); if(t==='claro') appAplicarTema('claro'); }catch(e){} })();
+
+// Overlay de carga reutilizable (FabTracker/otros) mientras se bajan los datos.
+function _appShowLoading(msg){
+  var o=document.getElementById('app-loading-ov');
+  if(!o){ o=document.createElement('div'); o.id='app-loading-ov';
+    o.style.cssText='position:fixed;inset:0;z-index:690;background:rgba(6,14,24,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#e6edf3;font-family:Arial,Helvetica,sans-serif;';
+    o.innerHTML='<div style="width:40px;height:40px;border:3px solid rgba(255,255,255,.2);border-top-color:#1565C0;border-radius:50%;animation:appspin 1s linear infinite;"></div><div id="app-loading-msg" style="font-size:.9rem;"></div><style>@keyframes appspin{to{transform:rotate(360deg)}}</style>';
+    document.body.appendChild(o);
+  } else { o.style.display='flex'; }
+  var m=document.getElementById('app-loading-msg'); if(m) m.textContent=msg||'Cargando…';
+}
+function _appHideLoading(){ var o=document.getElementById('app-loading-ov'); if(o) o.style.display='none'; }
+
 function appLaunchPantalla(pantallaID) {
   // Puesto combinado "Sup_Pro / Monitor": exigir el PIN del Monitor para entrar a FabTracker
   // (evita que un operador del Monitor entre a FabTracker al reabrir la app).
@@ -2571,14 +2631,34 @@ function appLaunchPantalla(pantallaID) {
       APP.role = APP_USER_PROFILE.role || 'readonly';
     }
     if (typeof applyAppUserProfile === 'function') applyAppUserProfile();
-    if (typeof renderApp === 'function') renderApp();
+    if (!window._appDatosCargados) {
+      // Primera entrada a FabTracker: cargar datos ahora (no al ingresar a la app).
+      _appShowLoading('Cargando Fabricaciones…');
+      appLoadDataFromSP().then(function(){
+        window._appDatosCargados = true;
+        try {
+          (DB.activeOFs||[]).forEach(function(aof){
+            var hasActive=(aof.ops||[]).some(function(op){ return op.status==='running'||op.status==='paused'||op.status==='validating'; });
+            if(hasActive) APP.expanded[aof.of_sap]=true;
+          });
+        } catch(e){}
+        if (typeof fabMobileInit === 'function') fabMobileInit();
+        else if (typeof renderApp === 'function') renderApp();
+        if (typeof startSPPolling === 'function') startSPPolling();
+        _appHideLoading();
+      }).catch(function(){ _appHideLoading(); if (typeof renderApp === 'function') renderApp(); });
+    } else {
+      if (typeof renderApp === 'function') renderApp();
+    }
     return;
   }
   if (pantallaID === 'MonitorEstacion') {
-    monitorInit();
+    _appShowLoading('Cargando Monitor…');
+    Promise.resolve(monitorInit()).then(function(){ _appHideLoading(); }).catch(function(){ _appHideLoading(); });
     return;
   }
   if (pantallaID === 'Garantias') {
+    _appShowLoading('Cargando Garantías…');
     garMobileOpen();
     return;
   }
@@ -8018,10 +8098,12 @@ async function appLoginSuccess() {
   document.getElementById('app-login-status').textContent = '';
   // Initialize SP connection
   try { await appGetSiteId(); } catch(e) { console.warn('appGetSiteId:', e.message); }
-  await appLoadDataFromSP();
+  // Cargar SOLO el perfil del usuario (necesario para el menú). Los datos pesados de
+  // FabTracker (OFs, operaciones, cola…) se cargan al abrir esa pantalla, para que el
+  // menú aparezca de inmediato y no haya que esperar la descarga completa al ingresar.
   try {
     await appLoadUserProfile();
-    console.log('[appLoginSuccess] Profile loaded:', 
+    console.log('[appLoginSuccess] Profile loaded:',
       APP_USER_PROFILE ? (APP_USER_PROFILE.nombre + ' | role:' + APP_USER_PROFILE.role + ' | roles:' + JSON.stringify(APP_USER_PROFILE.roles)) : 'NULL');
   } catch(e) {
     console.warn('Profile load error:', e.message);
@@ -8039,17 +8121,14 @@ async function appLoginSuccess() {
       };
     }
   }
-  // Auto-expand OFs with active operations
-  DB.activeOFs.forEach(function(aof){
-    var hasActive = aof.ops.some(function(op){
-      return op.status==='running' || op.status==='paused' || op.status==='validating';
-    });
-    if(hasActive) APP.expanded[aof.of_sap] = true;
-  });
-  fabMobileInit();
-  // Show launcher — it will auto-skip to FabTracker if only 1 pantalla
+  // Aplicar tema: prioridad localStorage (este dispositivo); si no, la preferencia del perfil (web).
+  try{
+    var _lt=localStorage.getItem('app_tema');
+    if(_lt){ appAplicarTema(_lt); }
+    else if(APP_USER_PROFILE && APP_USER_PROFILE.tema){ appAplicarTema(APP_USER_PROFILE.tema); try{localStorage.setItem('app_tema',APP_USER_PROFILE.tema);}catch(e){} }
+  }catch(e){}
+  // Mostrar el menú de inmediato (los datos se cargan al entrar a cada pantalla).
   await appShowLauncher();
-  if (typeof startSPPolling === 'function') startSPPolling();
 }
 
 async function appDoLogin() {
@@ -8283,6 +8362,9 @@ window.addEventListener('message', async function(e){
   var d=e.data||{};
   // Identidad para el iframe de Garantías (lo pide al cargar con GAR_READY)
   if(d.type==='GAR_READY'){
+    try{ if(typeof _appHideLoading==='function') _appHideLoading(); }catch(_){}
+    // Enviar el tema actual al iframe para que coincida con la app
+    try{ if(e.source) e.source.postMessage({type:'SET_THEME', tema:(window._appTema||'oscuro')}, '*'); }catch(_){}
     try{
       if(e.source) e.source.postMessage({
         type:'SGD_AUTH',
@@ -9845,6 +9927,8 @@ async function appLoadUserProfile() {
       esAdmin:    pIsAdmin,
       puestoMovilID: null,
       canal_ntfy:    null,
+      tema:       uFields.TemaPreferido || '',
+      _spItemId:  userItem.id,
     };
 
     // 6. Enrich from FT_UsuariosMovil — canal ntfy + puesto móvil
