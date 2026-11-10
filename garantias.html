@@ -199,6 +199,27 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   </div>
 </div>
 
+<!-- Modal: opciones de impresión de QR -->
+<div class="modal-bg" id="m-qr">
+  <div class="modal" style="width:420px;">
+    <div class="modal-hd"><h3>Imprimir etiquetas QR</h3><button class="x" onclick="cerrar('m-qr')">✕</button></div>
+    <div class="modal-bd">
+      <div id="qr-count" style="color:var(--dim);font-size:.82rem;margin-bottom:12px;"></div>
+      <div class="fld"><label>Tamaño de etiqueta</label>
+        <select class="inp" id="qr-size">
+          <option value="grande">Grande (≈45 mm)</option>
+          <option value="chica">Chica (≈23 mm)</option>
+        </select>
+      </div>
+      <div class="fld"><label>Copias por folio</label><input class="inp" id="qr-copias" type="number" min="1" value="1"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="cerrar('m-qr')">Cancelar</button>
+      <button class="btn btn-primary" onclick="qrConfirmarImpresion()">🖨️ Imprimir</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: detalle folio -->
 <div class="modal-bg" id="m-det">
   <div class="modal">
@@ -461,40 +482,70 @@ function renderTabla(tipo){
   if(selQR) _qrUpdBar();
 }
 
-/* ---------- Impresión de códigos QR (técnico con acceso completo) ---------- */
-function puedeQR(){ return MODO!=='solicitar' && !!(S.completo || (S.user&&S.user.esAdmin)); }
+/* ---------- Impresión de códigos QR (SOLO técnico de garantías con acceso completo) ---------- */
+// Excluye a Encargado de Mostrador, Almacén y Jefe de almacén (aunque tengan acceso a la pantalla),
+// y a técnicos sin acceso completo. El Administrador General siempre puede.
+function puedeQR(){
+  if(MODO==='solicitar') return false;
+  var esAdmin=!!(S.user&&S.user.esAdmin);
+  if(esAdmin) return true;
+  if(!S.completo) return false; // requiere acceso completo (técnico de garantías)
+  var me=(S.user&&S.user.email)||'', c=S.cfg||{};
+  var esMostrador = !!me && me===lc(c.mostrador);
+  var esAlmacen   = !!me && (me===lc(c.almacen) || me===lc(c.almacenJefe));
+  return !esMostrador && !esAlmacen;
+}
 function cargarQrious(){ return new Promise(function(res,rej){ if(window.QRious) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; sc.onload=function(){res();}; sc.onerror=function(){rej(new Error('No se pudo cargar QRious'));}; document.head.appendChild(sc); }); }
 function _qrDataURL(texto){ var q=new QRious({ value:String(texto||''), size:420, level:'H', padding:8, background:'#ffffff', foreground:'#000000' }); return q.toDataURL('image/png'); }
 function _labelHTML(folio){ return '<div class="lbl"><div class="qrwrap"><img src="'+_qrDataURL(folio)+'"><div class="ctr">'+esc(folio)+'</div></div></div>'; }
-async function imprimirQRLista(folios, copias){
+async function imprimirQRLista(folios, copias, size){
   if(!folios||!folios.length){ toast('No hay folios para imprimir'); return; }
   copias=Math.max(1, parseInt(copias||1)||1);
+  var chica=(size==='chica');
   toast('Preparando etiquetas…');
   try{ await cargarQrious(); }catch(e){ toast('No se pudo cargar la librería de QR'); return; }
   var labels='';
   folios.forEach(function(fol){ for(var c=0;c<copias;c++){ labels+=_labelHTML(fol); } });
+  var lblmm=chica?'23mm':'45mm', gap=chica?'3mm':'6mm', ctrFont=chica?'5.5pt':'9pt', pad=chica?'1mm':'2mm';
   var css='@page{margin:8mm;} *{box-sizing:border-box;} body{margin:0;font-family:Arial,Helvetica,sans-serif;} '
-    +'.sheet{display:flex;flex-wrap:wrap;gap:6mm;align-content:flex-start;padding:4mm;} '
-    +'.lbl{width:45mm;height:45mm;display:flex;align-items:center;justify-content:center;border:1px dashed #ccc;padding:2mm;} '
+    +'.sheet{display:flex;flex-wrap:wrap;gap:'+gap+';align-content:flex-start;padding:4mm;} '
+    +'.lbl{width:'+lblmm+';height:'+lblmm+';display:flex;align-items:center;justify-content:center;border:1px dashed #ccc;padding:'+pad+';} '
     +'.qrwrap{position:relative;width:100%;height:100%;} '
     +'.qrwrap img{width:100%;height:100%;display:block;} '
-    +'.ctr{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #000;border-radius:3px;padding:1px 4px;font-weight:bold;font-size:9pt;white-space:nowrap;line-height:1.1;} '
+    +'.ctr{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #000;border-radius:3px;padding:0 3px;font-weight:bold;font-size:'+ctrFont+';white-space:nowrap;line-height:1.1;} '
     +'@media print{ .no-print{display:none;} .lbl{border:1px dashed #e5e5e5;} }';
   var win=window.open('','_blank');
   if(!win){ toast('Permite las ventanas emergentes para imprimir'); return; }
   win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Etiquetas QR Garantías</title><style>'+css+'</style></head><body>'
     +'<div class="no-print" style="padding:8px 10px;font-family:Arial;background:#f1f5f9;border-bottom:1px solid #ddd;">'
     +'<button onclick="window.print()" style="padding:6px 14px;font-weight:bold;cursor:pointer;">🖨️ Imprimir</button> '
-    +'<span style="color:#555;font-size:13px;margin-left:8px;">'+folios.length+' folio(s) · '+copias+' copia(s) c/u</span></div>'
+    +'<span style="color:#555;font-size:13px;margin-left:8px;">'+folios.length+' folio(s) · '+copias+' copia(s) c/u · etiqueta '+(chica?'chica':'grande')+'</span></div>'
     +'<div class="sheet">'+labels+'</div>'
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.print();}catch(e){}},500);};</scr'+'ipt>'
     +'</body></html>');
   win.document.close();
 }
-function imprimirQRDetalle(){ var t=S.curFolio; if(!t) return; var copias=window.prompt('¿Cuántas copias de la etiqueta de '+t.folio+'?','1'); if(copias===null) return; imprimirQRLista([t.folio], copias); }
+// Abre el modal de opciones (tamaño + copias) para uno o varios folios
+function openQRModal(folios){
+  if(!puedeQR()){ toast('No tienes permiso para generar etiquetas QR'); return; }
+  if(!folios||!folios.length){ toast('No hay folios para imprimir'); return; }
+  S.qrPending={folios:folios};
+  var c=document.getElementById('qr-count'); if(c) c.textContent=folios.length+' folio(s) seleccionado(s).';
+  var cp=document.getElementById('qr-copias'); if(cp) cp.value='1';
+  var sz=document.getElementById('qr-size'); if(sz) sz.value='grande';
+  abrir('m-qr');
+}
+function qrConfirmarImpresion(){
+  var fols=(S.qrPending&&S.qrPending.folios)||[];
+  var size=(document.getElementById('qr-size')||{}).value||'grande';
+  var cop=parseInt((document.getElementById('qr-copias')||{}).value||'1')||1;
+  cerrar('m-qr');
+  imprimirQRLista(fols, cop, size);
+}
+function imprimirQRDetalle(){ var t=S.curFolio; if(!t) return; openQRModal([t.folio]); }
 function qrToggle(id,ev){ if(ev&&ev.stopPropagation)ev.stopPropagation(); if(!S.qrSel)S.qrSel={}; if(S.qrSel[id])delete S.qrSel[id]; else S.qrSel[id]=true; _qrUpdBar(); }
 function _qrUpdBar(){ var n=S.qrSel?Object.keys(S.qrSel).length:0; var b=document.getElementById('qr-print-btn'); if(b){ b.style.display=n?'inline-block':'none'; b.textContent='🏷️ Imprimir QR ('+n+')'; } }
-function imprimirQRSeleccion(){ var ids=S.qrSel?Object.keys(S.qrSel):[]; var fols=ids.map(function(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); return t?t.folio:null; }).filter(Boolean); if(!fols.length){ toast('Selecciona al menos un folio'); return; } imprimirQRLista(fols, 1); }
+function imprimirQRSeleccion(){ var ids=S.qrSel?Object.keys(S.qrSel):[]; var fols=ids.map(function(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); return t?t.folio:null; }).filter(Boolean); if(!fols.length){ toast('Selecciona al menos un folio'); return; } openQRModal(fols); }
 
 /* ---------- nuevo folio ---------- */
 function selOpts(arr,val){ return '<option value="">Selecciona…</option>'+arr.map(function(x){return '<option'+(val===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); }
