@@ -220,6 +220,40 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
   </div>
 </div>
 
+<!-- Modal: Nuevo/Editar análisis de garantías -->
+<div class="modal-bg" id="m-ana">
+  <div class="modal" style="width:860px;max-width:96vw;">
+    <div class="modal-hd"><h3 id="ana-ttl">Nuevo análisis</h3><button class="x" onclick="cerrar('m-ana')">✕</button></div>
+    <div class="modal-bd">
+      <div class="grid2">
+        <div class="fld"><label>Nombre del análisis</label><input class="inp" id="ana-nombre" placeholder="Análisis de garantías 2025"></div>
+        <div class="fld"><label>Año</label><select class="inp" id="ana-anio" onchange="S.anaDraft.anio=this.value;"></select></div>
+      </div>
+      <div style="margin:14px 0 6px;display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:800;color:var(--green-l,#2ea043);">♻️ Recuperado (USD)</div><button class="btn btn-sm" type="button" onclick="anaAddPartida('recuperado')">＋ Agregar partida</button></div>
+      <div id="ana-sec-recuperado"></div>
+      <div style="margin:14px 0 6px;display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:800;color:#f59e0b;">🗑️ Chatarra (USD)</div><button class="btn btn-sm" type="button" onclick="anaAddPartida('chatarra')">＋ Agregar partida</button></div>
+      <div id="ana-sec-chatarra"></div>
+      <div style="margin:14px 0 6px;display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:800;color:var(--accent-l,#58a6ff);">⏳ Pendiente — Reclamación (USD)</div><button class="btn btn-sm" type="button" onclick="anaAddPartida('reclam')">＋ Agregar partida</button></div>
+      <div id="ana-sec-reclam"></div>
+      <div id="ana-totales" style="margin-top:14px;padding:10px 12px;border:1px solid var(--border-color,rgba(255,255,255,.12));border-radius:8px;background:var(--bg-card,rgba(255,255,255,.03));font-size:.85rem;"></div>
+      <div style="color:#fca5a5;font-size:.82rem;min-height:18px;margin-top:8px;" id="ana-err"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-ghost" onclick="cerrar('m-ana')">Cancelar</button>
+      <button class="btn btn-primary" id="ana-ok" onclick="guardarAnalisis()">Guardar análisis</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: seleccionar folios para una partida -->
+<div class="modal-bg" id="m-ana-fol">
+  <div class="modal" style="width:520px;max-width:94vw;">
+    <div class="modal-hd"><h3 id="ana-fol-ttl">Folios</h3><button class="x" onclick="cerrar('m-ana-fol')">✕</button></div>
+    <div class="modal-bd"><div style="color:var(--dim);font-size:.8rem;margin-bottom:8px;">Marca los folios que entran en esta partida. La cantidad se suma automáticamente.</div><div id="ana-fol-list" style="max-height:50vh;overflow:auto;"></div></div>
+    <div class="modal-ft"><button class="btn btn-ghost" onclick="cerrar('m-ana-fol')">Cancelar</button><button class="btn btn-primary" onclick="anaGuardarFolios()">Aplicar selección</button></div>
+  </div>
+</div>
+
 <!-- Modal: detalle folio -->
 <div class="modal-bg" id="m-det">
   <div class="modal">
@@ -282,7 +316,15 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
 
 <script>
 /* ═══════════════ GARANTÍAS (embebida) ═══════════════ */
-var L_FOLIOS='GAR_Folios', L_ARTICULOS='Articulos_Sap', L_CLIENTES='Clientes_Sap', L_CONFIG='GAR_Config';
+var L_FOLIOS='GAR_Folios', L_ARTICULOS='Articulos_Sap', L_CLIENTES='Clientes_Sap', L_CONFIG='GAR_Config', L_ANALISIS='GAR_Analisis';
+// Categorías del Análisis de Garantías (según el reporte "ANALISIS DE GARANTIAS")
+var ANA_CATS={
+  recuperado:['Proveedor','Reparación'],
+  chatarra:['Proveedor','Departamento','Equipo','Proyecto Colector','AFI Reparaciones'],
+  reclam:['Reclamación']
+};
+var ANA_SEC_LBL={ recuperado:'Recuperado (USD)', chatarra:'Chatarra (USD)', reclam:'Pendiente (USD)' };
+var ANA_SEC_COLOR={ recuperado:'#2ea043', chatarra:'#f59e0b', reclam:'#58a6ff' };
 var MODO=(function(){ try{ return (new URLSearchParams(location.search).get('modo')==='solicitar')?'solicitar':'ing'; }catch(e){ return 'ing'; } })();
 var SUCURSALES=['Torreón','Aguascalientes','Querétaro','Jalisco','Delicias','Houston','Chile','Puerto Rico','Shanghái'];
 var TIPODOC=['Orden de trabajo','Devolución','Factura','Orden de Fabricación','Pedido','Proyecto'];
@@ -291,7 +333,7 @@ var EVALUACION=['Pruebas en sitio','Panel de pruebas','Visual'];
 var TIPOGARANTIA=['Equipo','Departamento','Proveedor'];
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Documento enviado por solicitante':'#a855f7','Aplicado por mostrador':'#a855f7','Aplicado por almacén':'#a855f7','En almacén de garantías':'#58a6ff','Nota de crédito':'#a855f7','Enviado por garantías':'#f59e0b','Atendido':'#2ea043','Cerrado':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 
-var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, kfiltros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], cierreDocDraft:[], _cierreComent:'', _dispComent:'', curFolio:null, _loaded:false, _everLoaded:false, _autoT:null };
+var S={ user:null, completo:false, view:'folios', folios:[], enviarUsers:[], cfg:{calidad:'',mostrador:'',almacen:'',almacenJefe:'',cc:''}, cfgId:null, filtros:{}, kfiltros:{}, artDraft:[], fotoDraft:[], dispDraft:[], dispFotoDraft:[], dispDocDraft:[], accFileDraft:[], cierreDocDraft:[], _cierreComent:'', _dispComent:'', curFolio:null, _loaded:false, _everLoaded:false, _autoT:null, kpiMode:'estatus', analisis:[], _anaLoaded:false, anaDraft:null, anaSelFolTarget:null };
 var DISP_EQUIPO=['Chatarra','Reparación'], DISP_PROV=['Garantía recuperada','Garantía no recuperada'];
 
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -480,6 +522,171 @@ function renderTabla(tipo){
   h+='</table></div>';
   body.innerHTML=h;
   if(selQR) _qrUpdBar();
+}
+
+/* ═══════════════ ANÁLISIS DE GARANTÍAS ═══════════════ */
+function fmtMoney(n){ n=Number(n)||0; return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+var _anaPid=0;
+async function cargarAnalisis(){
+  try{
+    var items=await listGet(L_ANALISIS);
+    S.analisis=items.map(function(i){ var f=i.fields||{}; var d={}; try{ d=JSON.parse(f.AnData||'{}'); }catch(e){ d={}; }
+      return { id:i.id, nombre:f.Title||'Análisis', anio:f.AnAnio||d.anio||'', total:parseFloat(f.AnTotal||d.total||0)||0, partidas:(d.partidas||[]), creado:f.Created||'' }; });
+    S._anaLoaded=true;
+  }catch(e){ S.analisis=[]; S._anaLoaded=true; console.warn('[ana]',e&&e.message); }
+}
+function anaTotales(partidas){
+  var byCat={recuperado:{},chatarra:{},reclam:{}}, secTot={recuperado:0,chatarra:0,reclam:0}, total=0;
+  (partidas||[]).forEach(function(p){
+    var sec=p.seccion||'recuperado', cat=p.categoria||'(sin categoría)';
+    var val=(Number(p.cantidad)||0)*(Number(p.costoReal)||0);
+    if(!byCat[sec]) byCat[sec]={};
+    byCat[sec][cat]=(byCat[sec][cat]||0)+val; secTot[sec]=(secTot[sec]||0)+val; total+=val;
+  });
+  return { byCat:byCat, secTot:secTot, total:total };
+}
+function renderAnalisis(){
+  var body=document.getElementById('body');
+  var h=_kpiSubTabs();
+  if(!S._anaLoaded){ body.innerHTML=h+'<div class="empty"><span class="spin"></span> Cargando análisis…</div>'; cargarAnalisis().then(renderAnalisis); return; }
+  var hs=document.getElementById('h-sub'); if(hs) hs.textContent=S.analisis.length+' análisis';
+  h+='<div class="flt" style="gap:8px;">'+(puedeQR()?'<button class="btn btn-sm btn-primary" onclick="abrirNuevoAnalisis()">＋ Nuevo análisis</button>':'')+'</div>';
+  if(!S.analisis.length){ body.innerHTML=h+'<div class="empty">Aún no hay análisis.'+(puedeQR()?' Crea uno con “＋ Nuevo análisis”.':'')+'</div>'; return; }
+  h+='<div class="tbl-wrap"><table class="gtab"><tr><th>Análisis</th><th>Año</th><th>Total (USD)</th><th>Creado</th><th></th></tr>';
+  h+=S.analisis.slice().sort(function(a,b){ return (String(b.anio||'')).localeCompare(String(a.anio||'')) || (new Date(b.creado||0)-new Date(a.creado||0)); }).map(function(a){
+    return '<tr class="click" onclick="verAnalisis(\''+a.id+'\')"><td><b>'+esc(a.nombre)+'</b></td><td>'+esc(a.anio||'—')+'</td><td>$'+fmtMoney(a.total)+'</td><td>'+(a.creado?fmtD(a.creado):'—')+'</td>'
+      +'<td onclick="event.stopPropagation();">'+(puedeQR()?'<button class="btn btn-sm btn-danger" onclick="borrarAnalisis(\''+a.id+'\')">🗑</button>':'')+'</td></tr>';
+  }).join('');
+  h+='</table></div>'; body.innerHTML=h;
+}
+function verAnalisis(id){
+  var a=S.analisis.find(function(x){return String(x.id)===String(id);}); if(!a) return;
+  var t=anaTotales(a.partidas); var body=document.getElementById('body');
+  var h=_kpiSubTabs()+'<div class="flt" style="gap:8px;"><button class="btn btn-sm btn-ghost" onclick="S.kpiMode=\'analisis\';renderKPIs();">‹ Volver</button>'
+    +(puedeQR()?'<button class="btn btn-sm" onclick="abrirNuevoAnalisis(\''+a.id+'\')">✏️ Editar</button>':'')
+    +'<button class="btn btn-sm btn-primary" onclick="descargarAnalisisCSV(\''+a.id+'\')">⬇️ Descargar</button></div>';
+  h+='<div class="art-block"><div class="k" style="margin-bottom:8px;">'+esc(a.nombre)+' · Año '+esc(a.anio||'')+'</div>';
+  h+='<div class="tbl-wrap"><table class="gtab"><tr><th>Concepto</th><th style="text-align:right;">USD</th></tr>';
+  ['recuperado','chatarra','reclam'].forEach(function(sec){
+    h+='<tr style="background:'+hex2rgba(ANA_SEC_COLOR[sec],.14)+';"><td colspan="2"><b>'+ANA_SEC_LBL[sec]+'</b></td></tr>';
+    var cats=t.byCat[sec]||{};
+    ANA_CATS[sec].forEach(function(cat){ if(cats[cat]!=null) h+='<tr><td style="padding-left:20px;">'+esc(cat)+'</td><td style="text-align:right;">'+fmtMoney(cats[cat])+'</td></tr>'; });
+    Object.keys(cats).forEach(function(cat){ if(ANA_CATS[sec].indexOf(cat)<0) h+='<tr><td style="padding-left:20px;">'+esc(cat)+'</td><td style="text-align:right;">'+fmtMoney(cats[cat])+'</td></tr>'; });
+    h+='<tr><td style="text-align:right;color:var(--dim);">Subtotal</td><td style="text-align:right;font-weight:700;">'+fmtMoney(t.secTot[sec])+'</td></tr>';
+  });
+  h+='<tr style="background:'+hex2rgba('#00528b',.16)+';"><td><b>TOTAL</b></td><td style="text-align:right;font-weight:800;">$'+fmtMoney(t.total)+'</td></tr></table></div>';
+  var counts=[]; ['recuperado','chatarra','reclam'].forEach(function(sec){ if(t.secTot[sec]>0) counts.push({label:ANA_SEC_LBL[sec],value:t.secTot[sec],color:ANA_SEC_COLOR[sec]}); });
+  h+='<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-top:14px;"><canvas id="ana-pie" width="240" height="240" style="max-width:240px;"></canvas>'
+    +'<div style="flex:1;min-width:200px;">'+counts.map(function(c){var pct=t.total?Math.round(c.value/t.total*100):0;return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;"><span style="width:14px;height:14px;border-radius:3px;background:'+c.color+';display:inline-block;"></span><span style="flex:1;">'+esc(c.label)+'</span><b>$'+fmtMoney(c.value)+'</b> <span style="color:var(--dim);">('+pct+'%)</span></div>';}).join('')+'</div></div>';
+  h+='</div>'; body.innerHTML=h; dibujarPie('ana-pie', counts, t.total);
+}
+function abrirNuevoAnalisis(id){
+  if(!puedeQR()){ toast('Solo el técnico de garantías puede crear análisis'); return; }
+  var base={ id:null, nombre:'', anio:String(new Date().getFullYear()), partidas:[] };
+  if(id){ var a=S.analisis.find(function(x){return String(x.id)===String(id);}); if(a){ base={ id:a.id, nombre:a.nombre, anio:String(a.anio||base.anio), partidas:JSON.parse(JSON.stringify(a.partidas||[])) }; } }
+  base.partidas.forEach(function(p){ if(!p._pid) p._pid='p'+(++_anaPid); });
+  S.anaDraft=base;
+  document.getElementById('ana-err').textContent='';
+  document.getElementById('ana-nombre').value=base.nombre;
+  var anios=Array.from(new Set((S.folios||[]).map(function(t){return (t.fechaRegistro||'').slice(0,4);}).filter(Boolean)));
+  var cur=String(new Date().getFullYear()); if(anios.indexOf(cur)<0) anios.push(cur); if(anios.indexOf(base.anio)<0) anios.push(base.anio); anios.sort().reverse();
+  document.getElementById('ana-anio').innerHTML=anios.map(function(y){return '<option'+(y===base.anio?' selected':'')+'>'+y+'</option>';}).join('');
+  document.getElementById('ana-ttl').textContent=base.id?'Editar análisis':'Nuevo análisis';
+  anaRenderSecciones(); anaActualizarTotales(); abrir('m-ana');
+}
+function anaFind(pid){ return (S.anaDraft.partidas||[]).find(function(p){return p._pid===pid;}); }
+function anaSet(pid,key,val){ var p=anaFind(pid); if(p) p[key]=val; }
+function anaCalc(pid){ var p=anaFind(pid); if(!p) return; var sub=(Number(p.cantidad)||0)*(Number(p.costoReal)||0); p.subtotal=sub; var el=document.getElementById('ana-sub-'+pid); if(el) el.value=fmtMoney(sub); anaActualizarTotales(); }
+function anaAddPartida(sec){ S.anaDraft.partidas.push({ _pid:'p'+(++_anaPid), seccion:sec, categoria:'', folios:[], descripcion:'', articulo:'', cantidad:0, costoReal:'', subtotal:0 }); anaRenderSecciones(); anaActualizarTotales(); }
+function anaDelPartida(pid){ S.anaDraft.partidas=S.anaDraft.partidas.filter(function(p){return p._pid!==pid;}); anaRenderSecciones(); anaActualizarTotales(); }
+function anaFreeFieldsHTML(p){
+  var s='';
+  function fi(key,label,type){ return '<div class="fld"><label>'+label+'</label><input class="inp" '+(type?'type="'+type+'"':'')+' value="'+esc(p[key]||'')+'" oninput="anaSet(\''+p._pid+'\',\''+key+'\',this.value)"></div>'; }
+  function fsel(key,label,arr){ return '<div class="fld"><label>'+label+'</label><select class="inp" onchange="anaSet(\''+p._pid+'\',\''+key+'\',this.value)"><option value="">—</option>'+arr.map(function(x){return '<option'+(p[key]===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select></div>'; }
+  if(p.seccion==='chatarra'){ s='<div class="grid2">'+fsel('localExt','Local / Extranjero',['Local','Extranjero'])+fi('departamento','Departamento')+'</div><div class="grid2">'+fi('fechaDesc','Fecha de desc.','date')+fi('fechaDesc2','Fecha de desc. 2','date')+'</div>'; }
+  else if(p.seccion==='reclam'){ s='<div class="grid2">'+fi('fecha','Fecha','date')+'</div>'; }
+  else { s='<div class="grid2">'+fi('fechaRecepcion','Fecha de recepción')+fi('formaRecup','Forma de recuperación')+'</div>'; }
+  return s;
+}
+function anaPartidaHTML(p){
+  var catOpts='<option value="">Categoría…</option>'+ANA_CATS[p.seccion].map(function(c){return '<option'+(p.categoria===c?' selected':'')+'>'+c+'</option>';}).join('');
+  return '<div class="art-block" style="margin-bottom:8px;">'
+    +'<div class="grid3">'
+      +'<div class="fld"><label>Categoría <span class="req">*</span></label><select class="inp" onchange="anaSet(\''+p._pid+'\',\'categoria\',this.value)">'+catOpts+'</select></div>'
+      +'<div class="fld"><label>Folios de garantía</label><button class="btn btn-sm" type="button" onclick="anaAbrirFolios(\''+p._pid+'\')">🏷️ '+((p.folios||[]).length)+' seleccionado(s)</button></div>'
+      +'<div class="fld"><label>Cantidad (auto, editable)</label><input class="inp" type="number" value="'+esc(p.cantidad||0)+'" oninput="anaSet(\''+p._pid+'\',\'cantidad\',this.value);anaCalc(\''+p._pid+'\')"></div>'
+    +'</div>'
+    +'<div class="grid2">'
+      +'<div class="fld"><label>Descripción</label><input class="inp" value="'+esc(p.descripcion||'')+'" oninput="anaSet(\''+p._pid+'\',\'descripcion\',this.value)"></div>'
+      +'<div class="fld"><label># Artículo</label><input class="inp" value="'+esc(p.articulo||'')+'" oninput="anaSet(\''+p._pid+'\',\'articulo\',this.value)"></div>'
+    +'</div>'
+    +anaFreeFieldsHTML(p)
+    +'<div class="grid3">'
+      +'<div class="fld"><label>Costo real (USD)</label><input class="inp" type="number" step="0.01" value="'+esc(p.costoReal||'')+'" oninput="anaSet(\''+p._pid+'\',\'costoReal\',this.value);anaCalc(\''+p._pid+'\')"></div>'
+      +'<div class="fld"><label>Subtotal (auto)</label><input class="inp" id="ana-sub-'+p._pid+'" value="'+fmtMoney((Number(p.cantidad)||0)*(Number(p.costoReal)||0))+'" disabled></div>'
+      +'<div class="fld" style="display:flex;align-items:flex-end;"><button class="btn btn-sm btn-danger" type="button" onclick="anaDelPartida(\''+p._pid+'\')">🗑 Quitar partida</button></div>'
+    +'</div></div>';
+}
+function anaRenderSecciones(){
+  ['recuperado','chatarra','reclam'].forEach(function(sec){
+    var cont=document.getElementById('ana-sec-'+sec); if(!cont) return;
+    var parts=(S.anaDraft.partidas||[]).filter(function(p){return p.seccion===sec;});
+    cont.innerHTML=parts.map(anaPartidaHTML).join('')||'<div style="color:var(--dim);font-size:.8rem;padding:4px 0;">Sin partidas en esta sección.</div>';
+  });
+}
+function anaActualizarTotales(){
+  var t=anaTotales(S.anaDraft.partidas||[]); var el=document.getElementById('ana-totales');
+  if(el) el.innerHTML='Recuperado: <b>$'+fmtMoney(t.secTot.recuperado)+'</b> · Chatarra: <b>$'+fmtMoney(t.secTot.chatarra)+'</b> · Pendiente: <b>$'+fmtMoney(t.secTot.reclam)+'</b> &nbsp;|&nbsp; TOTAL: <b>$'+fmtMoney(t.total)+'</b>';
+}
+function anaAbrirFolios(pid){
+  S.anaSelFolTarget=pid; var p=anaFind(pid); var anio=S.anaDraft.anio;
+  var fols=(S.folios||[]).filter(function(t){ return (t.fechaRegistro||'').slice(0,4)===String(anio); });
+  var sel=(p&&p.folios)||[];
+  var h=fols.map(function(t){ var art=(t.articulos||[])[0]||{};
+    return '<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--border-color,rgba(255,255,255,.1));font-size:.82rem;cursor:pointer;">'
+      +'<input type="checkbox" value="'+esc(t.id)+'"'+(sel.indexOf(String(t.id))>=0?' checked':'')+'>'
+      +'<span style="flex:1;"><b>'+esc(t.folio)+'</b> · '+esc(((art.num||'')+' '+(art.desc||'')).slice(0,40))+' <span style="color:var(--dim);">('+((t.articulos||[]).length)+' art.)</span></span></label>';
+  }).join('') || '<div class="empty">No hay folios del año '+esc(anio)+'.</div>';
+  document.getElementById('ana-fol-ttl').textContent='Folios '+anio;
+  document.getElementById('ana-fol-list').innerHTML=h; abrir('m-ana-fol');
+}
+function anaGuardarFolios(){
+  var p=anaFind(S.anaSelFolTarget); if(!p){ cerrar('m-ana-fol'); return; }
+  var ids=Array.prototype.slice.call(document.querySelectorAll('#ana-fol-list input[type=checkbox]:checked')).map(function(c){return c.value;});
+  p.folios=ids; var cant=0, firstArt=null;
+  ids.forEach(function(id){ var t=(S.folios||[]).find(function(x){return String(x.id)===String(id);}); if(!t)return; (t.articulos||[]).forEach(function(a){ cant+=Number(a.cantidad)||0; if(!firstArt)firstArt=a; }); });
+  p.cantidad=cant; if(firstArt){ if(!p.descripcion)p.descripcion=firstArt.desc||''; if(!p.articulo)p.articulo=firstArt.num||''; }
+  p.subtotal=(Number(p.cantidad)||0)*(Number(p.costoReal)||0);
+  cerrar('m-ana-fol'); anaRenderSecciones(); anaActualizarTotales();
+}
+async function guardarAnalisis(){
+  var err=document.getElementById('ana-err'); err.textContent='';
+  var nombre=document.getElementById('ana-nombre').value.trim(); var anio=document.getElementById('ana-anio').value;
+  if(!nombre) nombre='Análisis '+anio;
+  if(!(S.anaDraft.partidas||[]).length){ err.textContent='Agrega al menos una partida.'; return; }
+  for(var i=0;i<S.anaDraft.partidas.length;i++){ if(!S.anaDraft.partidas[i].categoria){ err.textContent='Hay partidas sin categoría. Selecciónala en todas.'; return; } }
+  S.anaDraft.nombre=nombre; S.anaDraft.anio=anio;
+  S.anaDraft.partidas.forEach(function(p){ p.subtotal=(Number(p.cantidad)||0)*(Number(p.costoReal)||0); });
+  var t=anaTotales(S.anaDraft.partidas);
+  var fields={ Title:nombre, AnAnio:String(anio), AnTotal:t.total, AnData:JSON.stringify({ anio:anio, partidas:S.anaDraft.partidas, total:t.total }) };
+  var btn=document.getElementById('ana-ok'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    if(S.anaDraft.id){ await listUpdate(L_ANALISIS, S.anaDraft.id, fields); } else { await listCreate(L_ANALISIS, fields); }
+    cerrar('m-ana'); S._anaLoaded=false; await cargarAnalisis(); S.kpiMode='analisis'; renderKPIs(); toast('Análisis guardado');
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+  finally{ btn.disabled=false; btn.textContent='Guardar análisis'; }
+}
+async function borrarAnalisis(id){ if(!window.confirm('¿Eliminar este análisis?')) return; try{ await listDelete(L_ANALISIS, id); S._anaLoaded=false; await cargarAnalisis(); renderAnalisis(); toast('Análisis eliminado'); }catch(e){ toast('No se pudo eliminar'); } }
+function descargarAnalisisCSV(id){
+  var a=S.analisis.find(function(x){return String(x.id)===String(id);}); if(!a) return;
+  var cc=function(s){ s=String(s==null?'':s); return /[",\n\r]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; };
+  var L=['sep=,', cc('Análisis: '+a.nombre+' · Año '+a.anio), '', ['Sección','Categoría','Descripción','# Artículo','Cantidad','Costo real (USD)','Subtotal (USD)','Folios'].map(cc).join(',')];
+  (a.partidas||[]).forEach(function(p){ L.push([ANA_SEC_LBL[p.seccion]||p.seccion, p.categoria, p.descripcion, p.articulo, p.cantidad, p.costoReal, (Number(p.cantidad)||0)*(Number(p.costoReal)||0), ((p.folios||[]).map(function(fid){var t=(S.folios||[]).find(function(x){return String(x.id)===String(fid);});return t?t.folio:fid;}).join(' '))].map(cc).join(',')); });
+  var t=anaTotales(a.partidas); L.push(''); L.push(cc('TOTAL,'+fmtMoney(t.total)));
+  var blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob); var el=document.createElement('a');
+  el.href=url; el.download='Analisis_'+(a.nombre||'garantias').replace(/[^\w\- ]/g,'_')+'.csv'; document.body.appendChild(el); el.click();
+  setTimeout(function(){ try{document.body.removeChild(el);}catch(e){} URL.revokeObjectURL(url); },1500); toast('Descargado');
 }
 
 /* ---------- Impresión de códigos QR (SOLO técnico de garantías con acceso completo) ---------- */
@@ -1202,8 +1409,17 @@ function kpiConteos(list){
   arr.sort(function(a,b){ return b.value-a.value; });
   return arr;
 }
+function _kpiSubTabs(){
+  var e=(S.kpiMode!=='analisis'), a=(S.kpiMode==='analisis');
+  return '<div class="flt" style="gap:8px;margin-bottom:4px;">'
+    +'<button class="btn btn-sm '+(e?'btn-primary':'')+'" onclick="S.kpiMode=\'estatus\';renderKPIs();">📋 Estatus de folios</button>'
+    +'<button class="btn btn-sm '+(a?'btn-primary':'')+'" onclick="S.kpiMode=\'analisis\';renderKPIs();">📊 Análisis de garantías</button>'
+    +'</div>';
+}
 function renderKPIs(){
-  var body=document.getElementById('body'), f=S.kfiltros||{};
+  var body=document.getElementById('body');
+  if(S.kpiMode==='analisis'){ return renderAnalisis(); }
+  var f=S.kfiltros||{};
   var base=kpiBase();
   var anios=Array.from(new Set(base.map(kpiAnio).filter(Boolean))).sort().reverse();
   var list=kpiFiltrar(base);
@@ -1211,7 +1427,7 @@ function renderKPIs(){
   document.getElementById('h-sub').textContent=total+' folio(s)'+(Object.keys(f).some(function(k){return f[k];})?' (filtrado)':'');
   var selAnio='<option value="">Año: todos</option>'+anios.map(function(y){return '<option'+(String(f.anio)===y?' selected':'')+'>'+y+'</option>';}).join('');
   var selMes='<option value="">Mes: todos</option>'+MESES.map(function(nm,i){ var v=String(i+1); return '<option value="'+v+'"'+(String(f.mes)===v?' selected':'')+'>'+nm+'</option>'; }).join('');
-  var h='<div class="flt" style="flex-wrap:wrap;gap:8px;">'
+  var h=_kpiSubTabs()+'<div class="flt" style="flex-wrap:wrap;gap:8px;">'
     +'<input class="inp" id="kf-cliente" placeholder="🔎 Cliente" value="'+esc(f.cliente||'')+'" oninput="S.kfiltros.cliente=this.value;debRender(renderKPIs,\'kf-cliente\')" style="min-width:150px;">'
     +'<input class="inp" id="kf-establo" placeholder="🏠 Establo" value="'+esc(f.establo||'')+'" oninput="S.kfiltros.establo=this.value;debRender(renderKPIs,\'kf-establo\')" style="min-width:140px;">'
     +'<input class="inp" id="kf-articulo" placeholder="📦 Nº artículo" value="'+esc(f.articulo||'')+'" oninput="S.kfiltros.articulo=this.value;debRender(renderKPIs,\'kf-articulo\')" style="min-width:140px;">'
