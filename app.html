@@ -58,6 +58,8 @@ html[data-theme="claro"] #app-launcher [style*="color:#8b949e"]{ color:#5a6b7b !
 html[data-theme="claro"] #app-launcher [style*="color:#58a6ff"]{ color:#00528b !important; }
 html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.05)"]{ background:#ffffff !important; border-color:#d7dee6 !important; }
 html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.09)"]{ background:#ffffff !important; border-color:#d7dee6 !important; }
+html[data-theme="claro"] #app-launcher [style*="rgba(255, 255, 255, 0.09)"],
+html[data-theme="claro"] #app-launcher [style*="rgba(255, 255, 255, 0.05)"]{ background:#ffffff !important; border-color:#d7dee6 !important; }
 html[data-theme="claro"] #app-launcher [style*="rgba(255,255,255,.1)"]{ border-color:#d7dee6 !important; color:#5a6b7b !important; }
 html[data-theme="claro"] #app-tema-btn{ background:#ffffff !important; border-color:#d7dee6 !important; color:#00528b !important; }
 /* ─── FabTracker (app shell) en tema claro ─── */
@@ -2731,7 +2733,6 @@ function appLaunchPantalla(pantallaID) {
     return;
   }
   if (pantallaID === 'Garantias') {
-    _appShowLoading('Cargando Garantías…');
     garMobileOpen();
     return;
   }
@@ -8202,6 +8203,8 @@ async function appLoginSuccess() {
   }catch(e){}
   // Mostrar el menú de inmediato (los datos se cargan al entrar a cada pantalla).
   await appShowLauncher();
+  appInitBackHandler();
+  appCargarFotoUsuario();
 }
 
 async function appDoLogin() {
@@ -8501,19 +8504,76 @@ window.addEventListener('message', async function(e){
 function garMobileOpen(){
   var ov=document.getElementById('gar-mobile-overlay');
   if(!ov){
+    // Primera apertura: creamos el iframe y mostramos el spinner (se oculta con GAR_READY).
+    _appShowLoading('Cargando Garantías…');
     ov=document.createElement('div'); ov.id='gar-mobile-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:700;background:#0b1220;display:flex;flex-direction:column;';
     ov.innerHTML=''+
       '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#00528b;color:#fff;flex:0 0 auto;">'+
         '<button onclick="garMobileClose()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:1rem;cursor:pointer;">‹ Volver</button>'+
-        '<div style="font-weight:800;font-size:1rem;flex:1;">🛡️ Garantías</div>'+
+        '<div style="flex:1;"></div>'+
         '<button onclick="garScanOpen()" style="background:#ffffff;color:#00528b;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:.85rem;cursor:pointer;">📷 Escanear folio</button>'+
       '</div>'+
       '<iframe id="gar-mobile-iframe" src="garantias.html" style="flex:1;width:100%;border:0;background:#fff;"></iframe>';
     document.body.appendChild(ov);
-  } else { ov.style.display='flex'; }
+  } else {
+    // Reapertura: el iframe ya está cargado, solo mostramos el overlay (sin spinner).
+    ov.style.display='flex';
+    if(typeof _appHideLoading==='function') _appHideLoading();
+  }
 }
 function garMobileClose(){ var ov=document.getElementById('gar-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
+
+// ── Botón ATRÁS de Android: navegar DENTRO de la app en vez de salir y perder la sesión ──
+// Al estar todas las pantallas en un mismo archivo, el back del teléfono descargaba la página
+// (volvía a Microsoft). Interceptamos con el History API: back cierra el modal/overlay o vuelve
+// al menú; en el menú se mantiene dentro de la app (el usuario cierra con el botón de inicio).
+window._appBackReady=false;
+function appInitBackHandler(){
+  if(window._appBackReady) return; window._appBackReady=true;
+  try{ history.pushState({app:'base'},'',location.href); }catch(e){}
+  window.addEventListener('popstate', function(){
+    try{
+      // 1) Modal de escaneo abierto → cerrarlo
+      if(document.getElementById('gar-scan-modal')){ if(typeof garScanClose==='function') garScanClose(); history.pushState({app:'x'},''); return; }
+      if(document.getElementById('ft-scan-modal')){ if(typeof ftScanClose==='function') ftScanClose(); history.pushState({app:'x'},''); return; }
+      if(document.getElementById('mon-scan-modal')){ if(typeof monitorScanClose==='function') monitorScanClose(); history.pushState({app:'x'},''); return; }
+      // 2) Overlay de Garantías abierto → cerrarlo
+      var gov=document.getElementById('gar-mobile-overlay');
+      if(gov && gov.style.display!=='none'){ garMobileClose(); history.pushState({app:'x'},''); return; }
+      // 3) En FabTracker o Monitor → volver al menú
+      var shell=document.getElementById('app-shell-mobile');
+      var mon=document.getElementById('monitor-screen');
+      var launcher=document.getElementById('app-launcher');
+      var inShell=shell && getComputedStyle(shell).display!=='none';
+      var inMon=mon && getComputedStyle(mon).display!=='none';
+      if(inShell||inMon){
+        try{ if(typeof _spPollTimer!=='undefined' && _spPollTimer){ clearInterval(_spPollTimer); _spPollTimer=null; } }catch(e){}
+        if(shell) shell.style.display='none';
+        if(mon) mon.style.display='none';
+        if(launcher) launcher.style.display='flex';
+        history.pushState({app:'x'},''); return;
+      }
+    }catch(e){}
+    // 4) En el menú → mantener dentro de la app (re-empujar estado)
+    try{ history.pushState({app:'base'},''); }catch(e){}
+  });
+}
+
+// Foto de perfil del usuario (Microsoft Graph) en el menú y en el encabezado de FabTracker.
+async function appCargarFotoUsuario(){
+  try{
+    var tok=await appGetToken(); if(!tok) return;
+    var r=await fetch('https://graph.microsoft.com/v1.0/me/photo/$value',{headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok) return;
+    var b=await r.blob(); if(!b||!b.size) return;
+    var url=URL.createObjectURL(b);
+    var logo=document.getElementById('launcher-logo');
+    if(logo){ logo.innerHTML='<img src="'+url+'" alt="Foto" style="width:100%;height:100%;object-fit:cover;display:block;">'; logo.style.borderRadius='9px'; logo.style.overflow='hidden'; }
+    var hdr=document.querySelector('.app-hdr-logo');
+    if(hdr){ hdr.innerHTML='<img src="'+url+'" alt="Foto" style="width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;">'; }
+  }catch(e){}
+}
 
 var _garScanner=null;
 function garScanOpen(){
