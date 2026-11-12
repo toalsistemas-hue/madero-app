@@ -10637,6 +10637,9 @@ async function monitorInit() {
     monitorGoConfig();
   } else {
     monitorRender();
+    // Carga INMEDIATA de datos (si no, el primer tick del polling tarda ~10s y se ve
+    // "Sin operaciones activas"). El spinner se mantiene hasta que esto termina.
+    try { await appLoadDataFromSP(); _MON._lastFull=Date.now(); _MON._lastLight=Date.now(); monitorRender(); } catch(e) { console.warn('[Monitor] carga inicial:', e.message); }
     monitorStartPolling();
     // Inicializar pantalla de reposo e idle watchdog
     monitorInitSleepScreen();
