@@ -811,7 +811,18 @@ async function guardarEvaluacion(){
   }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
   finally{ btn.disabled=false; btn.textContent='Guardar evaluación'; }
 }
-function imprimirEvaluacion(ev){
+var _logoUrlCache=null;
+async function _getLogoUrl(){
+  if(_logoUrlCache!=null) return _logoUrlCache;
+  try{ var r=await spCall('list',{lista:'Configuracion', queryParams:'$expand=fields&$top=100'});
+    var it=((r&&r.value)||[]).find(function(i){ return ((i.fields||{}).Title||'')==='LogoURL'; });
+    _logoUrlCache = it ? ((it.fields.Valor||'').trim()) : '';
+  }catch(e){ _logoUrlCache=''; }
+  return _logoUrlCache;
+}
+async function imprimirEvaluacion(ev){
+  var logo=''; try{ logo=await _getLogoUrl(); }catch(e){ logo=''; }
+  var logoHtml = logo ? ('<img src="'+esc(logo)+'" style="height:48px;width:auto;" onerror="this.style.display=\'none\'">') : '';
   var fmtF=function(s){ if(!s)return''; var d=new Date(s); if(isNaN(d))return esc(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}); };
   var filas=(ev.articulos||[]).map(function(a){ return '<tr><td>'+esc(a.num)+'</td><td>'+esc(a.desc)+'</td><td style="text-align:center;">'+esc(a.cantidad||'')+'</td></tr>'; }).join('');
   for(var k=(ev.articulos||[]).length;k<3;k++){ filas+='<tr><td>&nbsp;</td><td></td><td></td></tr>'; }
@@ -820,7 +831,9 @@ function imprimirEvaluacion(ev){
     +'.hd{text-align:center;font-weight:bold;font-size:15px;margin-bottom:2px;} .cod{text-align:center;font-size:10px;margin-bottom:10px;} '
     +'.sec{background:#1f3a5f;color:#fff;font-weight:bold;text-align:center;padding:3px;} '
     +'.lbl{font-weight:bold;} .noborder td{border:none;padding:2px 4px;} .firma{margin-top:40px;text-align:center;border-top:1px solid #000;padding-top:3px;font-size:10px;}';
-  var h='<div class="hd">FORMATO SOLICITUD EVALUACIÓN DE ARTÍCULOS</div><div class="cod">CÓDIGO: MEO-SOT-FOR-001 · Folio: '+esc(ev.folio||'')+'</div>'
+  var h='<table class="noborder" style="width:100%;margin-bottom:4px;"><tr><td style="width:60px;">'+logoHtml+'</td>'
+      +'<td style="text-align:center;"><div class="hd">FORMATO SOLICITUD EVALUACIÓN DE ARTÍCULOS</div><div class="cod">CÓDIGO: MEO-SOT-FOR-001 · Folio: '+esc(ev.folio||'')+'</div></td>'
+      +'<td style="width:60px;"></td></tr></table>'
     +'<table class="t noborder" style="margin-bottom:8px;"><tr>'
       +'<td><span class="lbl">Tipo de evaluación:</span> '+esc(ev.tipoEval||'')+'</td>'
       +'<td><span class="lbl">Fecha:</span> '+fmtF(ev.fecha)+'</td>'
@@ -835,7 +848,10 @@ function imprimirEvaluacion(ev){
     +'<table class="t"><tr class="sec"><td style="width:20%;">No. PARTE</td><td>DESCRIPCIÓN</td><td style="width:12%;">CANTIDAD</td></tr>'+filas+'</table>'
     +'<table class="t" style="margin-top:8px;"><tr class="sec"><td>DESCRIPCIÓN DE LA FALLA</td></tr><tr><td style="height:50px;vertical-align:top;">'+esc(ev.falla||'')+'</td></tr></table>'
     +'<table class="t" style="margin-top:8px;"><tr class="sec"><td>COMENTARIOS Y OBSERVACIONES</td></tr><tr><td style="height:40px;vertical-align:top;">'+esc(ev.comentarios||'')+'</td></tr></table>'
-    +'<div class="firma" style="width:60%;margin-left:auto;margin-right:auto;">FIRMA DEL SOLICITANTE</div>';
+    +'<table class="noborder" style="width:100%;margin-top:50px;"><tr>'
+      +'<td style="width:50%;"><div class="firma" style="width:80%;margin:0 auto;">FIRMA DEL SOLICITANTE</div></td>'
+      +'<td style="width:50%;"><div class="firma" style="width:80%;margin:0 auto;">FIRMA DEL TÉCNICO DE SOPORTE</div></td>'
+    +'</tr></table>';
   var win=window.open('','_blank'); if(!win){ toast('Permite las ventanas emergentes para imprimir'); return; }
   win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Evaluación '+esc(ev.folio||'')+'</title><style>'+css+'</style></head><body>'
     +'<div class="no-print" style="padding:6px 0;"><button onclick="window.print()" style="padding:6px 14px;font-weight:bold;cursor:pointer;">🖨️ Imprimir</button></div>'
@@ -895,7 +911,7 @@ function pintarDetalle(){
       b+='<button class="btn btn-sm btn-ok" onclick="pedirAccion(\'cerrar\')">✔ Cerrar ticket</button>';
     }
   }
-  if(t.tipo===EVAL_TIPO_TICKET){ b+='<button class="btn btn-sm" onclick="reimprimirEvaluacion(\''+esc(t.folio)+'\')">🖨️ Comprobante</button>'; }
+  if(t.tipo===EVAL_TIPO_TICKET && MODO!=='solicitar'){ b+='<button class="btn btn-sm" onclick="reimprimirEvaluacion(\''+esc(t.folio)+'\')">🖨️ Comprobante</button>'; }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
 }
