@@ -122,7 +122,8 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 .fld label{display:block;font-size:.74rem;color:var(--dim);margin-bottom:4px;}
 .req{color:#fca5a5;}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-@media(max-width:620px){.grid2{grid-template-columns:1fr;}}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+@media(max-width:620px){.grid2,.grid3{grid-template-columns:1fr;}}
 
 /* Artículos */
 .art-row{display:flex;gap:8px;align-items:center;margin-bottom:7px;}
@@ -194,6 +195,10 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
         <div class="fld"><label>Tipo de ticket <span class="req">*</span></label><select class="inp" id="f-tipo"><option value="">Selecciona…</option></select></div>
         <div class="fld"><label>Prioridad <span class="req">*</span></label><select class="inp" id="f-prio"><option>Baja</option><option selected>Media</option><option>Alta</option><option>Urgente</option></select></div>
       </div>
+      <div class="fld" id="fld-eval-chk" style="display:none;">
+        <label class="chk-lbl"><input type="checkbox" id="f-eval-chk" onchange="evalToggle()"> 📝 Solicitud evaluación de artículos</label>
+      </div>
+      <div id="tkt-normal">
       <div class="grid2">
         <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="f-solicita" placeholder="Nombre de quien solicita"></div>
         <div class="fld"><label>Correo del solicitante <span class="req">*</span></label><input class="inp" id="f-solicita-mail" placeholder="correo@..."></div>
@@ -219,6 +224,54 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
         <select class="inp" id="f-part-skill" onchange="S.partFiltroSkill=this.value;renderParts();" style="width:auto;min-width:200px;margin-bottom:8px;"><option value="">Filtrar por skill: todas</option></select>
         <div class="part-grid" id="f-parts"></div>
       </div>
+      </div><!-- /tkt-normal -->
+
+      <!-- ===== FORMATO: SOLICITUD EVALUACIÓN DE ARTÍCULOS ===== -->
+      <div id="tkt-eval" style="display:none;">
+        <div style="font-weight:800;color:var(--accent-l);border-bottom:2px solid var(--accent);padding-bottom:4px;margin:4px 0 12px;">FORMATO SOLICITUD EVALUACIÓN DE ARTÍCULOS</div>
+        <div class="grid3">
+          <div class="fld"><label>Tipo de evaluación <span class="req">*</span></label><select class="inp" id="ev-tipoeval"><option>Soporte</option><option>Ingeniería</option><option>Calidad</option></select></div>
+          <div class="fld"><label>Folio</label><input class="inp" id="ev-folio" placeholder="(automático)"></div>
+          <div class="fld"><label>Fecha compromiso de respuesta</label><input class="inp" id="ev-fcompromiso" type="date"></div>
+        </div>
+        <div class="grid3">
+          <div class="fld"><label>No. Cliente</label><input class="inp" id="ev-numcli" placeholder="C000159" onblur="evalCliLookup()"></div>
+          <div class="fld" style="grid-column:span 2;"><label>Cliente</label><input class="inp" id="ev-cli" placeholder="(automático)" disabled></div>
+        </div>
+        <div class="grid3">
+          <div class="fld"><label>Establo</label><input class="inp" id="ev-establo"></div>
+          <div class="fld"><label>Tipo de documento</label><input class="inp" id="ev-tipodoc" placeholder="OF / Requi Manual / Pedido…"></div>
+          <div class="fld"><label>No. documento</label><input class="inp" id="ev-numdoc" placeholder="15922"></div>
+        </div>
+        <div class="grid2">
+          <div class="fld"><label>Solicita <span class="req">*</span></label><input class="inp" id="ev-solicita"></div>
+          <div class="fld"><label>Departamento</label><input class="inp" id="ev-depto"></div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:12px 0 6px;">
+          <div style="font-weight:700;">Artículos</div>
+          <button class="btn btn-sm" type="button" onclick="evalArtAdd()">＋ Agregar artículo</button>
+        </div>
+        <div id="ev-arts"></div>
+        <div class="fld"><label>Descripción de la falla <span class="req">*</span></label><textarea class="inp" id="ev-falla" rows="3"></textarea></div>
+        <div class="fld"><label>Comentarios y observaciones</label><textarea class="inp" id="ev-coment" rows="2"></textarea></div>
+        <div style="font-weight:800;color:var(--accent-l);border-bottom:1px solid var(--border-color);padding-bottom:4px;margin:12px 0 10px;">Evaluación aplicada (técnico)</div>
+        <div class="grid3">
+          <div class="fld"><label>Tipo de evaluación aplicada</label><input class="inp" id="ev-evalaplicada"></div>
+          <div class="fld"><label>Garantía</label><input class="inp" id="ev-garantia"></div>
+          <div class="fld"><label>Departamento (cargo)</label><input class="inp" id="ev-deptocargo"></div>
+        </div>
+        <div class="grid3">
+          <div class="fld"><label>Técnico</label><input class="inp" id="ev-tecnico"></div>
+          <div class="fld"><label>¿Cuántos funcionan?</label><input class="inp" id="ev-funcionan" type="number" min="0"></div>
+          <div class="fld"><label>¿Cuántos no funcionan?</label><input class="inp" id="ev-nofuncionan" type="number" min="0"></div>
+        </div>
+        <div class="grid2">
+          <div class="fld"><label>¿Cuántos se pueden reparar?</label><input class="inp" id="ev-reparar" type="number" min="0"></div>
+          <div class="fld"><label>Coordinador IDI</label><input class="inp" id="ev-coordidi"></div>
+        </div>
+        <div class="fld"><label>Resolución</label><textarea class="inp" id="ev-resolucion" rows="2"></textarea></div>
+      </div>
+
       <div style="color:#fca5a5;font-size:.8rem;min-height:18px;" id="new-err"></div>
     </div>
     <div class="modal-ft">
@@ -283,13 +336,15 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 <script>
 /* ═══════════════ TICKETS DE INGENIERÍA (embebida) ═══════════════ */
 var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros', L_ARTICULOS='Articulos_Sap', L_SKILLS='TKT_Skills';
+var L_EVAL='TKT_Evaluaciones', L_CLIENTES='Clientes_Sap';
+var EVAL_TIPO_TICKET='Solicitud evaluación de artículos';
 // Modo de la pantalla: 'ing' (Ingeniería, por defecto) o 'solicitar' (usuarios de otros deptos).
 var MODO = (function(){ try{ return (new URLSearchParams(location.search).get('modo')==='solicitar')?'solicitar':'ing'; }catch(e){ return 'ing'; } })();
 var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Atendido':'#2ea043','Cancelado':'#ef4444','Rechazado':'#9ca3af'};
 var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#8b949e'};
 
 var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], skills:[], soloMias:false, filtros:{}, partFiltroSkill:'', skillFiltro:'',
-          curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null };
+          curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null, evalMode:false, evalArts:[] };
 
 /* utilidades */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -560,7 +615,60 @@ function abrirNuevo(){
   S.partSel={}; S.partFiltroSkill='';
   var selSk=document.getElementById('f-part-skill'); selSk.innerHTML='<option value="">Filtrar por skill: todas</option>'+S.skills.map(function(s){return '<option>'+esc(s)+'</option>';}).join(''); selSk.value='';
   renderParts();
+  // Evaluación de artículos: disponible solo en Ingeniería (no en modo solicitar)
+  S.evalMode=false; var ec=document.getElementById('f-eval-chk'); if(ec) ec.checked=false;
+  var fec=document.getElementById('fld-eval-chk'); if(fec) fec.style.display=(MODO==='solicitar')?'none':'';
+  resetEval(); evalToggle();
+  document.getElementById('new-ok').textContent='Crear ticket';
   abrir('m-new');
+}
+/* ═══════════════ SOLICITUD EVALUACIÓN DE ARTÍCULOS ═══════════════ */
+function resetEval(){
+  S.evalArts=[{num:'',desc:'',cantidad:''}];
+  ['ev-folio','ev-fcompromiso','ev-numcli','ev-cli','ev-establo','ev-tipodoc','ev-numdoc','ev-solicita','ev-depto','ev-falla','ev-coment','ev-evalaplicada','ev-garantia','ev-deptocargo','ev-tecnico','ev-funcionan','ev-nofuncionan','ev-reparar','ev-coordidi','ev-resolucion'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+  var tt=document.getElementById('ev-tipoeval'); if(tt) tt.value='Soporte';
+  var tec=document.getElementById('ev-tecnico'); if(tec && S.user) tec.value=S.user.nombre||'';
+  evalArtRender();
+}
+function evalToggle(){
+  var on=document.getElementById('f-eval-chk') ? document.getElementById('f-eval-chk').checked : false;
+  S.evalMode=on;
+  var n=document.getElementById('tkt-normal'); if(n) n.style.display=on?'none':'';
+  var e=document.getElementById('tkt-eval'); if(e) e.style.display=on?'':'none';
+  document.getElementById('new-ok').textContent=on?'Guardar evaluación':'Crear ticket';
+}
+function evalArtAdd(){ if(S.evalArts.length>=10){ toast('Máximo 10 artículos'); return; } S.evalArts.push({num:'',desc:'',cantidad:''}); evalArtRender(); }
+function evalArtRender(){
+  var cont=document.getElementById('ev-arts'); if(!cont) return;
+  cont.innerHTML=S.evalArts.map(function(a,i){
+    return '<div class="grid3" style="margin-bottom:6px;">'
+      +'<input class="inp" maxlength="12" placeholder="No. parte (EO700181)" value="'+esc(a.num)+'" oninput="S.evalArts['+i+'].num=this.value.toUpperCase();this.value=this.value.toUpperCase();" onblur="evalArtLookup('+i+')">'
+      +'<input class="inp" placeholder="Descripción (automática)" value="'+esc(a.desc)+'" oninput="S.evalArts['+i+'].desc=this.value;">'
+      +'<div style="display:flex;gap:6px;"><input class="inp" type="number" min="1" placeholder="Cant." value="'+esc(a.cantidad)+'" oninput="S.evalArts['+i+'].cantidad=this.value;">'
+        +(S.evalArts.length>1?'<button class="btn btn-sm btn-danger" type="button" onclick="S.evalArts.splice('+i+',1);evalArtRender();">✕</button>':'')+'</div>'
+    +'</div>';
+  }).join('');
+}
+async function evalArtLookup(i){
+  var a=S.evalArts[i]; if(!a) return; var num=(a.num||'').trim().toUpperCase(); a.num=num;
+  if(!num){ a.desc=''; evalArtRender(); return; }
+  a.desc='Buscando…'; evalArtRender();
+  try{
+    var r=await spCall('list',{lista:L_ARTICULOS, queryParams:"$expand=fields&$top=1&$filter=fields/Title eq '"+num.replace(/'/g,"''")+"'"});
+    var it=(r&&r.value&&r.value[0])?r.value[0].fields:null;
+    a.desc = it ? (it.Descripcion||it['Descripción']||'(sin descripción)') : '(no encontrado)';
+  }catch(e){ a.desc='(no se pudo buscar)'; }
+  evalArtRender();
+}
+async function evalCliLookup(){
+  var inp=document.getElementById('ev-numcli'), out=document.getElementById('ev-cli');
+  var num=(inp.value||'').trim(); if(!num){ out.value=''; return; }
+  out.value='Buscando…';
+  try{
+    var r=await spCall('list',{lista:L_CLIENTES, queryParams:"$expand=fields&$top=1&$filter=fields/Title eq '"+num.replace(/'/g,"''")+"'"});
+    var it=(r&&r.value&&r.value[0])?r.value[0].fields:null;
+    out.value = it ? (it.Nombre||it.Cliente||it.Descripcion||it['Descripción']||'(sin nombre)') : '(no encontrado)';
+  }catch(e){ out.value='(no se pudo buscar)'; }
 }
 function artOtroToggle(){
   var on=document.getElementById('f-art-otro-chk').checked;
@@ -607,6 +715,7 @@ async function folioNuevo(){
   return 'ING-'+y+'-'+String(n+1).padStart(4,'0');
 }
 async function crearTicket(){
+  if(S.evalMode){ return guardarEvaluacion(); }
   var err=document.getElementById('new-err'); err.textContent='';
   var esSolic=(MODO==='solicitar');
   var tipo=document.getElementById('f-tipo').value;
@@ -651,6 +760,87 @@ async function crearTicket(){
     cerrar('m-new'); await loadData(); toast(esSolic?('Solicitud enviada: '+folio):('Ticket creado: '+folio));
   }catch(e){ err.textContent='No se pudo crear. '+((e&&e.message)||''); }
   finally{ btn.disabled=false; btn.textContent='Crear ticket'; }
+}
+
+function folioEvalNuevo(){
+  var y=new Date().getFullYear(), n=0;
+  S.tickets.forEach(function(t){ var m=/EVAL-(\d{4})-(\d+)/.exec(t.folio||''); if(m&&m[1]==String(y)){ var k=parseInt(m[2],10); if(k>n)n=k; } });
+  return 'EVAL-'+y+'-'+String(n+1).padStart(4,'0');
+}
+async function guardarEvaluacion(){
+  var err=document.getElementById('new-err'); err.textContent='';
+  var g=function(id){ var el=document.getElementById(id); return el?el.value.trim():''; };
+  var tipoeval=g('ev-tipoeval'), solicita=g('ev-solicita'), falla=g('ev-falla');
+  var arts=(S.evalArts||[]).filter(function(a){return (a.num||'').trim();}).map(function(a){ return { num:a.num.trim().toUpperCase(), desc:(a.desc||''), cantidad:(a.cantidad||'') }; });
+  if(!solicita){ err.textContent='Escribe quién solicita.'; return; }
+  if(!arts.length){ err.textContent='Agrega al menos un artículo (No. parte).'; return; }
+  if(!falla){ err.textContent='Escribe la descripción de la falla.'; return; }
+  var btn=document.getElementById('new-ok'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    var folioT=await folioNuevo();
+    var folioEv=g('ev-folio')||folioEvalNuevo();
+    var ahora=nowISO();
+    // 1) Registrar como TICKET con estatus Atendido
+    var tkFields={
+      Title:folioT, TkTipo:EVAL_TIPO_TICKET, TkPrioridad:document.getElementById('f-prio').value||'Media',
+      TkUsuarioNombre:(S.user?S.user.nombre:''), TkUsuarioCorreo:(S.user?S.user.email:''),
+      TkSolicita:solicita, TkSolicitaCorreo:'',
+      TkDepartamento:g('ev-depto')||g('ev-cli')||'—',
+      TkArticulos:JSON.stringify(arts), TkArticulosOtro:'',
+      TkDescripcion:falla, TkParticipantes:'[]',
+      TkOrigen:'Ingenieria', TkEstatus:'Atendido',
+      TkFechaRegistro:ahora, TkFechaCierre:ahora, TkComentarioCierre:'Evaluación de artículos ('+folioEv+')'
+    };
+    var crT=await listCreate(L_TICKETS, tkFields);
+    // 2) Registrar la EVALUACIÓN completa
+    var evObj={
+      tipoEval:tipoeval, folio:folioEv, fecha:ahora, fechaCompromiso:g('ev-fcompromiso'),
+      numCliente:g('ev-numcli'), cliente:g('ev-cli'), establo:g('ev-establo'),
+      tipoDoc:g('ev-tipodoc'), numDoc:g('ev-numdoc'), solicita:solicita, departamento:g('ev-depto'),
+      articulos:arts, falla:falla, comentarios:g('ev-coment'),
+      evalAplicada:g('ev-evalaplicada'), garantia:g('ev-garantia'), deptoCargo:g('ev-deptocargo'),
+      tecnico:g('ev-tecnico'), funcionan:g('ev-funcionan'), noFuncionan:g('ev-nofuncionan'),
+      reparar:g('ev-reparar'), coordIDI:g('ev-coordidi'), resolucion:g('ev-resolucion'),
+      ticketFolio:folioT
+    };
+    var evFields={ Title:folioEv, EvTicketFolio:folioT, EvTipoEval:tipoeval, EvSolicita:solicita, EvCliente:g('ev-cli'), EvFecha:ahora, EvData:JSON.stringify(evObj) };
+    try{ await listCreate(L_EVAL, evFields); }catch(e){ console.warn('[eval list]',e&&e.message); }
+    cerrar('m-new'); await loadData(); toast('Evaluación guardada: '+folioEv);
+    // 3) Ofrecer impresión del comprobante del solicitante
+    setTimeout(function(){ if(window.confirm('¿Imprimir el comprobante para el solicitante?')) imprimirEvaluacion(evObj); }, 300);
+  }catch(e){ err.textContent='No se pudo guardar. '+((e&&e.message)||''); }
+  finally{ btn.disabled=false; btn.textContent='Guardar evaluación'; }
+}
+function imprimirEvaluacion(ev){
+  var fmtF=function(s){ if(!s)return''; var d=new Date(s); if(isNaN(d))return esc(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}); };
+  var filas=(ev.articulos||[]).map(function(a){ return '<tr><td>'+esc(a.num)+'</td><td>'+esc(a.desc)+'</td><td style="text-align:center;">'+esc(a.cantidad||'')+'</td></tr>'; }).join('');
+  for(var k=(ev.articulos||[]).length;k<3;k++){ filas+='<tr><td>&nbsp;</td><td></td><td></td></tr>'; }
+  var css='@page{margin:12mm;} *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;} body{margin:0;color:#111;font-size:11px;} '
+    +'.t{width:100%;border-collapse:collapse;} .t td{border:1px solid #000;padding:3px 5px;} '
+    +'.hd{text-align:center;font-weight:bold;font-size:15px;margin-bottom:2px;} .cod{text-align:center;font-size:10px;margin-bottom:10px;} '
+    +'.sec{background:#1f3a5f;color:#fff;font-weight:bold;text-align:center;padding:3px;} '
+    +'.lbl{font-weight:bold;} .noborder td{border:none;padding:2px 4px;} .firma{margin-top:40px;text-align:center;border-top:1px solid #000;padding-top:3px;font-size:10px;}';
+  var h='<div class="hd">FORMATO SOLICITUD EVALUACIÓN DE ARTÍCULOS</div><div class="cod">CÓDIGO: MEO-SOT-FOR-001 · Folio: '+esc(ev.folio||'')+'</div>'
+    +'<table class="t noborder" style="margin-bottom:8px;"><tr>'
+      +'<td><span class="lbl">Tipo de evaluación:</span> '+esc(ev.tipoEval||'')+'</td>'
+      +'<td><span class="lbl">Fecha:</span> '+fmtF(ev.fecha)+'</td>'
+      +'<td><span class="lbl">Compromiso resp.:</span> '+fmtF(ev.fechaCompromiso)+'</td></tr>'
+    +'<tr><td><span class="lbl">No. Cliente:</span> '+esc(ev.numCliente||'')+'</td>'
+      +'<td colspan="2"><span class="lbl">Cliente:</span> '+esc(ev.cliente||'')+'</td></tr>'
+    +'<tr><td><span class="lbl">Establo:</span> '+esc(ev.establo||'')+'</td>'
+      +'<td><span class="lbl">Tipo doc.:</span> '+esc(ev.tipoDoc||'')+'</td>'
+      +'<td><span class="lbl">No.:</span> '+esc(ev.numDoc||'')+'</td></tr>'
+    +'<tr><td><span class="lbl">Solicita:</span> '+esc(ev.solicita||'')+'</td>'
+      +'<td colspan="2"><span class="lbl">Departamento:</span> '+esc(ev.departamento||'')+'</td></tr></table>'
+    +'<table class="t"><tr class="sec"><td style="width:20%;">No. PARTE</td><td>DESCRIPCIÓN</td><td style="width:12%;">CANTIDAD</td></tr>'+filas+'</table>'
+    +'<table class="t" style="margin-top:8px;"><tr class="sec"><td>DESCRIPCIÓN DE LA FALLA</td></tr><tr><td style="height:50px;vertical-align:top;">'+esc(ev.falla||'')+'</td></tr></table>'
+    +'<table class="t" style="margin-top:8px;"><tr class="sec"><td>COMENTARIOS Y OBSERVACIONES</td></tr><tr><td style="height:40px;vertical-align:top;">'+esc(ev.comentarios||'')+'</td></tr></table>'
+    +'<div class="firma" style="width:60%;margin-left:auto;margin-right:auto;">FIRMA DEL SOLICITANTE</div>';
+  var win=window.open('','_blank'); if(!win){ toast('Permite las ventanas emergentes para imprimir'); return; }
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Evaluación '+esc(ev.folio||'')+'</title><style>'+css+'</style></head><body>'
+    +'<div class="no-print" style="padding:6px 0;"><button onclick="window.print()" style="padding:6px 14px;font-weight:bold;cursor:pointer;">🖨️ Imprimir</button></div>'
+    +h+'<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.print();}catch(e){}},400);};</scr'+'ipt></body></html>');
+  win.document.close();
 }
 
 /* ---------- detalle ---------- */
@@ -705,8 +895,18 @@ function pintarDetalle(){
       b+='<button class="btn btn-sm btn-ok" onclick="pedirAccion(\'cerrar\')">✔ Cerrar ticket</button>';
     }
   }
+  if(t.tipo===EVAL_TIPO_TICKET){ b+='<button class="btn btn-sm" onclick="reimprimirEvaluacion(\''+esc(t.folio)+'\')">🖨️ Comprobante</button>'; }
   b+='<button class="btn btn-sm btn-ghost" onclick="cerrar(\'m-det\')">Cerrar</button>';
   ft.innerHTML=b;
+}
+async function reimprimirEvaluacion(ticketFolio){
+  try{
+    var r=await spCall('list',{lista:L_EVAL, queryParams:"$expand=fields&$top=1&$filter=fields/EvTicketFolio eq '"+String(ticketFolio).replace(/'/g,"''")+"'"});
+    var it=(r&&r.value&&r.value[0])?r.value[0].fields:null;
+    if(!it){ toast('No se encontró la evaluación'); return; }
+    var ev=_pj(it.EvData,null); if(!ev){ toast('Datos de evaluación no disponibles'); return; }
+    imprimirEvaluacion(ev);
+  }catch(e){ toast('No se pudo cargar la evaluación'); }
 }
 function dF(l,v){ return '<div class="d-field"><span class="lbl">'+esc(l)+'</span><span class="val">'+esc(v||'—')+'</span></div>'; }
 
