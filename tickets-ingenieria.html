@@ -69,6 +69,12 @@ table.rtab{width:100%;border-collapse:collapse;font-size:.8rem;}
 table.rtab th,table.rtab td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--border);}
 table.rtab th{color:var(--dim);font-weight:700;font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;}
 table.rtab td.num,table.rtab th.num{text-align:right;}
+tr.rep-row{cursor:pointer;}
+tr.rep-row:hover td{background:var(--bg);}
+table.rtab-sub{width:100%;border-collapse:collapse;font-size:.76rem;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+table.rtab-sub th{color:var(--dim);font-weight:700;font-size:.64rem;text-transform:uppercase;letter-spacing:.4px;padding:5px 8px;text-align:left;background:var(--card);}
+table.rtab-sub td{padding:5px 8px;border-top:1px solid var(--border);}
+table.rtab-sub td.num,table.rtab-sub th.num{text-align:right;}
 
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .main-head{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
@@ -347,7 +353,31 @@ var EST_COLOR={'En proceso':'#f59e0b','Abierto':'#58a6ff','Concluido':'#8b5cf6',
 var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#8b949e'};
 
 var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], skills:[], soloMias:false, filtros:{}, partFiltroSkill:'', skillFiltro:'',
-          curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null, evalMode:false, evalArts:[], solicitantes:[] };
+          curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null, evalMode:false, evalArts:[], solicitantes:[],
+          repF:{}, repExpTec:'', repExpPart:'' };
+
+/* ---------- filtro por mes / año ---------- */
+var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+// Valor efectivo: si no se ha tocado (undefined) → mes/año en curso; '' = Todos; número = ese valor.
+function mesAnioSel(f){ return { mes:(f.mes===undefined?(new Date().getMonth()+1):f.mes), anio:(f.anio===undefined?(new Date().getFullYear()):f.anio) }; }
+function aniosDisponibles(){ var ys={}; (S.tickets||[]).forEach(function(t){ var d=new Date(t.fechaRegistro); if(!isNaN(d)) ys[d.getFullYear()]=1; }); ys[new Date().getFullYear()]=1; return Object.keys(ys).map(Number).sort(function(a,b){return b-a;}); }
+function filtraMesAnio(items,f){ var s=mesAnioSel(f); return items.filter(function(t){ var d=new Date(t.fechaRegistro); if(isNaN(d)) return (s.mes===''&&s.anio===''); if(s.anio!=='' && d.getFullYear()!==Number(s.anio)) return false; if(s.mes!=='' && (d.getMonth()+1)!==Number(s.mes)) return false; return true; }); }
+function selMesHTML(sel,onch){ var o='<option value="__TODOS__"'+(sel===''?' selected':'')+'>Mes: todos</option>'; for(var i=1;i<=12;i++){ o+='<option value="'+i+'"'+(Number(sel)===i?' selected':'')+'>'+MESES[i-1]+'</option>'; } return '<select class="inp" onchange="'+onch+'">'+o+'</select>'; }
+function selAnioHTML(sel,onch){ var o='<option value="__TODOS__"'+(sel===''?' selected':'')+'>Año: todos</option>'; aniosDisponibles().forEach(function(y){ o+='<option value="'+y+'"'+(Number(sel)===y?' selected':'')+'>'+y+'</option>'; }); return '<select class="inp" onchange="'+onch+'">'+o+'</select>'; }
+function setMesLista(v){ S.filtros.mes=(v==='__TODOS__'?'':Number(v)); render(); }
+function setAnioLista(v){ S.filtros.anio=(v==='__TODOS__'?'':Number(v)); render(); }
+function setMesRep(v){ S.repF.mes=(v==='__TODOS__'?'':Number(v)); render(); }
+function setAnioRep(v){ S.repF.anio=(v==='__TODOS__'?'':Number(v)); render(); }
+function toggleRepTec(k){ S.repExpTec=(S.repExpTec===k?'':k); render(); }
+function toggleRepPart(k){ S.repExpPart=(S.repExpPart===k?'':k); render(); }
+function repDetalleHTML(dets,cols){
+  if(!dets.length) return '<tr class="rep-det"><td colspan="'+cols+'" style="color:var(--muted);background:var(--bg);">Sin tickets.</td></tr>';
+  dets=dets.slice().sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
+  var inner='<table class="rtab rtab-sub"><tr><th>Folio</th><th>Tipo</th><th>Descripción</th><th class="num">Mano de obra</th></tr>'
+    +dets.map(function(t){ return '<tr><td>'+esc(t.folio)+'</td><td>'+esc(t.tipo||'—')+'</td><td>'+esc(t.descripcion||'—')+'</td><td class="num">'+(t.estatus==='Atendido'?fmtHrsNum(horasAtencion(t)):'—')+'</td></tr>'; }).join('')
+    +'</table>';
+  return '<tr class="rep-det"><td colspan="'+cols+'" style="background:var(--bg);padding:8px 10px;">'+inner+'</td></tr>';
+}
 
 /* utilidades */
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -483,12 +513,16 @@ function renderLista(tipo){
     if(f.q){ var q=lc(f.q); var blob=lc(t.folio+' '+t.tipo+' '+t.departamento+' '+t.solicita+' '+t.usuarioNombre+' '+t.descripcion+' '+(t.articulos||[]).map(function(a){return a.num+' '+a.desc;}).join(' ')+' '+t.articulosOtro); if(blob.indexOf(q)<0) return false; }
     return true;
   });
+  items=filtraMesAnio(items,f);
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
   document.getElementById('h-sub').textContent=items.length+' ticket(s)';
   var estOpts = (tipo==='mis')? ['En proceso','Abierto','Concluido','Atendido','Cancelado','Rechazado'] : ['Abierto','Concluido','Atendido','Cancelado'];
   var tiposOpt='<option value="">Tipo: todos</option>'+S.tipos.map(function(x){return '<option'+(f.tipo===x?' selected':'')+'>'+esc(x)+'</option>';}).join('');
+  var selMA=mesAnioSel(f);
   var h='<div class="flt">'
     +'<input class="inp" placeholder="🔎 Buscar folio, tipo, artículo…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;render();" style="min-width:230px;">'
+    +selMesHTML(selMA.mes,'setMesLista(this.value)')
+    +selAnioHTML(selMA.anio,'setAnioLista(this.value)')
     +'<select class="inp" onchange="S.filtros.est=this.value;render();"><option value="">Estatus: todos</option>'+estOpts.map(function(x){return '<option'+(f.est===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
     +'<select class="inp" onchange="S.filtros.prio=this.value;render();"><option value="">Prioridad: todas</option>'+['Urgente','Alta','Media','Baja'].map(function(x){return '<option'+(f.prio===x?' selected':'')+'>'+x+'</option>';}).join('')+'</select>'
     +'<select class="inp" onchange="S.filtros.tipo=this.value;render();">'+tiposOpt+'</select>'
@@ -530,13 +564,16 @@ function renderReportes(){
   // Completo: todos. Lectura: sus tickets (creados) + donde participa.
   var all = S.completo ? S.tickets.slice()
     : S.tickets.filter(function(t){ return t.usuarioCorreo===me || (t.participantes||[]).some(function(p){return lc(p.correo)===me;}); });
+  all=filtraMesAnio(all,S.repF);
   var atend=all.filter(function(t){return t.estatus==='Atendido';});
   var abiertos=all.filter(function(t){return t.estatus==='Abierto';}).length;
   var cancel=all.filter(function(t){return t.estatus==='Cancelado';}).length;
   var manoObra=atend.reduce(function(a,t){return a+horasAtencion(t);},0);
   var promAt=atend.length?(manoObra/atend.length):0;
 
-  var h='';
+  var selR=mesAnioSel(S.repF);
+  var h='<div class="flt">'+selMesHTML(selR.mes,'setMesRep(this.value)')+selAnioHTML(selR.anio,'setAnioRep(this.value)')
+    +'<button class="btn btn-sm btn-ghost" onclick="S.repF={};render();">Limpiar</button></div>';
   if(!S.completo) h+='<div style="color:var(--dim);font-size:.8rem;margin-bottom:12px;">Mostrando solo tus tickets y en los que participas.</div>';
   h+='<div class="kpi-row">'
     +kpi(all.length,'Tickets')+kpi(abiertos,'Abiertos')+kpi(atend.length,'Atendidos')+kpi(cancel,'Cancelados')
@@ -546,22 +583,28 @@ function renderReportes(){
   // Mano de obra por usuario (quien levanta el ticket)
   var porU={};
   all.forEach(function(t){ if(!t.usuarioCorreo) return; var k=lc(t.usuarioCorreo); if(!S.completo && k!==me) return;
-    if(!porU[k]) porU[k]={nombre:t.usuarioNombre||t.usuarioCorreo||k, tickets:0, atend:0, horas:0};
+    if(!porU[k]) porU[k]={correo:k, nombre:t.usuarioNombre||t.usuarioCorreo||k, tickets:0, atend:0, horas:0};
     porU[k].tickets++; if(t.estatus==='Atendido'){ porU[k].atend++; porU[k].horas+=horasAtencion(t); } });
   var arrU=Object.keys(porU).map(function(k){return porU[k];}).sort(function(a,b){return b.horas-a.horas;});
-  h+='<div class="rep-card"><h4>Mano de obra por técnico responsable</h4><table class="rtab"><tr><th>Técnico</th><th class="num">Tickets</th><th class="num">Atendidos</th><th class="num">Mano de obra</th><th class="num">Prom.</th></tr>'
-    +(arrU.length?arrU.map(function(x){return '<tr><td>'+esc(x.nombre)+'</td><td class="num">'+x.tickets+'</td><td class="num">'+x.atend+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td><td class="num">'+fmtHrsNum(x.atend?x.horas/x.atend:0)+'</td></tr>';}).join(''):'<tr><td colspan="5" style="color:var(--muted);">Sin datos.</td></tr>')
-    +'</table></div>';
+  h+='<div class="rep-card"><h4>Mano de obra por técnico responsable <span style="font-weight:400;color:var(--muted);font-size:.74rem;">(clic en una fila para ver el detalle)</span></h4><table class="rtab"><tr><th>Técnico</th><th class="num">Tickets</th><th class="num">Atendidos</th><th class="num">Mano de obra</th><th class="num">Prom.</th></tr>';
+  if(arrU.length){ arrU.forEach(function(x){ var k=x.correo, exp=(S.repExpTec===k);
+      h+='<tr class="rep-row" onclick="toggleRepTec(\''+esc(k)+'\')"><td>'+(exp?'▾ ':'▸ ')+esc(x.nombre)+'</td><td class="num">'+x.tickets+'</td><td class="num">'+x.atend+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td><td class="num">'+fmtHrsNum(x.atend?x.horas/x.atend:0)+'</td></tr>';
+      if(exp){ h+=repDetalleHTML(all.filter(function(t){return lc(t.usuarioCorreo)===k;}),5); }
+    }); } else { h+='<tr><td colspan="5" style="color:var(--muted);">Sin datos.</td></tr>'; }
+  h+='</table></div>';
 
   // Participación de ingenieros
   var porP={};
   all.forEach(function(t){ (t.participantes||[]).forEach(function(p){ var k=lc(p.correo)||lc(p.nombre); if(!k) return; if(!S.completo && k!==me) return;
-    if(!porP[k]) porP[k]={nombre:p.nombre||p.correo||k, part:0, horas:0};
+    if(!porP[k]) porP[k]={clave:k, nombre:p.nombre||p.correo||k, part:0, horas:0};
     porP[k].part++; if(t.estatus==='Atendido') porP[k].horas+=horasAtencion(t); }); });
   var arrP=Object.keys(porP).map(function(k){return porP[k];}).sort(function(a,b){return b.horas-a.horas;});
-  h+='<div class="rep-card"><h4>Participación de ingenieros</h4><table class="rtab"><tr><th>Participante</th><th class="num">Participaciones</th><th class="num">Mano de obra (atendidos)</th></tr>'
-    +(arrP.length?arrP.map(function(x){return '<tr><td>'+esc(x.nombre)+'</td><td class="num">'+x.part+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td></tr>';}).join(''):'<tr><td colspan="3" style="color:var(--muted);">Sin datos.</td></tr>')
-    +'</table></div>';
+  h+='<div class="rep-card"><h4>Participación de ingenieros <span style="font-weight:400;color:var(--muted);font-size:.74rem;">(clic en una fila para ver el detalle)</span></h4><table class="rtab"><tr><th>Participante</th><th class="num">Participaciones</th><th class="num">Mano de obra (atendidos)</th></tr>';
+  if(arrP.length){ arrP.forEach(function(x){ var k=x.clave, exp=(S.repExpPart===k);
+      h+='<tr class="rep-row" onclick="toggleRepPart(\''+esc(k)+'\')"><td>'+(exp?'▾ ':'▸ ')+esc(x.nombre)+'</td><td class="num">'+x.part+'</td><td class="num">'+fmtHrsNum(x.horas)+'</td></tr>';
+      if(exp){ h+=repDetalleHTML(all.filter(function(t){return (t.participantes||[]).some(function(p){return (lc(p.correo)||lc(p.nombre))===k;});}),3); }
+    }); } else { h+='<tr><td colspan="3" style="color:var(--muted);">Sin datos.</td></tr>'; }
+  h+='</table></div>';
 
   // Tickets por tipo (solo completo)
   if(S.completo){
