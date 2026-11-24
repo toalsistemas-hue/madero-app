@@ -345,7 +345,8 @@ textarea.inp{resize:vertical;min-height:70px;font-family:inherit;}
 <script>
 /* ═══════════════ TICKETS DE INGENIERÍA (embebida) ═══════════════ */
 var L_TICKETS='TKT_Tickets', L_TIPOS='TKT_TiposTicket', L_INGS='TKT_Ingenieros', L_ARTICULOS='Articulos_Sap', L_SKILLS='TKT_Skills';
-var L_EVAL='TKT_Evaluaciones', L_CLIENTES='Clientes_Sap';
+var L_EVAL='TKT_Evaluaciones', L_CLIENTES='Clientes_Sap', L_CONFIG='Configuracion';
+var L_RPTDEST='TKT_ReporteDestinatarios';
 var EVAL_TIPO_TICKET='Solicitud evaluación de artículos';
 // Modo de la pantalla: 'ing' (Ingeniería, por defecto) o 'solicitar' (usuarios de otros deptos).
 var MODO = (function(){ try{ return (new URLSearchParams(location.search).get('modo')==='solicitar')?'solicitar':'ing'; }catch(e){ return 'ing'; } })();
@@ -354,7 +355,7 @@ var PRIO_COLOR={'Urgente':'#ef4444','Alta':'#f59e0b','Media':'#d4a017','Baja':'#
 
 var S = { user:null, completo:false, view:'tickets', tickets:[], tipos:[], ingenieros:[], skills:[], soloMias:false, filtros:{}, partFiltroSkill:'', skillFiltro:'',
           curTicket:null, artDraft:[], accMode:'', _loaded:false, _everLoaded:false, _autoT:null, evalMode:false, evalArts:[], solicitantes:[],
-          repF:{}, repExpTec:'', repExpPart:'' };
+          repF:{}, repExpTec:'', repExpPart:'', repPara:[], repCC:[] };
 
 /* ---------- filtro por mes / año ---------- */
 var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -1213,7 +1214,36 @@ async function asignarConfirmar(){
 }
 
 /* ---------- configuración (tipos e ingenieros) ---------- */
-function abrirConfig(){ if(!S.completo){ toast('Solo coordinación puede configurar'); return; } pintarConfig(); abrir('m-cfg'); }
+async function abrirConfig(){ if(!S.completo){ toast('Solo coordinación puede configurar'); return; } pintarConfig(); abrir('m-cfg'); if(S.user&&S.user.esAdmin){ try{ await cfgLoadReportes(); pintarConfig(); }catch(e){} } }
+
+/* ----- Destinatarios del reporte semanal a Dirección (lista TKT_ReporteDestinatarios) ----- */
+async function cfgLoadReportes(){
+  S.repPara=[]; S.repCC=[];
+  try{ var r=await listGet(L_RPTDEST);
+    r.forEach(function(i){ var f=i.fields||{}; var o={ id:i.id, n:f.Title||'', c:lc(f.Correo||'') }; if(!o.c) return;
+      if((f.TipoDest||'Para')==='CC') S.repCC.push(o); else S.repPara.push(o); });
+  }catch(e){ S.repPara=[]; S.repCC=[]; }
+}
+function rptRows(tipo){
+  var arr=(tipo==='para'?S.repPara:S.repCC)||[];
+  if(!arr.length) return '<div style="color:var(--muted);font-size:.76rem;margin-top:4px;">Sin destinatarios.</div>';
+  return arr.map(function(x){ return '<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-top:6px;"><b style="flex:0 0 auto;">'+esc(x.n||'—')+'</b><small style="color:var(--muted);flex:1;">'+esc(x.c)+'</small><button class="btn btn-sm btn-danger" onclick="rptDel(\''+tipo+'\',\''+esc(String(x.id))+'\')">Eliminar</button></div>'; }).join('');
+}
+async function rptAdd(tipo){
+  var ni=document.getElementById(tipo==='para'?'rpt-para-n':'rpt-cc-n');
+  var ci=document.getElementById(tipo==='para'?'rpt-para-c':'rpt-cc-c');
+  var n=ni.value.trim(), c=ci.value.trim();
+  if(!c || c.indexOf('@')<0){ toast('Escribe un correo válido'); return; }
+  var arr=(tipo==='para'?S.repPara:S.repCC);
+  if(arr.some(function(x){return lc(x.c)===lc(c);})){ toast('Ese correo ya está en la lista'); return; }
+  try{ await listCreate(L_RPTDEST, { Title:(n||c), Correo:c, TipoDest:(tipo==='para'?'Para':'CC') }); await cfgLoadReportes(); ni.value=''; ci.value=''; pintarConfig(); toast('Destinatario agregado'); }
+  catch(e){ toast('No se pudo guardar (¿existe la lista TKT_ReporteDestinatarios?)'); }
+}
+async function rptDel(tipo,id){
+  try{ await listDelete(L_RPTDEST, id); await cfgLoadReportes(); pintarConfig(); toast('Destinatario eliminado'); }
+  catch(e){ toast('No se pudo'); }
+}
+
 function pintarConfig(){
   var h='';
   h+='<div class="fld"><label>Tipos de ticket (lista TKT_TiposTicket)</label>'
@@ -1225,6 +1255,18 @@ function pintarConfig(){
   h+='<div class="fld" style="margin-top:14px;"><label>Ingenieros / participantes (lista TKT_Ingenieros) — marca sus skills</label>'
     +'<div style="display:flex;gap:6px;"><input class="inp" id="cfg-ing-nom" placeholder="Nombre"><input class="inp" id="cfg-ing-mail" placeholder="correo@..."><button class="btn btn-sm" onclick="cfgAddIng()">＋</button></div>'
     +'<div id="cfg-ings">'+ingRows()+'</div></div>';
+  if(S.user && S.user.esAdmin){
+    h+='<div class="fld" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">'
+      +'<label style="font-weight:800;color:var(--accent-l);">📊 Reporte semanal a Dirección</label>'
+      +'<div style="color:var(--muted);font-size:.74rem;margin:2px 0 10px;">Personas que reciben el reporte semanal de estatus de tickets (lo envía Power Automate). Solo visible para Administración General.</div>'
+      +'<div style="font-size:.78rem;font-weight:700;">Para</div>'
+      +'<div style="display:flex;gap:6px;margin-top:4px;"><input class="inp" id="rpt-para-n" placeholder="Nombre"><input class="inp" id="rpt-para-c" placeholder="correo@..."><button class="btn btn-sm" onclick="rptAdd(\'para\')">＋</button></div>'
+      +'<div id="rpt-para-rows">'+rptRows('para')+'</div>'
+      +'<div style="font-size:.78rem;font-weight:700;margin-top:14px;">CC (copia)</div>'
+      +'<div style="display:flex;gap:6px;margin-top:4px;"><input class="inp" id="rpt-cc-n" placeholder="Nombre"><input class="inp" id="rpt-cc-c" placeholder="correo@..."><button class="btn btn-sm" onclick="rptAdd(\'cc\')">＋</button></div>'
+      +'<div id="rpt-cc-rows">'+rptRows('cc')+'</div>'
+    +'</div>';
+  }
   document.getElementById('cfg-bd').innerHTML=h;
 }
 function chipsTipos(){ return S.tipos.map(function(x){ return '<span class="chipx">'+esc(x)+'<button onclick="cfgDelTipo(\''+esc(x).replace(/'/g,"\\'")+'\')">✕</button></span>'; }).join('')||'<span style="color:var(--muted);font-size:.76rem;">Sin tipos.</span>'; }
