@@ -436,8 +436,21 @@ function onAuth(d){
   var bc=document.getElementById('btn-cfg'); if(bc) bc.style.display=(MODO!=='solicitar'&&S.completo)?'inline-block':'none';
   if(!S._loaded){
     S._loaded=true;
-    loadData().catch(function(e){ document.getElementById('body').innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas TKT_Tickets, TKT_TiposTicket y TKT_Ingenieros?<br><small>'+esc(e.message||e)+'</small></div>'; });
+    loadDataInicial();
     if(!S._autoT){ S._autoT=setInterval(function(){ if(S.user && !document.querySelector('.modal-bg.show')){ loadData(true).catch(function(){}); } }, 60000); }
+  }
+}
+// El token de Microsoft puede no estar listo en el primer intento → reintenta en silencio unos segundos.
+function _esErrTokenTmp(e){ var m=(((e&&e.message)||e||'')+'').toLowerCase(); return m.indexOf('token')>=0 || m.indexOf('tiempo')>=0 || m.indexOf('sin_portal')>=0 || m.indexOf('no autoriz')>=0 || m.indexOf('401')>=0; }
+async function loadDataInicial(intentos){
+  intentos=(intentos==null)?6:intentos;
+  try{ await loadData(); }
+  catch(e){
+    if(intentos>0 && _esErrTokenTmp(e)){
+      var bb=document.getElementById('body'); if(bb && !S._everLoaded) bb.innerHTML='<div class="empty"><span class="spin"></span> Conectando…</div>';
+      return new Promise(function(res){ setTimeout(function(){ res(loadDataInicial(intentos-1)); }, 1500); });
+    }
+    var bb2=document.getElementById('body'); if(bb2) bb2.innerHTML='<div class="empty" style="color:#fca5a5;">No se pudieron cargar los datos. ¿Existen las listas TKT_Tickets, TKT_TiposTicket y TKT_Ingenieros?<br><small>'+esc((e&&e.message)||e)+'</small></div>';
   }
 }
 async function refrescar(){ var b=document.getElementById('btn-refresh'); if(b){ b.disabled=true; b.textContent='⏳'; } try{ await loadData(); }catch(e){ toast('Error al actualizar'); } finally{ if(b){ b.disabled=false; b.textContent='🔄 Actualizar'; } } }
