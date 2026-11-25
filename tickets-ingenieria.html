@@ -1004,8 +1004,21 @@ async function _getLogoUrl(){
   }catch(e){ _logoUrlCache=''; }
   return _logoUrlCache;
 }
+// Descarga el logo como base64 (con el token del usuario) para que se vea en la ventana de impresión
+// de TODOS los usuarios, no solo del admin. Si falla, cae a la URL directa.
+var _logoDataCache=null;
+async function _getLogoData(){
+  if(_logoDataCache!=null) return _logoDataCache;
+  var url=''; try{ url=await _getLogoUrl(); }catch(e){ url=''; }
+  if(!url){ _logoDataCache=''; return ''; }
+  try{
+    var r=await spCall('getFileBase64',{shareUrl:url});
+    if(r && r.base64){ _logoDataCache='data:'+(r.mime||'image/png')+';base64,'+r.base64; return _logoDataCache; }
+  }catch(e){}
+  _logoDataCache=url; return url; // respaldo: URL directa
+}
 async function imprimirEvaluacion(ev){
-  var logo=''; try{ logo=await _getLogoUrl(); }catch(e){ logo=''; }
+  var logo=''; try{ logo=await _getLogoData(); }catch(e){ logo=''; }
   var logoHtml = logo ? ('<img src="'+esc(logo)+'" style="height:48px;width:auto;" onerror="this.style.display=\'none\'">') : '';
   var fmtF=function(s){ if(!s)return''; var d=new Date(s); if(isNaN(d))return esc(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}); };
   var filas=(ev.articulos||[]).map(function(a){ return '<tr><td>'+esc(a.num)+'</td><td>'+esc(a.desc)+'</td><td style="text-align:center;">'+esc(a.cantidad||'')+'</td></tr>'; }).join('');

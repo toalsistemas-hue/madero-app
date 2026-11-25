@@ -7144,7 +7144,10 @@ window.addEventListener('message', async function(e) {
       // Se usa para mostrar documentos controlados en un visor (blob) sin exponer enlaces.
       var sidF = await getSiteId();
       var tokF = await getToken();
-      var resF = await fetch('https://graph.microsoft.com/v1.0/sites/'+sidF+'/drive/items/'+encodeURIComponent(args.driveId)+'/content', {
+      var urlF = args.shareUrl
+        ? ('https://graph.microsoft.com/v1.0/shares/'+_encShareUrl(args.shareUrl)+'/driveItem/content')
+        : ('https://graph.microsoft.com/v1.0/sites/'+sidF+'/drive/items/'+encodeURIComponent(args.driveId)+'/content');
+      var resF = await fetch(urlF, {
         headers: { Authorization: 'Bearer ' + tokF }
       });
       if (!resF.ok) { reply('file_' + resF.status, null); return; }
