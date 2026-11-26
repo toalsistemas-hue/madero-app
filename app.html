@@ -2628,6 +2628,14 @@ async function appRenderLauncher() {
       pantallas = pantallas.concat([{ PantallaID:'Garantias', Nombre:'Garantías', Icono_App:'🛡️', Descripcion:'Seguimiento de garantías (técnico)', Color:'#00528b' }]);
     }
   }catch(_g){}
+  try{
+    if(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin && !pantallas.some(function(p){ return (p.PantallaID||p.pantallaID)==='TicketsIngenieria'; })){
+      pantallas = pantallas.concat([{ PantallaID:'TicketsIngenieria', Nombre:'Tickets', Icono_App:'🛠️', Descripcion:'Tickets de Ingeniería (técnico)', Color:'#00528b' }]);
+    }
+    if(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin && !pantallas.some(function(p){ return (p.PantallaID||p.pantallaID)==='SolicitarTicket'; })){
+      pantallas = pantallas.concat([{ PantallaID:'SolicitarTicket', Nombre:'Solicitar Ticket', Icono_App:'📝', Descripcion:'Levantar un ticket a Ingeniería', Color:'#1565C0' }]);
+    }
+  }catch(_t){}
 
   if (loading) loading.style.display = 'none';
   if (!grid) return;
@@ -2659,6 +2667,8 @@ function appAplicarTema(t){
   window._appTema=t;
   try{ if(t==='claro') document.documentElement.setAttribute('data-theme','claro'); else document.documentElement.removeAttribute('data-theme'); }catch(e){}
   try{ var ifr=document.getElementById('gar-mobile-iframe'); if(ifr&&ifr.contentWindow) ifr.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
+  try{ var _tif=document.getElementById('tkt-mobile-iframe'); if(_tif&&_tif.contentWindow) _tif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
+  try{ var _sif=document.getElementById('stk-mobile-iframe'); if(_sif&&_sif.contentWindow) _sif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
   var b=document.getElementById('app-tema-btn'); if(b) b.textContent=(t==='claro'?'🌙 Oscuro':'☀️ Claro');
 }
 async function appGuardarTema(t){
@@ -2736,6 +2746,8 @@ function appLaunchPantalla(pantallaID) {
     garMobileOpen();
     return;
   }
+  if (pantallaID === 'TicketsIngenieria') { tktMobileOpen('ing'); return; }
+  if (pantallaID === 'SolicitarTicket') { tktMobileOpen('solicitar'); return; }
   // Futuras pantallas se manejarán aquí
   alert('Módulo "' + pantallaID + '" próximamente.');
 }
@@ -8456,6 +8468,24 @@ window.addEventListener('message', async function(e){
     }catch(_){}
     return;
   }
+  if(d.type==='TKT_READY'){
+    try{ if(typeof _appHideLoading==='function') _appHideLoading(); }catch(_){}
+    try{ if(e.source) e.source.postMessage({type:'SET_THEME', tema:(window._appTema||'oscuro')}, '*'); }catch(_){}
+    try{
+      if(e.source) e.source.postMessage({
+        type:'SGD_AUTH',
+        user:{
+          nombre:(APP_USER_PROFILE&&APP_USER_PROFILE.nombre)||'',
+          correo:(APP_USER_PROFILE&&(APP_USER_PROFILE.email||APP_USER_PROFILE.usuario))||'',
+          puesto:(APP_USER_PROFILE&&APP_USER_PROFILE.puesto)||'',
+          esAdmin:!!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin)
+        },
+        nivel:'completo',
+        isDemoMode:false
+      },'*');
+    }catch(_){}
+    return;
+  }
   if(d.type!=='SP_BRIDGE_REQUEST') return;
   var callId=d.callId, op=d.op, args=d.args||{};
   function reply(error,result){ try{ if(e.source) e.source.postMessage({type:'SP_BRIDGE_RESPONSE',callId:callId,error:error||null,result:(result!==undefined?result:null)},'*'); }catch(_){}}
@@ -8488,7 +8518,7 @@ window.addEventListener('message', async function(e){
       reply(null, await up.json());
     } else if(op==='getFileBase64'){
       sid=await appGetSiteId(); var tokF=await appGetToken();
-      var resF=await fetch('https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/items/'+encodeURIComponent(args.driveId)+'/content',{headers:{Authorization:'Bearer '+tokF}});
+      var _tu=args.shareUrl; var _turl=_tu?('https://graph.microsoft.com/v1.0/shares/u!'+btoa(unescape(encodeURIComponent(_tu))).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-')+'/driveItem/content'):('https://graph.microsoft.com/v1.0/sites/'+sid+'/drive/items/'+encodeURIComponent(args.driveId)+'/content'); var resF=await fetch(_turl,{headers:{Authorization:'Bearer '+tokF}});
       if(!resF.ok){ reply('file_'+resF.status,null); return; }
       var bufF=await resF.arrayBuffer(); var bytesF=new Uint8Array(bufF),binF='',CH=0x8000;
       for(var iF=0;iF<bytesF.length;iF+=CH){ binF+=String.fromCharCode.apply(null,bytesF.subarray(iF,iF+CH)); }
@@ -8524,6 +8554,32 @@ function garMobileOpen(){
 }
 function garMobileClose(){ var ov=document.getElementById('gar-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
 
+// ── TICKETS DE INGENIERÍA MÓVIL ──
+function tktMobileOpen(modo){
+  var esSol=(modo==='solicitar');
+  var oid=esSol?'stk-mobile-overlay':'tkt-mobile-overlay';
+  var iid=esSol?'stk-mobile-iframe':'tkt-mobile-iframe';
+  var titulo=esSol?'Solicitar Ticket':'Tickets de Ingeniería';
+  var src=esSol?'tickets-ingenieria.html?modo=solicitar':'tickets-ingenieria.html';
+  var ov=document.getElementById(oid);
+  if(!ov){
+    _appShowLoading('Cargando '+(esSol?'Solicitar Ticket':'Tickets')+'…');
+    ov=document.createElement('div'); ov.id=oid;
+    ov.style.cssText='position:fixed;inset:0;z-index:700;background:#0b1220;display:flex;flex-direction:column;';
+    ov.innerHTML=''+
+      '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#00528b;color:#fff;flex:0 0 auto;">'+
+        '<button onclick="tktMobileClose(\''+(esSol?'solicitar':'ing')+'\')" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:1rem;cursor:pointer;">‹ Volver</button>'+
+        '<div style="flex:1;font-weight:700;font-size:.95rem;">'+titulo+'</div>'+
+      '</div>'+
+      '<iframe id="'+iid+'" src="'+src+'" style="flex:1;width:100%;border:0;background:#fff;"></iframe>';
+    document.body.appendChild(ov);
+  } else {
+    ov.style.display='flex';
+    if(typeof _appHideLoading==='function') _appHideLoading();
+  }
+}
+function tktMobileClose(modo){ var esSol=(modo==='solicitar'); var ov=document.getElementById(esSol?'stk-mobile-overlay':'tkt-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
+
 // ── Botón ATRÁS de Android: navegar DENTRO de la app en vez de salir y perder la sesión ──
 // Al estar todas las pantallas en un mismo archivo, el back del teléfono descargaba la página
 // (volvía a Microsoft). Interceptamos con el History API: back cierra el modal/overlay o vuelve
@@ -8541,6 +8597,10 @@ function appInitBackHandler(){
       // 2) Overlay de Garantías abierto → cerrarlo
       var gov=document.getElementById('gar-mobile-overlay');
       if(gov && gov.style.display!=='none'){ garMobileClose(); history.pushState({app:'x'},''); return; }
+      var tov=document.getElementById('tkt-mobile-overlay');
+      if(tov && tov.style.display!=='none'){ tktMobileClose('ing'); history.pushState({app:'x'},''); return; }
+      var sov=document.getElementById('stk-mobile-overlay');
+      if(sov && sov.style.display!=='none'){ tktMobileClose('solicitar'); history.pushState({app:'x'},''); return; }
       // 3) En FabTracker o Monitor → volver al menú
       var shell=document.getElementById('app-shell-mobile');
       var mon=document.getElementById('monitor-screen');
