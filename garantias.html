@@ -496,28 +496,25 @@ function renderTabla(tipo){
   else if(tipo==='solicitudes') items=S.folios.filter(function(t){ return t.origen==='Solicitud' && t.estatus==='En proceso'; });
   else if(tipo==='rechazadas') items=S.folios.filter(function(t){ return t.estatus==='Rechazado'; });
   else items=S.folios.filter(function(t){ return t.estatus!=='En proceso' && t.estatus!=='Rechazado'; }); // folios
-  if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento).indexOf(q)>=0; }); }
+  if(f.q){ var q=lc(f.q); items=items.filter(function(t){ return lc(t.folio+' '+t.solicita+' '+t.sucursal+' '+t.clienteNombre+' '+t.numDoc+' '+t.numCliente+' '+t.departamento+' '+(t.articulos||[]).map(function(a){return (a.num||'')+' '+(a.desc||'');}).join(' ')).indexOf(q)>=0; }); }
   items.sort(function(a,b){ return (new Date(b.fechaRegistro||0))-(new Date(a.fechaRegistro||0)); });
   document.getElementById('h-sub').textContent=items.length+(tipo==='solicitudes'?' solicitud(es)':(tipo==='rechazadas'?' rechazada(s)':' folio(s)'));
   var selQR = puedeQR() && (tipo==='folios');
-  var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, documento…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button>'
+  var h='<div class="flt"><input class="inp" id="flt-q" placeholder="🔎 Buscar folio, cliente, N° de artículo…" value="'+esc(f.q||'')+'" oninput="S.filtros.q=this.value;debRender(render,\'flt-q\')" style="min-width:260px;"><button class="btn btn-sm btn-ghost" onclick="S.filtros={};render();">Limpiar</button>'
     +(selQR?'<button class="btn btn-sm" id="qr-print-btn" style="display:none;" onclick="imprimirQRSeleccion()">🏷️ Imprimir QR (0)</button><button class="btn btn-sm btn-ghost" onclick="S.qrSel={};render();">Quitar selección</button>':'')+'</div>';
   if(!items.length){ h+='<div class="empty">No hay '+(tipo==='solicitudes'?'solicitudes pendientes':(tipo==='rechazadas'?'solicitudes rechazadas':'folios'))+'.</div>'; body.innerHTML=h; return; }
   h+='<div class="tbl-wrap"><table class="gtab"><tr>'
     +(selQR?'<th style="width:30px;">🏷️</th>':'')
-    +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Solicita</th><th>Sucursal</th><th>Cliente</th><th>Tipo doc.</th><th>Nº doc.</th><th>Artículos</th><th>Técnico</th></tr>';
+    +'<th>Folio</th><th>Fecha</th><th>Estatus</th><th>Sucursal</th><th>Cliente</th><th>Artículos</th><th>Técnico</th></tr>';
   h+=items.map(function(t){
     return '<tr class="click" onclick="abrirFolio(\''+t.id+'\')">'
       +(selQR?('<td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" '+((S.qrSel&&S.qrSel[t.id])?'checked':'')+' onclick="qrToggle(\''+t.id+'\',event)"></td>'):'')
       +'<td><b>'+esc(t.folio)+'</b></td>'
       +'<td>'+fmtD(t.fechaRegistro)+'</td>'
       +'<td><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></td>'
-      +'<td>'+esc(t.solicita||'—')+'</td>'
       +'<td>'+esc(t.sucursal||'—')+'</td>'
       +'<td>'+esc(t.clienteNombre||t.numCliente||'—')+'</td>'
-      +'<td>'+esc(t.tipoDoc||'—')+'</td>'
-      +'<td>'+esc(t.numDoc||'—')+'</td>'
-      +'<td>'+((t.articulos||[]).length)+'</td>'
+      +'<td>'+((t.articulos||[]).length? t.articulos.map(function(a){return '<div>'+esc(a.num||'')+(a.desc?(' · '+esc(a.desc)):'')+'</div>';}).join('') : '—')+'</td>'
       +'<td>'+esc(t.tecnicoNombre||'—')+'</td>'
     +'</tr>';
   }).join('');
