@@ -2417,6 +2417,20 @@ tr:last-child td{border-bottom:none;}
   </iframe>
 </div>
 
+<!-- PAGE: TICKETS I+D -->
+<div class="page" id="page-TicketsIyD" style="padding:0;margin:0;position:relative;">
+  <iframe id="tkti-iframe" src="tickets-id.html"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Tickets I+D"></iframe>
+</div>
+
+<!-- PAGE: SOLICITAR TICKET I+D (misma pantalla en modo solicitar) -->
+<div class="page" id="page-SolicitarTicketIyD" style="padding:0;margin:0;position:relative;">
+  <iframe id="stki-iframe" src="tickets-id.html?modo=solicitar"
+    style="position:fixed;top:0;left:220px;width:calc(100vw - 220px);height:100vh;border:none;display:none;z-index:10;"
+    title="Solicitar Ticket I+D"></iframe>
+</div>
+
 <!-- PAGE: GARANTÍAS (Ingeniería) -->
 <div class="page" id="page-Garantias" style="padding:0;margin:0;position:relative;">
   <iframe id="gar-iframe" src="garantias.html"
@@ -3631,6 +3645,10 @@ function navigateToPantalla(pantallaID) {
     if (tktIfrm) tktIfrm.style.display = 'none';
     var stkIfrm = document.getElementById('stk-iframe');
     if (stkIfrm) stkIfrm.style.display = 'none';
+    var tktiIfrm0 = document.getElementById('tkti-iframe');
+    if (tktiIfrm0) tktiIfrm0.style.display = 'none';
+    var stkiIfrm0 = document.getElementById('stki-iframe');
+    if (stkiIfrm0) stkiIfrm0.style.display = 'none';
     var garIfrm = document.getElementById('gar-iframe');
     if (garIfrm) garIfrm.style.display = 'none';
     var sgarIfrm = document.getElementById('sgar-iframe');
@@ -3690,6 +3708,53 @@ function navigateToPantalla(pantallaID) {
                 esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
               },
               nivel: nivelTkt,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
+
+    if (pantallaID==='TicketsIyD') {
+      var tktiIfrm = document.getElementById('tkti-iframe');
+      if (tktiIfrm) {
+        tktiIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (tktiIfrm && tktiIfrm.contentWindow) {
+            var nivelIdt = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIyD'] || '') : '';
+            if (state.currentUser && state.currentUser.esAdmin) nivelIdt = 'completo';
+            tktiIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: nivelIdt,
+              isDemoMode: state.isDemoMode || false
+            }, '*');
+          }
+        }, 400);
+      }
+    }
+
+    if (pantallaID==='SolicitarTicketIyD') {
+      var stkiIfrm = document.getElementById('stki-iframe');
+      if (stkiIfrm) {
+        stkiIfrm.style.display = 'block';
+        setTimeout(function() {
+          if (stkiIfrm && stkiIfrm.contentWindow) {
+            stkiIfrm.contentWindow.postMessage({
+              type: 'SGD_AUTH',
+              user: {
+                nombre: state.currentUser ? state.currentUser.nombre : '',
+                correo: state.currentUser ? (state.currentUser.email || '') : '',
+                puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+                esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+              },
+              nivel: '',
               isDemoMode: state.isDemoMode || false
             }, '*');
           }
@@ -7045,6 +7110,26 @@ window.addEventListener('message', function (e) {
         esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
       },
       nivel: nivelTk,
+      isDemoMode: state.isDemoMode || false
+    }, '*');
+  } catch (_) {}
+});
+
+window.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'IDT_READY') return;
+  try {
+    var nivelIdtR = (state.currentUser && state.currentUser.pantallas) ? (state.currentUser.pantallas['TicketsIyD'] || '') : '';
+    if (state.currentUser && state.currentUser.esAdmin) nivelIdtR = 'completo';
+    if (e.source) e.source.postMessage({
+      type: 'SGD_AUTH',
+      user: {
+        nombre: state.currentUser ? state.currentUser.nombre : '',
+        correo: state.currentUser ? (state.currentUser.email || '') : '',
+        puesto: state.currentUser ? (state.currentUser.puesto || '') : '',
+        puestoID: state.currentUser ? (state.currentUser.puestoID || '') : '',
+        esAdmin: state.currentUser ? !!state.currentUser.esAdmin : false
+      },
+      nivel: nivelIdtR,
       isDemoMode: state.isDemoMode || false
     }, '*');
   } catch (_) {}
