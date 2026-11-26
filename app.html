@@ -2636,6 +2636,14 @@ async function appRenderLauncher() {
       pantallas = pantallas.concat([{ PantallaID:'SolicitarTicket', Nombre:'Solicitar Ticket', Icono_App:'📝', Descripcion:'Levantar un ticket a Ingeniería', Color:'#1565C0' }]);
     }
   }catch(_t){}
+  try{
+    if(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin && !pantallas.some(function(p){ return (p.PantallaID||p.pantallaID)==='TicketsIyD'; })){
+      pantallas = pantallas.concat([{ PantallaID:'TicketsIyD', Nombre:'Tickets I+D', Icono_App:'🔬', Descripcion:'Tickets de I+D (técnico)', Color:'#00528b' }]);
+    }
+    if(APP_USER_PROFILE && APP_USER_PROFILE.esAdmin && !pantallas.some(function(p){ return (p.PantallaID||p.pantallaID)==='SolicitarTicketIyD'; })){
+      pantallas = pantallas.concat([{ PantallaID:'SolicitarTicketIyD', Nombre:'Solicitar Ticket I+D', Icono_App:'📝', Descripcion:'Levantar un ticket a I+D', Color:'#1565C0' }]);
+    }
+  }catch(_i){}
 
   if (loading) loading.style.display = 'none';
   if (!grid) return;
@@ -2669,6 +2677,8 @@ function appAplicarTema(t){
   try{ var ifr=document.getElementById('gar-mobile-iframe'); if(ifr&&ifr.contentWindow) ifr.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
   try{ var _tif=document.getElementById('tkt-mobile-iframe'); if(_tif&&_tif.contentWindow) _tif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
   try{ var _sif=document.getElementById('stk-mobile-iframe'); if(_sif&&_sif.contentWindow) _sif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
+  try{ var _iif=document.getElementById('idt-mobile-iframe'); if(_iif&&_iif.contentWindow) _iif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
+  try{ var _siif=document.getElementById('sidt-mobile-iframe'); if(_siif&&_siif.contentWindow) _siif.contentWindow.postMessage({type:'SET_THEME',tema:t},'*'); }catch(e){}
   var b=document.getElementById('app-tema-btn'); if(b) b.textContent=(t==='claro'?'🌙 Oscuro':'☀️ Claro');
 }
 async function appGuardarTema(t){
@@ -2748,6 +2758,8 @@ function appLaunchPantalla(pantallaID) {
   }
   if (pantallaID === 'TicketsIngenieria') { tktMobileOpen('ing'); return; }
   if (pantallaID === 'SolicitarTicket') { tktMobileOpen('solicitar'); return; }
+  if (pantallaID === 'TicketsIyD') { idtMobileOpen('ing'); return; }
+  if (pantallaID === 'SolicitarTicketIyD') { idtMobileOpen('solicitar'); return; }
   // Futuras pantallas se manejarán aquí
   alert('Módulo "' + pantallaID + '" próximamente.');
 }
@@ -8486,6 +8498,24 @@ window.addEventListener('message', async function(e){
     }catch(_){}
     return;
   }
+  if(d.type==='IDT_READY'){
+    try{ if(typeof _appHideLoading==='function') _appHideLoading(); }catch(_){}
+    try{ if(e.source) e.source.postMessage({type:'SET_THEME', tema:(window._appTema||'oscuro')}, '*'); }catch(_){}
+    try{
+      if(e.source) e.source.postMessage({
+        type:'SGD_AUTH',
+        user:{
+          nombre:(APP_USER_PROFILE&&APP_USER_PROFILE.nombre)||'',
+          correo:(APP_USER_PROFILE&&(APP_USER_PROFILE.email||APP_USER_PROFILE.usuario))||'',
+          puesto:(APP_USER_PROFILE&&APP_USER_PROFILE.puesto)||'',
+          esAdmin:!!(APP_USER_PROFILE&&APP_USER_PROFILE.esAdmin)
+        },
+        nivel:'completo',
+        isDemoMode:false
+      },'*');
+    }catch(_){}
+    return;
+  }
   if(d.type!=='SP_BRIDGE_REQUEST') return;
   var callId=d.callId, op=d.op, args=d.args||{};
   function reply(error,result){ try{ if(e.source) e.source.postMessage({type:'SP_BRIDGE_RESPONSE',callId:callId,error:error||null,result:(result!==undefined?result:null)},'*'); }catch(_){}}
@@ -8580,6 +8610,32 @@ function tktMobileOpen(modo){
 }
 function tktMobileClose(modo){ var esSol=(modo==='solicitar'); var ov=document.getElementById(esSol?'stk-mobile-overlay':'tkt-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
 
+// ── TICKETS I+D MÓVIL ──
+function idtMobileOpen(modo){
+  var esSol=(modo==='solicitar');
+  var oid=esSol?'sidt-mobile-overlay':'idt-mobile-overlay';
+  var iid=esSol?'sidt-mobile-iframe':'idt-mobile-iframe';
+  var titulo=esSol?'Solicitar Ticket I+D':'Tickets I+D';
+  var src=esSol?'tickets-id.html?modo=solicitar':'tickets-id.html';
+  var ov=document.getElementById(oid);
+  if(!ov){
+    _appShowLoading('Cargando '+(esSol?'Solicitar Ticket I+D':'Tickets I+D')+'…');
+    ov=document.createElement('div'); ov.id=oid;
+    ov.style.cssText='position:fixed;inset:0;z-index:700;background:#0b1220;display:flex;flex-direction:column;';
+    ov.innerHTML=''+
+      '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#00528b;color:#fff;flex:0 0 auto;">'+
+        '<button onclick="idtMobileClose(\''+(esSol?'solicitar':'ing')+'\')" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:1rem;cursor:pointer;">‹ Volver</button>'+
+        '<div style="flex:1;font-weight:700;font-size:.95rem;">'+titulo+'</div>'+
+      '</div>'+
+      '<iframe id="'+iid+'" src="'+src+'" style="flex:1;width:100%;border:0;background:#fff;"></iframe>';
+    document.body.appendChild(ov);
+  } else {
+    ov.style.display='flex';
+    if(typeof _appHideLoading==='function') _appHideLoading();
+  }
+}
+function idtMobileClose(modo){ var esSol=(modo==='solicitar'); var ov=document.getElementById(esSol?'sidt-mobile-overlay':'idt-mobile-overlay'); if(ov) ov.style.display='none'; var l=document.getElementById('app-launcher'); if(l) l.style.display='flex'; }
+
 // ── Botón ATRÁS de Android: navegar DENTRO de la app en vez de salir y perder la sesión ──
 // Al estar todas las pantallas en un mismo archivo, el back del teléfono descargaba la página
 // (volvía a Microsoft). Interceptamos con el History API: back cierra el modal/overlay o vuelve
@@ -8601,6 +8657,10 @@ function appInitBackHandler(){
       if(tov && tov.style.display!=='none'){ tktMobileClose('ing'); history.pushState({app:'x'},''); return; }
       var sov=document.getElementById('stk-mobile-overlay');
       if(sov && sov.style.display!=='none'){ tktMobileClose('solicitar'); history.pushState({app:'x'},''); return; }
+      var iov=document.getElementById('idt-mobile-overlay');
+      if(iov && iov.style.display!=='none'){ idtMobileClose('ing'); history.pushState({app:'x'},''); return; }
+      var siov=document.getElementById('sidt-mobile-overlay');
+      if(siov && siov.style.display!=='none'){ idtMobileClose('solicitar'); history.pushState({app:'x'},''); return; }
       // 3) En FabTracker o Monitor → volver al menú
       var shell=document.getElementById('app-shell-mobile');
       var mon=document.getElementById('monitor-screen');
