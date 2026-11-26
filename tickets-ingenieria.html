@@ -390,7 +390,9 @@ function nowISO(){ return new Date().toISOString(); }
 function lc(s){ return (s||'').toLowerCase(); }
 function fmtDT(s){ if(!s) return '—'; var d=new Date(s); if(isNaN(d)) return '—'; return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
 // Tiempo de atención (registro → cierre). Si es ≥1 día muestra días; si es el mismo día, muestra horas/min.
-function msAtencion(t){ if(!t.fechaCierre||!t.fechaRegistro) return null; var ms=new Date(t.fechaCierre)-new Date(t.fechaRegistro); return (isNaN(ms)||ms<0)?0:ms; }
+// Fin del trabajo = cuando el ingeniero concluyó (si lo hubo); si no, la fecha de cierre.
+function finTrabajo(t){ return t.fechaConclusion || t.fechaCierre; }
+function msAtencion(t){ var fin=finTrabajo(t); if(!fin||!t.fechaRegistro) return null; var ms=new Date(fin)-new Date(t.fechaRegistro); return (isNaN(ms)||ms<0)?0:ms; }
 function fmtTiempo(t){ var ms=msAtencion(t); if(ms==null) return '—'; var dias=Math.floor(ms/86400000); if(dias>=1) return dias+' día(s)'; var hrs=ms/3600000; var h=Math.floor(hrs), min=Math.round((hrs-h)*60); if(min===60){h++;min=0;} if(h<=0) return (min||0)+' min'; return h+' h'+(min?(' '+min+' min'):''); }
 function horasAtencion(t){ if(t.horas!=null) return t.horas; var ms=msAtencion(t); return ms==null?0:Math.round((ms/3600000)*100)/100; }
 function fmtHrsNum(h){ h=Number(h)||0; if(h<1&&h>0) return Math.round(h*60)+' min'; return (Math.round(h*10)/10)+' h'; }
@@ -1170,7 +1172,9 @@ async function accConfirmar(){
       patch={ estatus:'Concluido', fechaConclusion:fc, comentarioConclusion:txt };
     } else {
       var cierre=nowISO();
-      var ms=Math.max(0, new Date(cierre)-new Date(t.fechaRegistro||cierre));
+      // El tiempo invertido se mide hasta la CONCLUSIÓN del ingeniero (si la hubo), no hasta el cierre del solicitante.
+      var finTrab=t.fechaConclusion||cierre;
+      var ms=Math.max(0, new Date(finTrab)-new Date(t.fechaRegistro||finTrab));
       var dias=Math.floor(ms/86400000), horas=Math.round((ms/3600000)*100)/100;
       fields = (modo==='cancelar')
         ? { TkEstatus:'Cancelado', TkMotivoCancelacion:txt, TkFechaCierre:cierre, TkDias:dias, TkHoras:horas }
