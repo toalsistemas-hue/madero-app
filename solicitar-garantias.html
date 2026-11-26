@@ -211,7 +211,13 @@ table.gtab tr.click:hover td{background:rgba(255,255,255,.04);}
           <option value="chica">Chica (≈23 mm)</option>
         </select>
       </div>
-      <div class="fld"><label>Copias por folio</label><input class="inp" id="qr-copias" type="number" min="1" value="1"></div>
+      <div class="fld"><label>QR por folio</label>
+        <select class="inp" id="qr-modo" onchange="qrModoChange()">
+          <option value="articulos">Uno por artículo del folio (recomendado)</option>
+          <option value="fijo">Cantidad fija</option>
+        </select>
+      </div>
+      <div class="fld"><label id="qr-copias-lbl">Copias por artículo</label><input class="inp" id="qr-copias" type="number" min="1" value="1"></div>
     </div>
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="cerrar('m-qr')">Cancelar</button>
@@ -514,7 +520,7 @@ function renderTabla(tipo){
       +'<td><span class="st" style="background:'+hex2rgba(EST_COLOR[t.estatus],.16)+';color:'+(EST_COLOR[t.estatus]||'#888')+'">'+esc(t.estatus)+'</span></td>'
       +'<td>'+esc(t.sucursal||'—')+'</td>'
       +'<td>'+esc(t.clienteNombre||t.numCliente||'—')+'</td>'
-      +'<td>'+((t.articulos||[]).length? t.articulos.map(function(a){return '<div>'+esc(a.num||'')+(a.desc?(' · '+esc(a.desc)):'')+'</div>';}).join('') : '—')+'</td>'
+      +'<td>'+((t.articulos||[]).length? t.articulos.map(function(a){return '<div>'+esc(a.num||'')+(a.desc?(' · '+esc(a.desc)):'')+(a.cantidad?(' <b>(×'+esc(a.cantidad)+')</b>'):'')+'</div>';}).join('') : '—')+'</td>'
       +'<td>'+esc(t.tecnicoNombre||'—')+'</td>'
     +'</tr>';
   }).join('');
@@ -829,14 +835,14 @@ function puedeQR(){
 function cargarQrious(){ return new Promise(function(res,rej){ if(window.QRious) return res(); var sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js'; sc.onload=function(){res();}; sc.onerror=function(){rej(new Error('No se pudo cargar QRious'));}; document.head.appendChild(sc); }); }
 function _qrDataURL(texto){ var q=new QRious({ value:String(texto||''), size:420, level:'H', padding:8, background:'#ffffff', foreground:'#000000' }); return q.toDataURL('image/png'); }
 function _labelHTML(folio){ return '<div class="lbl"><div class="qrwrap"><img src="'+_qrDataURL(folio)+'"><div class="ctr">'+esc(folio)+'</div></div></div>'; }
-async function imprimirQRLista(folios, copias, size){
-  if(!folios||!folios.length){ toast('No hay folios para imprimir'); return; }
-  copias=Math.max(1, parseInt(copias||1)||1);
+// items = [{folio, copies}] — cada folio con su propia cantidad de etiquetas.
+async function imprimirQRLista(items, size){
+  if(!items||!items.length){ toast('No hay folios para imprimir'); return; }
   var chica=(size==='chica');
   toast('Preparando etiquetas…');
   try{ await cargarQrious(); }catch(e){ toast('No se pudo cargar la librería de QR'); return; }
-  var labels='';
-  folios.forEach(function(fol){ for(var c=0;c<copias;c++){ labels+=_labelHTML(fol); } });
+  var labels='', total=0;
+  items.forEach(function(it){ var c=Math.max(1, parseInt(it.copies||1)||1); for(var k=0;k<c;k++){ labels+=_labelHTML(it.folio); total++; } });
   var lblmm=chica?'23mm':'45mm', gap=chica?'3mm':'6mm', ctrFont=chica?'5.5pt':'9pt', pad=chica?'1mm':'2mm';
   var css='@page{margin:8mm;} *{box-sizing:border-box;} body{margin:0;font-family:Arial,Helvetica,sans-serif;} '
     +'.sheet{display:flex;flex-wrap:wrap;gap:'+gap+';align-content:flex-start;padding:4mm;} '
@@ -850,33 +856,39 @@ async function imprimirQRLista(folios, copias, size){
   win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Etiquetas QR Garantías</title><style>'+css+'</style></head><body>'
     +'<div class="no-print" style="padding:8px 10px;font-family:Arial;background:#f1f5f9;border-bottom:1px solid #ddd;">'
     +'<button onclick="window.print()" style="padding:6px 14px;font-weight:bold;cursor:pointer;">🖨️ Imprimir</button> '
-    +'<span style="color:#555;font-size:13px;margin-left:8px;">'+folios.length+' folio(s) · '+copias+' copia(s) c/u · etiqueta '+(chica?'chica':'grande')+'</span></div>'
+    +'<span style="color:#555;font-size:13px;margin-left:8px;">'+items.length+' folio(s) · '+total+' etiqueta(s) · '+(chica?'chica':'grande')+'</span></div>'
     +'<div class="sheet">'+labels+'</div>'
     +'<scr'+'ipt>window.onload=function(){setTimeout(function(){try{window.print();}catch(e){}},500);};</scr'+'ipt>'
     +'</body></html>');
   win.document.close();
 }
-// Abre el modal de opciones (tamaño + copias) para uno o varios folios
-function openQRModal(folios){
+// Abre el modal de opciones. items = [{folio, nArts}]
+function openQRModal(items){
   if(!puedeQR()){ toast('No tienes permiso para generar etiquetas QR'); return; }
-  if(!folios||!folios.length){ toast('No hay folios para imprimir'); return; }
-  S.qrPending={folios:folios};
-  var c=document.getElementById('qr-count'); if(c) c.textContent=folios.length+' folio(s) seleccionado(s).';
+  if(!items||!items.length){ toast('No hay folios para imprimir'); return; }
+  S.qrPending={items:items};
+  var totalArts=items.reduce(function(a,it){ return a+Math.max(1, it.nArts||0); },0);
+  var c=document.getElementById('qr-count'); if(c) c.textContent=items.length+' folio(s) · '+totalArts+' artículo(s) en total.';
   var cp=document.getElementById('qr-copias'); if(cp) cp.value='1';
   var sz=document.getElementById('qr-size'); if(sz) sz.value='grande';
+  var md=document.getElementById('qr-modo'); if(md) md.value='articulos';
+  qrModoChange();
   abrir('m-qr');
 }
+function qrModoChange(){ var m=((document.getElementById('qr-modo')||{}).value)||'articulos'; var l=document.getElementById('qr-copias-lbl'); if(l) l.textContent=(m==='fijo')?'QR por folio':'Copias por artículo'; }
 function qrConfirmarImpresion(){
-  var fols=(S.qrPending&&S.qrPending.folios)||[];
+  var items=(S.qrPending&&S.qrPending.items)||[];
   var size=(document.getElementById('qr-size')||{}).value||'grande';
-  var cop=parseInt((document.getElementById('qr-copias')||{}).value||'1')||1;
+  var modo=(document.getElementById('qr-modo')||{}).value||'articulos';
+  var cop=Math.max(1, parseInt((document.getElementById('qr-copias')||{}).value||'1')||1);
   cerrar('m-qr');
-  imprimirQRLista(fols, cop, size);
+  var list=items.map(function(it){ var copies=(modo==='fijo')?cop:(Math.max(1, it.nArts||0)*cop); return { folio:it.folio, copies:copies }; });
+  imprimirQRLista(list, size);
 }
-function imprimirQRDetalle(){ var t=S.curFolio; if(!t) return; openQRModal([t.folio]); }
+function imprimirQRDetalle(){ var t=S.curFolio; if(!t) return; openQRModal([{folio:t.folio, nArts:(t.articulos||[]).length}]); }
 function qrToggle(id,ev){ if(ev&&ev.stopPropagation)ev.stopPropagation(); if(!S.qrSel)S.qrSel={}; if(S.qrSel[id])delete S.qrSel[id]; else S.qrSel[id]=true; _qrUpdBar(); }
 function _qrUpdBar(){ var n=S.qrSel?Object.keys(S.qrSel).length:0; var b=document.getElementById('qr-print-btn'); if(b){ b.style.display=n?'inline-block':'none'; b.textContent='🏷️ Imprimir QR ('+n+')'; } }
-function imprimirQRSeleccion(){ var ids=S.qrSel?Object.keys(S.qrSel):[]; var fols=ids.map(function(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); return t?t.folio:null; }).filter(Boolean); if(!fols.length){ toast('Selecciona al menos un folio'); return; } openQRModal(fols); }
+function imprimirQRSeleccion(){ var ids=S.qrSel?Object.keys(S.qrSel):[]; var items=ids.map(function(id){ var t=S.folios.find(function(x){return String(x.id)===String(id);}); return t?{folio:t.folio, nArts:(t.articulos||[]).length}:null; }).filter(Boolean); if(!items.length){ toast('Selecciona al menos un folio'); return; } openQRModal(items); }
 
 /* ---------- nuevo folio ---------- */
 function selOpts(arr,val){ return '<option value="">Selecciona…</option>'+arr.map(function(x){return '<option'+(val===x?' selected':'')+'>'+esc(x)+'</option>';}).join(''); }
