@@ -99,6 +99,12 @@ html[data-theme="claro"] #monitor-screen [style*="#111820"],
 html[data-theme="claro"] #monitor-screen [style*="#16202b"]{ background:#ffffff !important; }
 /* HOY: tarjetas de operación desplegadas (.opr) en claro */
 html[data-theme="claro"] .opr{ background:#ffffff !important; border-color:#d7dee6 !important; }
+/* Conservar el color de estado del contorno en claro (si no, running/pausado se ven en blanco) */
+html[data-theme="claro"] .opr.running{ border-color:var(--agreen) !important; background:rgba(46,160,67,.07) !important; }
+html[data-theme="claro"] .opr.paused{ border-color:var(--ayellow) !important; background:rgba(184,134,11,.06) !important; }
+html[data-theme="claro"] .opr.validating{ border-color:#8b5cf6 !important; background:rgba(139,92,246,.06) !important; }
+html[data-theme="claro"] .opr.rejected{ border-color:#cf3333 !important; background:rgba(207,51,51,.05) !important; }
+html[data-theme="claro"] .opr.op_concluded{ border-color:#f59e0b !important; background:rgba(245,158,11,.07) !important; }
 /* Paneles/dropdowns oscuros en línea dentro de la app → claros (p. ej. filtro de estaciones del reporte) */
 html[data-theme="claro"] #app-shell-mobile [style*="#0d1117"],
 html[data-theme="claro"] #app-shell-mobile [style*="#161b22"],
@@ -2724,6 +2730,10 @@ function appLaunchPantalla(pantallaID) {
     // Ensure APP.role is set from profile before rendering
     if (APP_USER_PROFILE && typeof APP !== 'undefined') {
       APP.role = APP_USER_PROFILE.role || 'readonly';
+      // La barra de supervisor/calidad arranca con la pestaña "Sup." activa. Si el perfil
+      // entra como 'readonly' (p. ej. Administrador), alineamos el rol con esa pestaña para
+      // que los botones de acción (Pausar/Terminar/Val.Cal) aparezcan sin tener que cambiar de pestaña.
+      if (!APP.role || APP.role === 'readonly') APP.role = 'supervisor';
     }
     if (typeof applyAppUserProfile === 'function') applyAppUserProfile();
     if (!window._appDatosCargados) {
@@ -3022,38 +3032,19 @@ function sqAddOF(of_sap){
 }
 
 // Sync op.cola numbers from queue position
+// Numeración consecutiva de cola AL VUELO (sin FT_Cola_Estacion):
+// por antigüedad de OF (orden en activeOFs) y luego secuencia de operación.
 function sqSyncColaNumbers(){
-  // Assigns op.cola as a RELATIVE rank (1,2,3...) per station queue.
-  // First sorts the queue by _colaPos (absolute SP position) so the rank is stable
-  // regardless of how the queue was populated (sqAddOF, sqPurge, etc.)
-  STATIONS.forEach(function(st){
-    var q = sqGetQueue(st);
-    // Sort queue by _colaPos so rank assignment is always based on SP order
-    q.sort(function(a, b){
-      var aof_a = DB.activeOFs.find(function(x){ return x.of_sap===a.of_sap; });
-      var aof_b = DB.activeOFs.find(function(x){ return x.of_sap===b.of_sap; });
-      var op_a = aof_a ? aof_a.ops.find(function(o){ return o.id===a.op_id; }) : null;
-      var op_b = aof_b ? aof_b.ops.find(function(o){ return o.id===b.op_id; }) : null;
-      // Active ops always first, then sort by _colaPos
-      var isRunA = op_a && (op_a.status==='running'||op_a.status==='paused'||op_a.status==='validating');
-      var isRunB = op_b && (op_b.status==='running'||op_b.status==='paused'||op_b.status==='validating');
-      if (isRunA && !isRunB) return -1;
-      if (!isRunA && isRunB) return 1;
-      var pa = (op_a && op_a._colaPos > 0) ? op_a._colaPos : 9999;
-      var pb = (op_b && op_b._colaPos > 0) ? op_b._colaPos : 9999;
-      return pa - pb;
-    });
-    // Now assign sequential ranks
-    var rank = 1;
-    q.forEach(function(item){
-      var aof = DB.activeOFs.find(function(a){ return a.of_sap===item.of_sap; });
-      if (!aof) return;
-      var op = aof.ops.find(function(o){ return o.id===item.op_id; });
-      if (!op) return;
-      if (op.status==='running'||op.status==='paused'||op.status==='validating'||op.status==='op_concluded'||op.status==='done'){
-        op.cola = null;
-      } else if (op.status==='pending'||op.status==='retrabajo'){
-        op.cola = rank++;
+  var counters={};
+  (DB.activeOFs||[]).forEach(function(aof){
+    var ops=(aof.ops||[]).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+    ops.forEach(function(op){
+      if(op.status==='pending'||op.status==='retrabajo'){
+        var st=op.estacion||'';
+        counters[st]=(counters[st]||0)+1;
+        op.cola=counters[st];
+      } else {
+        op.cola=null;
       }
     });
   });
@@ -3611,7 +3602,7 @@ function renderHist(){
     var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
     var pct=Math.round(activeOps/maxOps*100);
     var isMant=ss.status==='mantenimiento';
-    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused.length?'rgba(245,158,11,.4)':'rgba(140,155,170,.35)';
     var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused.length?'rgba(245,158,11,.04)':'transparent';
     h+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
@@ -4716,8 +4707,8 @@ function appConfirmReanudar(){
           newOp._spId = res && res.id ? res.id : null;
           newOp.isTemplate = false;
           console.log('✅ Turno B creado en SP tecnico:'+nuevoTech+' pzas:'+pzRest);
-          // 2b. Register Turno B in FT_Cola_Estacion
-          if(newOp.estacion){
+          // 2b. Cola desactivada (app): ya no se registra FT_Cola_Estacion en Turno B
+          if(false){
             var colFields2={
               Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
               Estacion: newOp.estacion, Posicion: 999,
@@ -7148,7 +7139,7 @@ function renderHist(){
     var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
     var pct=activeOps2?Math.round(activeOps2/maxOps2b*100):0;
     var isMant=ss.status==='mantenimiento';
-    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(140,155,170,.35)';
     var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused2.length?'rgba(245,158,11,.04)':'transparent';
     h2+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
     h2+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
@@ -8745,15 +8736,10 @@ async function appFlowGet(lista, top) {
   top = top || 500;
   // Ruta rápida Graph: si el usuario tiene (o podría tener) acceso a esta lista.
   _appGraphCapLoad();
-  if (window._SP_GRAPH_DIRECT_ENABLED_APP && window._appGraphCap[lista] !== false) {
-    try {
-      var _gr = await _appSpGraphLeerLista(lista, top);
-      if (window._appGraphCap[lista] !== true) { window._appGraphCap[lista]=true; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' → Graph directo'); }
-      return _gr;
-    } catch(ge) {
-      if (ge && ge._authFail) { window._appGraphCap[lista]=false; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' → flujo (sin permiso Graph)'); }
-      // otro error de Graph → caemos al flujo sin marcar
-    }
+  if (window._SP_GRAPH_DIRECT_ENABLED_APP) {
+    // Lectura SIEMPRE por Graph directo (todos los usuarios tienen acceso; sin Power Automate).
+    window._appGraphCap[lista] = true;
+    return await _appSpGraphLeerLista(lista, top);
   }
   const ctrl = new AbortController();
   const tid = setTimeout(function(){ ctrl.abort(); }, 20000);
@@ -8796,9 +8782,10 @@ async function appFlowGet(lista, top) {
 
 async function appFlowEscribir(lista, operacion, itemId, datos) {
   // Ruta rápida Graph: solo si YA confirmamos lectura Graph en esa lista (no arriesgar a ciegas).
-  if (window._SP_GRAPH_DIRECT_ENABLED_APP && window._appGraphCap[lista] === true) {
-    try { return await _appSpGraphEscribirLista(lista, operacion, itemId, datos); }
-    catch(ge){ if(ge&&ge._authFail){ window._appGraphCap[lista]=false; _appGraphCapSave(); console.log('[SP ruteo app] '+lista+' escritura → flujo'); } else { throw ge; } }
+  if (window._SP_GRAPH_DIRECT_ENABLED_APP) {
+    // Todos los usuarios tienen Graph directo → escribir SIEMPRE por Graph (sin Power Automate).
+    window._appGraphCap[lista] = true;
+    return await _appSpGraphEscribirLista(lista, operacion, itemId, datos);
   }
   var payload = { lista: lista, operacion: operacion, itemId: itemId || 0, datos: datos };
   console.log('[FlowEscribir] '+lista+' op='+operacion+' itemId='+itemId+' datos_keys='+Object.keys(datos||{}).join(','));
@@ -8846,7 +8833,7 @@ async function _appLoadDataFromSP_impl() {
       appFlowGet('FT_Operaciones', 15000).catch(emptyFn),
       appFlowGet('FT_Tecnicos', 200).catch(emptyFn),
       appFlowGet('FT_Estaciones', 100).catch(emptyFn),
-      appFlowGet('FT_Cola_Estacion', 15000).catch(emptyFn),
+      Promise.resolve({value:[]}), // Cola desactivada (app): no se lee FT_Cola_Estacion
       appFlowGet('FT_Status_Estacion', 100).catch(emptyFn),
       appFlowGet('FT_Timers', 2000).catch(emptyFn),
       appFlowGet('FT_Plantillas_Operaciones', 500).catch(emptyFn),
@@ -9691,6 +9678,7 @@ async function _doSaveTimerToSP(key) {
 
 // ── Save FT_Cola_Estacion from app ──────────────────────────
 async function appSaveQueueToSP(of_sap) {
+  return; // Cola desactivada (app): ya no se escribe FT_Cola_Estacion.
   // _colaPos = absolute position in SP (never recalculated, only set on creation or explicit reorder)
   // op.cola  = relative display rank (recalculated locally by sqSyncColaNumbers)
   try {
@@ -13487,7 +13475,7 @@ function monTurnoDoTraspaso(of, op, nuevoTech, nuevosAyud) {
       var res = await appFlowEscribir('FT_Operaciones', 'crear', 0, postFields);
       newOp._spId = res && res.id ? res.id : null;
       if (typeof appSaveTimerToSP === 'function') appSaveTimerToSP(of.of_sap + '_' + newOp.id).catch(function(){});
-      if (newOp.estacion) {
+      if (false) { // Cola desactivada (app)
         var _posB = op._colaPos || 999; // heredar la posición del turno A para que quede en el lugar correcto
         appFlowEscribir('FT_Cola_Estacion', 'crear', 0, {
           Title: of.of_sap+'_'+newOp.id, OF_SAP: of.of_sap, Op_ID: newOp.id,
@@ -14569,7 +14557,7 @@ function renderHist(){
     var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
     var pct=Math.round(activeOps/maxOps*100);
     var isMant=ss.status==='mantenimiento';
-    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused.length?'rgba(245,158,11,.4)':'rgba(140,155,170,.35)';
     var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused.length?'rgba(245,158,11,.04)':'transparent';
     h+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
@@ -15622,8 +15610,8 @@ function appConfirmReanudar(){
           newOp._spId = res && res.id ? res.id : null;
           newOp.isTemplate = false;
           console.log('✅ Turno B creado en SP tecnico:'+nuevoTech+' pzas:'+pzRest);
-          // 2b. Register Turno B in FT_Cola_Estacion
-          if(newOp.estacion){
+          // 2b. Cola desactivada (app): ya no se registra FT_Cola_Estacion en Turno B
+          if(false){
             var colFields2={
               Title:    ctx.of_sap+'_'+newOp.id, OF_SAP: ctx.of_sap, Op_ID: newOp.id,
               Estacion: newOp.estacion, Posicion: 999,
@@ -18186,7 +18174,7 @@ function renderHist(){
     var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
     var pct=activeOps2?Math.round(activeOps2/maxOps2b*100):0;
     var isMant=ss.status==='mantenimiento';
-    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(140,155,170,.35)';
     var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused2.length?'rgba(245,158,11,.04)':'transparent';
     h2+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
     h2+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
@@ -19235,7 +19223,7 @@ async function appReloadOpsFromSP() {
     // Load FT_Cola_Estacion to get authoritative queue positions
     // Only every 3rd poll cycle (~90s) to reduce Flow action consumption
     window._colaReloadCount = (window._colaReloadCount||0) + 1;
-    var _shouldReloadCola = (window._colaReloadCount % 3 === 1); // 1, 4, 7... (every 3 cycles)
+    var _shouldReloadCola = false; // Cola desactivada (app): el número se calcula al vuelo
     if (_shouldReloadCola) try {
       var colaEstRes = await appFlowGet('FT_Cola_Estacion', 15000);
       // Build posicion map: Op_ID → {posicion, spId}

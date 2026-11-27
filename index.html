@@ -871,6 +871,7 @@ body { font-family:\'Inter\',sans-serif; background:var(--bg); color:var(--text)
 .prio-alta{background:rgba(207,51,51,.18);color:var(--red);}
 .prio-media{background:rgba(212,160,23,.18);color:var(--yellow);}
 .prio-normal{background:rgba(255,255,255,.07);color:var(--dim);}
+html[data-theme="claro"] #rev-prog-modal{ --card:#ffffff; --bg:#ffffff; --text:#1b2733; --dim:#5a6b7b; --border:#d7dee6; --accent-l:#00528b; --green:#007a33; }
 
 /* Programación */
 .prog-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:9px;overflow:hidden;transition:border-color .2s;}
@@ -6905,15 +6906,11 @@ async function flowGet(lista, filtro, top) {
   top    = top    || 500;
   // Ruta rápida Graph: solo para lecturas sin filtro y si esa lista no está marcada como "solo flujo".
   _graphCapLoad();
-  if (window._SP_GRAPH_DIRECT_ENABLED && !filtro && window._graphCap[lista] !== false) {
-    try {
-      var _gr = await _spGraphLeerLista(lista, top);
-      if (window._graphCap[lista] !== true) { window._graphCap[lista] = true; _graphCapSave(); console.log('[SP ruteo] '+lista+' → Graph directo'); }
-      return _gr;
-    } catch(ge) {
-      if (ge && ge._authFail) { window._graphCap[lista] = false; _graphCapSave(); console.log('[SP ruteo] '+lista+' → flujo (sin permiso Graph)'); }
-      // Cualquier otro error de Graph: caemos al flujo sin marcar (reintentará Graph luego).
-    }
+  if (window._SP_GRAPH_DIRECT_ENABLED && !filtro) {
+    // Lectura SIEMPRE por Graph directo (todos los usuarios tienen acceso; sin Power Automate).
+    // _spGraphLeerLista ya reintenta internamente el throttling (429/503). En error real, propaga.
+    window._graphCap[lista] = true;
+    return await _spGraphLeerLista(lista, top);
   }
   const controller = new AbortController();
   const tid = setTimeout(function(){ controller.abort(); }, 25000);
@@ -6962,13 +6959,11 @@ async function flowGet(lista, filtro, top) {
 async function flowEscribir(lista, operacion, itemId, datos) {
   // Ruta rápida Graph: solo si YA confirmamos acceso de lectura Graph a esa lista
   // (no arriesgamos escrituras a ciegas). Si el permiso cambió (401/403), caemos al flujo.
-  if (window._SP_GRAPH_DIRECT_ENABLED && window._graphCap[lista] === true) {
-    try {
-      return await _spGraphEscribirLista(lista, operacion, itemId, datos);
-    } catch(ge) {
-      if (ge && ge._authFail) { window._graphCap[lista] = false; _graphCapSave(); console.log('[SP ruteo] '+lista+' escritura → flujo (sin permiso Graph)'); }
-      else { throw ge; } // otro error: no reintentar por flujo para evitar doble escritura
-    }
+  if (window._SP_GRAPH_DIRECT_ENABLED) {
+    // Todos los usuarios tienen acceso directo a las listas → escribir SIEMPRE por Graph (sin Power Automate).
+    // (Si se pone window._SP_GRAPH_DIRECT_ENABLED=false, cae al flujo de abajo como respaldo manual.)
+    window._graphCap[lista] = true;
+    return await _spGraphEscribirLista(lista, operacion, itemId, datos);
   }
   const res = await fetch(FLOW_URL_ESCRIBIR, {
     method:  'POST',
@@ -8133,48 +8128,8 @@ async function ftLoadDataFromSP() {
                 _spId:o.ID||null,_queueSpId:ex?ex._queueSpId:null};
             });
           });
-          // Recargar FT_Cola_Estacion para reflejar reordenamientos desde app móvil
-          try {
-            var colaResPoll = _ofSapsAct.length
-              ? await ftLeerPorOFs('FT_Cola_Estacion', _ofSapsAct, 15000)
-              : await graphGet('sites/'+FT_SITE_ID+'/lists/FT_Cola_Estacion/items?$expand=fields&$top=15000');
-            window.DB_STATION_QUEUE = {};
-            window.STATIONS.forEach(function(s){ window.DB_STATION_QUEUE[s]=[]; });
-            var colaItemsPoll = (colaResPoll.value||[]).sort(function(a,b){return (a.fields.Posicion||0)-(b.fields.Posicion||0);});
-            colaItemsPoll.forEach(function(c){
-              var st=c.fields.Estacion||c.fields.Title||'';
-              if(!window.DB_STATION_QUEUE[st]) window.DB_STATION_QUEUE[st]=[];
-              var alreadyIn=window.DB_STATION_QUEUE[st].find(function(x){return x.of_sap===c.fields.OF_SAP&&x.op_id===c.fields.Op_ID;});
-              if(!alreadyIn){
-                window.DB_STATION_QUEUE[st].push({of_sap:c.fields.OF_SAP||'',op_id:c.fields.Op_ID||'',tipo:c.fields.Tipo_Cola||'normal'});
-                DB.activeOFs.forEach(function(aof){
-                  if(aof.of_sap===c.fields.OF_SAP){
-                    var op=aof.ops.find(function(o){return o.id===c.fields.Op_ID;});
-                    if(op){
-                      op._queueSpId=c.id;
-                      op._colaPos = parseInt(c.fields.Posicion||0)||0; // absolute position
-                      // op.cola (relative rank) is computed by sqSyncColaNumbers, not set directly
-                    }
-                  }
-                });
-              }
-            });
-          } catch(ce){ console.warn('Poll FT_Cola_Estacion error:', ce.message); }
-          // Refresh queue order based on Cola values loaded from SP
-          DB.activeOFs.forEach(function(aof){
-            if(typeof sqAddOF==='function') try{ sqAddOF(aof.of_sap); }catch(e){}
-          });
-          // Sort each station queue by absolute _colaPos before computing relative ranks
-          Object.keys(window.DB_STATION_QUEUE||{}).forEach(function(st) {
-            window.DB_STATION_QUEUE[st].sort(function(a, b) {
-              var aof_a=DB.activeOFs.find(function(x){return x.of_sap===a.of_sap;});
-              var op_a=aof_a?aof_a.ops.find(function(o){return o.id===a.op_id;}):null;
-              var aof_b=DB.activeOFs.find(function(x){return x.of_sap===b.of_sap;});
-              var op_b=aof_b?aof_b.ops.find(function(o){return o.id===b.op_id;}):null;
-              return ((op_a&&op_a._colaPos)||999)-((op_b&&op_b._colaPos)||999);
-            });
-          });
-          if(typeof sqSyncColaNumbers==='function') sqSyncColaNumbers();
+          // Cola desactivada: el número se calcula al vuelo (no se lee FT_Cola_Estacion).
+          try{ sqSyncColaNumbers(); }catch(e){}
           // Inicializar timers para ops running que no tienen timer en memoria
           DB.activeOFs.forEach(function(aof){
             aof.ops.forEach(function(op){
@@ -8462,6 +8417,7 @@ async function ftSaveTimerToSP(key) {
 
 // ====== FT_Cola_Estacion — save queue for a given OF's ops ======
 async function ftSaveQueueToSP(of_sap) {
+  return; // Cola desactivada: ya no se escribe FT_Cola_Estacion.
   if (!FT_SITE_ID) {
     try { FT_SITE_ID = await getSiteId(); } catch(e) { return; }
   }
@@ -9007,22 +8963,19 @@ function sqAddOF(of_sap){
   sqSyncColaNumbers();
 }
 
-// Sync op.cola numbers from queue position
+// Numeración consecutiva de cola AL VUELO (sin FT_Cola_Estacion):
+// por antigüedad de OF (orden en activeOFs) y luego secuencia de operación.
 function sqSyncColaNumbers(){
-  STATIONS.forEach(function(st){
-    var q=sqGetQueue(st);
-    var colaIdx=1;
-    q.forEach(function(item){
-      var aof=DB.activeOFs.find(function(a){return a.of_sap===item.of_sap;});
-      if(!aof) return;
-      var op=aof.ops.find(function(o){return o.id===item.op_id;});
-      if(!op) return;
-      // Active statuses: no queue number shown
-      if(op.status==='running'||op.status==='paused'||op.status==='validating'||
-         op.status==='op_concluded'||op.status==='done'){
+  var counters={};
+  (DB.activeOFs||[]).forEach(function(aof){
+    var ops=(aof.ops||[]).slice().sort(function(a,b){return (a.secuencia||0)-(b.secuencia||0);});
+    ops.forEach(function(op){
+      if(op.status==='pending'||op.status==='retrabajo'){
+        var st=op.estacion||'';
+        counters[st]=(counters[st]||0)+1;
+        op.cola=counters[st];
+      } else {
         op.cola=null;
-      } else if(op.status==='pending'||op.status==='retrabajo'){
-        op.cola=colaIdx++;
       }
     });
   });
@@ -11555,13 +11508,14 @@ function confirmProgMain() {
   // Validar que OFs programadas tengan los campos obligatorios
   var errores = [];
 
-  // ── Advertencia: ops sin estación asignada ───────────────────────────────
+  // ── Advertencia: ops sin estación asignada (SOLO las OFs que se registran ahora) ──
   var _opsWarn = [];
-  DB.ofs.filter(function(of){ return of.programadoHoy; }).forEach(function(of){
-    var aof = DB.activeOFs.find(function(a){ return a.of_sap === of.of_sap; });
+  Object.keys(PENDING_PROG||{}).forEach(function(sap){
+    if (!PENDING_PROG[sap] || PENDING_PROG[sap].programadoHoy !== true) return;
+    var aof = DB.activeOFs.find(function(a){ return a.of_sap === sap; });
     if (!aof) return;
     aof.ops.forEach(function(op){
-      if (!op.estacion) _opsWarn.push('OF ' + of.of_sap + ' · Op ' + (aof.ops.indexOf(op)+1) + ': ' + (op.nombre||op.id));
+      if (!op.estacion) _opsWarn.push('OF ' + sap + ' · Op ' + (aof.ops.indexOf(op)+1) + ': ' + (op.nombre||op.id));
     });
   });
   if (_opsWarn.length > 0) {
@@ -11829,108 +11783,12 @@ function confirmProgMain() {
           await Promise.all(batch.map(function(s){ return saveOfsOps([s]); }));
         }
 
-        // ══ STEP 2: Save FT_Cola_Estacion via Flow (same as Step 1) ═══════
-        // Using Flow for all SP writes — Graph API direct fails for users whose
-        // token does not carry Sites.ReadWrite.All (MSAL audience/scope issue).
-        // The Flow uses its own SP connection independent of the user's token.
-        showLoadingModal('Guardando programación','Paso 2/3: Asignando posiciones de cola...\nNo cierres esta ventana.');
-
-        // Fetch existing cola records via Flow
-        var _colaFlowRes = await flowGet('FT_Cola_Estacion', '', 15000).catch(function(){return {value:[]};});
-        var _colaRes = _colaFlowRes;
-        var _existingColaMap = {};
-        var _dups = [];
-        ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
-          var f=item.fields||{};
-          var opId=f.Op_ID||'';
-          if (!opId) return;
-          if (!_existingColaMap[opId]) {
-            _existingColaMap[opId]={spId:String(item.id),pos:parseInt(f.Posicion||0)||0};
-          } else {
-            var keep=parseInt(_existingColaMap[opId].spId)<parseInt(item.id)?_existingColaMap[opId].spId:String(item.id);
-            var del =parseInt(_existingColaMap[opId].spId)<parseInt(item.id)?String(item.id):_existingColaMap[opId].spId;
-            _existingColaMap[opId]={spId:keep,pos:_existingColaMap[opId].pos};
-            _dups.push(del);
-          }
-        });
-        // Delete duplicates via Flow
-        if (_dups.length>0) {
-          console.log('[Cola] Eliminando',_dups.length,'duplicados...');
-          for (var _di=0; _di<_dups.length; _di++) {
-            await spEscribir('FT_Cola_Estacion', {_delete:true}, parseInt(_dups[_di])).catch(function(){});
-          }
-        }
-        // Compute global max positions (excluding new OFs batch)
-        var _nuevasSet={};
-        _newSapsSorted.forEach(function(s){_nuevasSet[s]=true;});
-        var _globalMax={};
-        ((_colaRes&&_colaRes.value)||[]).forEach(function(item){
-          var f=item.fields||{};
-          var ofSap=String(f.OF_SAP||'');
-          if (_nuevasSet[ofSap]) return;
-          var est=f.Estacion||f.Title||'';
-          var pos=parseInt(f.Posicion||0)||0;
-          if(est&&pos>0) _globalMax[est]=Math.max(_globalMax[est]||0,pos);
-        });
-        console.log('[Cola] Max existentes:',JSON.stringify(_globalMax));
-        // Assign positions to new ops
-        _newSapsSorted.forEach(function(sap){
-          (_opsSnapshot[sap]||[]).forEach(function(op){
-            if(!op.estacion) return;
-            _globalMax[op.estacion]=(_globalMax[op.estacion]||0)+1;
-            op._colaPos=_globalMax[op.estacion];
-          });
-          var aof=DB.activeOFs.find(function(a){return a.of_sap===sap;});
-          if(aof)(_opsSnapshot[sap]||[]).forEach(function(snap){
-            var live=aof.ops.find(function(o){return o.id===snap.id;});
-            if(live) live._colaPos=snap._colaPos;
-          });
-        });
-        // Write cola records via Flow — batches of 5 with 300ms spacing
-        var _colaWrites = [];
-        _newSapsSorted.forEach(function(sap){
-          (_opsSnapshot[sap]||[]).forEach(function(op){
-            if(!op.estacion||!op._colaPos||op._colaPos<=0) return;
-            var existing=_existingColaMap[op.id];
-            _colaWrites.push({existing:existing,op:op,sap:sap});
-          });
-        });
-        var _failedCola=[];
-        for(var ci=0;ci<_colaWrites.length;ci++){
-          var w=_colaWrites[ci];
-          var _saved=false;
-          for(var _cr=0;_cr<3&&!_saved;_cr++){
-            if(_cr>0){
-              await new Promise(function(r){setTimeout(r,1500*_cr);});
-              // Idempotencia: si el intento previo creó el registro de cola pero se perdió la respuesta,
-              // re-leer y adoptar su spId para ACTUALIZAR en vez de duplicar.
-              if(!(w.existing&&w.existing.spId)){
-                try{ var _cc=await flowGet('FT_Cola_Estacion','',15000); var _ch=(_cc.value||[]).find(function(it){var f=it.fields||{}; return String(f.Op_ID||'')===String(w.op.id);}); if(_ch) w.existing={spId:String(_ch.id),pos:w.op._colaPos}; }catch(_e){}
-              }
-            }
-            try{
-              if(w.existing&&w.existing.spId){
-                await spEscribir('FT_Cola_Estacion',{Posicion:w.op._colaPos,Activo:false},parseInt(w.existing.spId));
-              } else {
-                var _newColaRes=await spEscribir('FT_Cola_Estacion',
-                  {Title:w.op.estacion,OF_SAP:w.sap,Op_ID:w.op.id,Posicion:w.op._colaPos,Tipo_Cola:'normal',Activo:false},null);
-                if(_newColaRes&&_newColaRes.id) w.op._queueSpId=_newColaRes.id;
-              }
-              console.log('  ✅ Cola:',w.op.id,'pos='+w.op._colaPos);
-              _saved=true;
-            }catch(e){console.warn('  ❌ Cola error (intento '+(_cr+1)+'):',w.op.id,e.message);}
-          }
-          if(!_saved) _failedCola.push(w);
-          if(ci<_colaWrites.length-1) await new Promise(function(r){setTimeout(r,300);});
-          if((ci+1)%5===0) showLoadingModal('Guardando programación',
-            'Paso 2/3: Cola '+(ci+1)+'/'+_colaWrites.length+'\nNo cierres esta ventana.');
-        }
-        if(_failedCola.length>0) console.warn('⚠️ Cola fallida:',_failedCola.length,'ops');
+        // Cola desactivada: ya no se asignan posiciones en FT_Cola_Estacion (el número es solo de display, al vuelo).
 
         // ══ STEP 3: Save Programado_Hoy / Status / Fecha_Entrega / Cantidad ══
         // Uses spEscribir (Flow) — Graph API direct fails for users without
         // direct SP token scope. Flow uses its own connection independent of user.
-        showLoadingModal('Guardando programación','Paso 3/3: Actualizando estado de OFs...\nCasi listo.');
+        showLoadingModal('Guardando programación','Paso 2/2: Actualizando estado de OFs...\nCasi listo.');
         try {
           // Fetch OF SP IDs via Flow (same as initial data load)
           var _ofFlowRes = await flowGet('FT_OrdenesFabricacion','',2000).catch(function(){return {value:[]};});
@@ -16272,7 +16130,7 @@ function renderHist(){
     var totalMins=done.reduce(function(s,x){return s+(x.op.mins||0);},0);
     var pct=activeOps2?Math.round(activeOps2/maxOps2b*100):0;
     var isMant=ss.status==='mantenimiento';
-    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(255,255,255,.07)';
+    var borderCol=isMant?'rgba(239,68,68,.4)':running.length?'rgba(46,160,67,.35)':paused2.length?'rgba(245,158,11,.4)':'rgba(140,155,170,.35)';
     var bgCol=isMant?'rgba(239,68,68,.04)':running.length?'rgba(46,160,67,.04)':paused2.length?'rgba(245,158,11,.04)':'transparent';
     h2+='<div style="border:1px solid '+borderCol+';background:'+bgCol+';border-radius:8px;padding:10px 12px;margin-bottom:8px;">';
     h2+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
@@ -16530,6 +16388,7 @@ function qmgrMove(idx, dir){
 
 // Save Cola position to both FT_Operaciones and FT_Cola_Estacion for a station queue
 async function portalSaveColaToSP(estacion){
+  return; // Cola desactivada.
   if(!FT_SITE_ID) return;
   var q = sqGetQueue(estacion);
   console.log('💾 Guardando cola SP — estación:', estacion, '|', q.length, 'ops');
