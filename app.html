@@ -8317,9 +8317,20 @@ async function _appSpGraphLeerLista(lista, top){
 async function _appSpGraphEscribirLista(lista, operacion, itemId, datos){
   var sid=await appGetSiteId(); var token=await appGetToken();
   var base='https://graph.microsoft.com/v1.0/sites/'+sid+'/lists/'+encodeURIComponent(lista)+'/items';
-  var res;
-  if(operacion==='crear'){ res=await fetch(base,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:datos})}); }
-  else { res=await fetch(base+'/'+itemId+'/fields',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)}); }
+  var _url=(operacion==='crear')?base:(base+'/'+itemId+'/fields');
+  var _method=(operacion==='crear')?'POST':'PATCH';
+  var _body=(operacion==='crear')?JSON.stringify({fields:datos}):JSON.stringify(datos);
+  var res, _rt=0;
+  while(true){
+    res=await fetch(_url,{method:_method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:_body});
+    // 429/503 = throttling → esperar (Retry-After) y reintentar la escritura.
+    if((res.status===429||res.status===503) && _rt<5){
+      _rt++; var _ra=parseInt(res.headers.get('Retry-After')||'',10); if(isNaN(_ra)) _ra=Math.min(_rt*2,10);
+      await new Promise(function(r){ setTimeout(r, _ra*1000); });
+      continue;
+    }
+    break;
+  }
   if(res.status===401||res.status===403||res.status===404){ var e=new Error('Graph write '+res.status+' '+lista); e._authFail=true; throw e; }
   if(!res.ok){ var t=await res.text(); throw new Error('Graph write '+lista+' '+res.status+': '+t.slice(0,200)); }
   var txt=await res.text(); if(!txt) return {resultado:'ok'}; try{ return JSON.parse(txt); }catch(_){ return {resultado:'ok'}; }
