@@ -18069,6 +18069,7 @@ function _tableroEnsureOverlay(){
     +'    <div id="tablero-k-page" style="font-size:1.05rem;font-weight:700;color:#c9d1d9;text-transform:capitalize;"></div>'
     +'    <div id="tablero-k-clock" style="font-size:1.3rem;font-weight:700;color:#58a6ff;font-family:\'DM Mono\',monospace;"></div>'
     +'    <div id="tablero-k-updated" style="font-size:.8rem;color:#8b949e;"></div>'
+    +'    <button onclick="tableroRefreshManual(this)" title="Actualizar datos" style="background:transparent;border:none;color:#8b949e;font-size:1rem;cursor:pointer;opacity:.06;transition:opacity .2s;padding:2px 7px;line-height:1;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.06">↻</button>'
     +'    <button onclick="tableroKioskSalir()" title="Salir del tablero" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;color:#e6edf3;font-size:1.05rem;font-weight:700;padding:4px 13px;cursor:pointer;line-height:1;">✕</button>'
     +'  </div>'
     +'</div>'
@@ -18184,6 +18185,13 @@ async function tableroRefresh(){
   }catch(e){ console.warn('[Tablero] refresh', e&&e.message); }
   try{ tableroRender(); }catch(e){ console.warn('[Tablero] render', e&&e.message); }
 }
+// Botón discreto de actualizar manual en el tablero (para quien lo abre en PC; los operadores solo miran).
+async function tableroRefreshManual(btn){
+  if(btn){ btn.disabled=true; btn.style.opacity='1'; btn.textContent='⟳'; }
+  try{ await tableroRefresh(); }catch(e){}
+  if(btn){ btn.disabled=false; btn.textContent='↻'; btn.style.opacity='0.06'; }
+}
+window.tableroRefreshManual=tableroRefreshManual;
 function tableroRender(){
   var grid=document.getElementById('tablero-k-grid'); if(!grid) return;
   _tableroInnerPage=0;   // cada render reinicia el avance interno al inicio
