@@ -7010,6 +7010,12 @@ async function spGet(lista, queryParams) {
 }
 
 async function spEscribir(lista, datos, itemId) {
+  // Convenio heredado del flujo: {_delete:true} significaba "borrar esta fila".
+  // Con Graph directo eso es un DELETE del item (antes se mandaba como campo y daba 400).
+  if (datos && datos._delete === true && itemId) {
+    const sidD = await getSiteId();
+    return graphDelete('sites/'+sidD+'/lists/'+lista+'/items/'+parseInt(itemId, 10));
+  }
   if (LISTAS_PROTEGIDAS.indexOf(lista) !== -1) {
     var op = itemId ? 'actualizar' : 'crear';
     var idNum = itemId ? parseInt(itemId, 10) : 0;
@@ -7877,7 +7883,7 @@ async function ftLoadDataFromSP() {
           // ── Pre-cleanup: delete any existing FT_Cola_Estacion records for these OFs ──
           // Prevents stale/duplicate records from previous failed or partial runs
           try {
-            var _existingColaRaw = await flowGet('FT_Cola_Estacion', '', 15000);
+            var _existingColaRaw = {value:[]}; // Cola deprecada: ya no se limpia FT_Cola_Estacion al cargar.
             var _existingColaItems = (_existingColaRaw.value || []).filter(function(item) {
               return _ofsToCreate.indexOf(String((item.fields||item).OF_SAP||'')) >= 0;
             });
@@ -12095,7 +12101,19 @@ async function ftOmitirTodasOF(of_sap){
       closeCModal('modal-info');
       _pend.forEach(function(op){ op.status='omitida'; });
       renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
-      for(var i=0;i<_pend.length;i++){ var op=_pend[i]; if(op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(op._spId)); }catch(e){} } }
+      // Spinner bloqueante hasta que TODAS queden guardadas como omitidas en SharePoint
+      // (evita que el usuario vaya a Tiempo Real y finalice antes de terminar).
+      if(typeof showLoadingModal==='function') showLoadingModal('Omitiendo operaciones','Guardando '+_pend.length+' operación(es) como omitidas…\nNo cierres ni navegues hasta que termine.');
+      try{
+        for(var i=0;i<_pend.length;i++){
+          var op=_pend[i];
+          if(op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(op._spId)); }catch(e){ console.warn('[OmitirTodas] op', op.id, e&&e.message); } }
+          if(typeof showLoadingModal==='function') showLoadingModal('Omitiendo operaciones','Guardando '+(i+1)+'/'+_pend.length+'…\nNo cierres ni navegues hasta que termine.');
+        }
+      } finally {
+        if(typeof hideLoadingModal==='function') hideLoadingModal();
+        renderProg(); if(typeof renderSeg==='function') renderSeg();
+      }
     }
   );
 }
