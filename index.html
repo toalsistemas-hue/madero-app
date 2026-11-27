@@ -12079,6 +12079,26 @@ async function ftFinalizarOF(of_sap){
     }
   );
 }
+// Omitir TODAS las operaciones pendientes de una OF programada (para poder finalizarla).
+async function ftOmitirTodasOF(of_sap){
+  if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
+  var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;}); if(!of) return;
+  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;});
+  if(!aof || !aof.ops){ alert('La OF no tiene operaciones cargadas.'); return; }
+  if(aof.ops.some(function(op){return op.status==='running'||op.status==='paused'||op.status==='validating';})){ alert('No se puede omitir: hay una operación activa en esta OF.'); return; }
+  var _pend=aof.ops.filter(function(op){return op.status==='pending'||op.status==='retrabajo';});
+  if(!_pend.length){ alert('No hay operaciones pendientes por omitir.'); return; }
+  showInfoModal('Omitir todas — OF '+of_sap,
+    '¿Omitir las '+_pend.length+' operación(es) pendiente(s) de la OF '+of_sap+'?\nQuedarán como OMITIDA y podrás finalizar la orden.',
+    '⊘ Omitir todas',
+    async function(){
+      closeCModal('modal-info');
+      _pend.forEach(function(op){ op.status='omitida'; });
+      renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
+      for(var i=0;i<_pend.length;i++){ var op=_pend[i]; if(op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(op._spId)); }catch(e){} } }
+    }
+  );
+}
 // Reabrir una OF finalizada (vuelve a "Sin programar")
 async function ftReabrirOF(of_sap){
   if(typeof _fabNivel==='function' && _fabNivel()==='lectura') return;
@@ -12222,8 +12242,13 @@ function _renderProgBody(){
         if(_fabNivel()!=='lectura') h+="<button onclick=\"ftReabrirOF('"+esc(of.of_sap)+"')\" style='background:rgba(212,160,23,.12);border:1px solid rgba(212,160,23,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--yellow);white-space:nowrap;'>↩ Reabrir</button>";
       } else {
         if(_fabNivel()!=='lectura') h+="<button onclick=\"openOFOpsModal('"+esc(of.of_sap)+"')\" style='background:rgba(88,166,255,.12);border:1px solid rgba(88,166,255,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--accent-l);white-space:nowrap;'>👷 Ops</button>";
-        // Finalizar: solo para OFs SIN PROGRAMAR (no se van a producir) — cuentan para poder cerrar el pedido
-        if(!of.programadoHoy && _fabNivel()!=='lectura') h+="<button onclick=\"ftFinalizarOF('"+esc(of.of_sap)+"')\" title='Marcar como finalizada sin producir (cuenta para cerrar el pedido)' style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>✓ Finalizar</button>";
+        var _aofF=_fabAofBySap(of.of_sap);
+        var _hasPend=!!(_aofF&&_aofF.ops&&_aofF.ops.some(function(op){return op.status==='pending'||op.status==='retrabajo';}));
+        var _hasAct=!!(_aofF&&_aofF.ops&&_aofF.ops.some(function(op){return op.status==='running'||op.status==='paused'||op.status==='validating';}));
+        // Omitir todas: para OFs PROGRAMADAS con pendientes y sin operación activa (para poder finalizar).
+        if(of.programadoHoy && _hasPend && !_hasAct && _fabNivel()!=='lectura') h+="<button onclick=\"ftOmitirTodasOF('"+esc(of.of_sap)+"')\" title='Omitir todas las operaciones pendientes para poder finalizar la orden' style='background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.35);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--dim);white-space:nowrap;'>⊘ Omitir todas</button>";
+        // Finalizar: OFs sin programar, o programadas ya sin pendientes; nunca con una operación activa.
+        if(((!of.programadoHoy)||!_hasPend) && !_hasAct && _fabNivel()!=='lectura') h+="<button onclick=\"ftFinalizarOF('"+esc(of.of_sap)+"')\" title='Marcar como finalizada sin producir (cuenta para cerrar el pedido)' style='background:rgba(46,160,67,.12);border:1px solid rgba(46,160,67,.3);border-radius:5px;padding:2px 7px;font-size:.68rem;cursor:pointer;color:var(--green);white-space:nowrap;'>✓ Finalizar</button>";
         if(_fabNivel()!=='lectura') h+="<button onclick=\"cancelarOrden('"+esc(of.of_sap)+"','"+esc(g.pedido)+"')\" style='background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:5px;padding:2px 7px;font-size:.68rem;color:var(--red);cursor:pointer;white-space:nowrap;'>✗ Cancelar</button>";
       }
       if(!ofEnCierre && !_finalizada && _fabNivel()!=='lectura') h+="<button class='btn-sm-ghost' onclick=\"handleConfigClick('"+esc(of.of_sap)+"')\" style='padding:2px 6px;font-size:.68rem;'>⚙</button>";
