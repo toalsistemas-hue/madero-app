@@ -12060,9 +12060,14 @@ async function ftFinalizarOF(of_sap){
       closeCModal('modal-info');
       of.status='Finalizada'; of.programadoHoy=false;
       var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;}); if(aof) aof.programadoHoy=false;
-      renderProg(); if(typeof renderSeg==='function') renderSeg();
+      // Las operaciones pendientes pasan a OMITIDA: así la OF cuenta 100% y dejan de verse como
+      // pendientes en Tiempo Real / Historial / Reportes / Tablero.
+      var _opsOmit=[];
+      if(aof && aof.ops){ aof.ops.forEach(function(op){ if(op.status==='pending'||op.status==='retrabajo'){ op.status='omitida'; _opsOmit.push(op); } }); }
+      renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
       try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Finalizada', Programado_Hoy:false}, of._spId); }
       catch(e){ console.warn('[ftFinalizarOF] SP:', e.message); }
+      for(var _i=0;_i<_opsOmit.length;_i++){ var _op=_opsOmit[_i]; if(_op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(_op._spId)); }catch(e){} } }
     }
   );
 }
@@ -12072,9 +12077,14 @@ async function ftReabrirOF(of_sap){
   var of=(DB.ofs||[]).find(function(o){return o.of_sap===of_sap;});
   if(!of) return;
   of.status='Sin programar';
-  renderProg(); if(typeof renderSeg==='function') renderSeg();
+  // Al reabrir, las operaciones OMITIDAS vuelven a PENDING; las que ya tenían otro estatus se quedan.
+  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===of_sap;});
+  var _opsReab=[];
+  if(aof && aof.ops){ aof.ops.forEach(function(op){ if(op.status==='omitida'){ op.status='pending'; _opsReab.push(op); } }); }
+  renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
   try{ if(of._spId!=null) await spEscribir('FT_OrdenesFabricacion',{Status:'Sin programar'}, of._spId); }
   catch(e){ console.warn('[ftReabrirOF] SP:', e.message); }
+  for(var _i=0;_i<_opsReab.length;_i++){ var _op=_opsReab[_i]; if(_op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'pending'}, parseInt(_op._spId)); }catch(e){} } }
 }
 
 // renderProg con debounce + spinner: colapsa llamadas rápidas (al enfocar/navegar)
@@ -15060,6 +15070,14 @@ function reabrirOrdenIndividual(ofSap){
   var of = DB.ofs.find(function(o){return o.of_sap===ofSap;});
   if(!of) return;
   _ofCerradaSetSP(of, false);
+  // Al reabrir, las operaciones OMITIDAS vuelven a PENDING; las demás se quedan como estaban.
+  var aof=(DB.activeOFs||[]).find(function(a){return a.of_sap===ofSap;});
+  if(aof && aof.ops){
+    var _r=[];
+    aof.ops.forEach(function(op){ if(op.status==='omitida'){ op.status='pending'; _r.push(op); } });
+    (window.renderSeg||renderSeg)(); if(typeof renderApp==='function') renderApp();
+    (async function(){ for(var i=0;i<_r.length;i++){ var op=_r[i]; if(op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'pending'}, parseInt(op._spId)); }catch(e){} } } })();
+  }
 }
 window.cerrarOrdenIndividual = cerrarOrdenIndividual;
 window.reabrirOrdenIndividual = reabrirOrdenIndividual;
