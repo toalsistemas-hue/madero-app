@@ -1336,7 +1336,7 @@ tr:last-child td{border-bottom:none;}
         <div><div class="page-title">📡 Seguimiento en Tiempo Real</div><div class="page-sub">Estado actual por pedido y OF</div></div>
         <div style="display:flex;gap:6px;">
           <!-- Diagnóstico oculto: <button class="btn btn-ghost btn-sm" onclick="diagFTOperaciones()">🔍 Diagnóstico</button> -->
-          <button class="btn btn-ghost btn-sm" onclick="renderSeg()">↻ Actualizar</button>
+          <button class="btn btn-ghost btn-sm" onclick="ftManualRefresh('seguimiento',this)">↻ Actualizar</button>
         <span id="auto-refresh-indicator" class="auto-refresh-ind" style="font-size:.65rem;color:var(--text-dim);margin-left:6px;">⏱ auto 15s</span>
         </div>
       </div>
@@ -8045,6 +8045,8 @@ async function ftLoadDataFromSP() {
       if (!state.token || !FT_SITE_ID) return;
       if (window._confirmProgRunning) return; // Don't poll during programming confirmation
       if (document.hidden) return;  // browser tab/window hidden — skip this tick
+      // Gracia: tras cambiar de pestaña, no auto-refrescar los primeros 8s (evita trabas al navegar rápido)
+      if (window._ftTabSwitchedAt && (Date.now() - window._ftTabSwitchedAt) < 8000) return;
       // Adaptive interval: only poll at full speed on data-active pages.
       // On other pages (Inicio, Pedidos, etc.), run every ~120s instead of 30s.
       var _activePage = C && C.currentPage;
@@ -8067,7 +8069,7 @@ async function ftLoadDataFromSP() {
         //  • Graph directo (el usuario tiene permiso) → NO consume Power Automate → refresco corto (~12s).
         //  • Flujo (sin permiso Graph) → cada ejecución cuesta una acción de Power Automate → mantener ~55s.
         var _opsPorGraph = !!(window._graphCap && window._graphCap['FT_Operaciones'] === true);
-        var _opsThrottle = _opsPorGraph ? 12000 : 55000;
+        var _opsThrottle = _opsPorGraph ? 25000 : 75000;
         if (window._coordLastOpsRead && (Date.now() - window._coordLastOpsRead) < _opsThrottle) return;
         window._coordLastOpsRead = Date.now();
         // Firma de contenido de las operaciones. Antes se usaba lastModifiedDateTime (solo disponible
@@ -8311,11 +8313,9 @@ async function ftLoadDataFromSP() {
         window._coordLastVisRefresh = Date.now();
         console.log('[Coord] Ventana visible — refresh inmediato');
         window._coordSlowTick = 0;
-        try {
-          await ftLoadDataFromSP();
-          if (C.currentPage === 'seguimiento') renderSeg();
-          else if (C.currentPage === 'Fabricaciones') (window.renderProg||function(){})();
-        } catch(e) { console.warn('[Coord] Visibility refresh error:', e.message); }
+        // Antes se hacía un reload COMPLETO aquí (pesado) en cada foco → trabas al alternar pestañas.
+        // Ahora solo permitimos que el poll incremental lea en su próximo tick.
+        window._coordLastOpsRead = 0;
       }
     });
   }
@@ -9465,6 +9465,7 @@ setInterval(function(){
 
 function showCoordPage(id, el) {
   C.currentPage = id;
+  window._ftTabSwitchedAt = Date.now();
   document.querySelectorAll(".coord-page").forEach(function(p){p.classList.remove("active");});
   document.querySelectorAll(".sb-item,.coord-nav-pill").forEach(function(b){b.classList.remove("active");});
   document.getElementById("coord-page-"+id).classList.add("active");
@@ -11416,6 +11417,18 @@ setInterval(function(){
 
 
 // --- INICIALIZACIÓN --------------------------------------
+async function ftManualRefresh(page, btn){
+  var orig = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled=true; btn.innerHTML='↻ Cargando...'; }
+  try{
+    if(typeof ftLoadDataFromSP==='function' && !state.isDemoMode && state.token){ await ftLoadDataFromSP(); }
+    if(page==='seguimiento') (window.renderSeg||renderSeg)();
+    else if(page==='programacion') (window.renderProg||renderProg)();
+    else if(page==='flujos' && typeof renderCoordFlujos==='function') renderCoordFlujos();
+    else (window.renderApp||renderApp)();
+  }catch(e){ console.warn('[ftManualRefresh]', e&&e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML=orig||'↻ Actualizar'; } window._ftTabSwitchedAt = Date.now(); }
+}
 function simulateRefresh(){
   document.getElementById("filter-text").value="";
   C.filterText="";
