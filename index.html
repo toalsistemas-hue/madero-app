@@ -12099,21 +12099,31 @@ async function ftOmitirTodasOF(of_sap){
     '⊘ Omitir todas',
     async function(){
       closeCModal('modal-info');
-      _pend.forEach(function(op){ op.status='omitida'; });
-      renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
-      // Spinner bloqueante hasta que TODAS queden guardadas como omitidas en SharePoint
-      // (evita que el usuario vaya a Tiempo Real y finalice antes de terminar).
+      // Spinner bloqueante hasta que TODAS queden guardadas como omitidas en SharePoint.
+      // (La operación se marca omitida en memoria SOLO si se guardó en SP, para evitar el falso 100%.)
       if(typeof showLoadingModal==='function') showLoadingModal('Omitiendo operaciones','Guardando '+_pend.length+' operación(es) como omitidas…\nNo cierres ni navegues hasta que termine.');
+      // Mapear Op_ID → id de SharePoint (por si alguna op aún no tiene _spId en memoria).
+      var _byOpId={};
+      try{
+        var _spRes=await ftLeerPorOFs('FT_Operaciones',[of_sap],15000);
+        (_spRes.value||[]).forEach(function(it){ var f=it.fields||{}; var k=f.Op_ID||f.Title||''; if(k) _byOpId[k]=it.id; });
+      }catch(e){ console.warn('[OmitirTodas] lectura SP:', e&&e.message); }
+      var _ok=0, _fail=[];
       try{
         for(var i=0;i<_pend.length;i++){
           var op=_pend[i];
-          if(op._spId){ try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(op._spId)); }catch(e){ console.warn('[OmitirTodas] op', op.id, e&&e.message); } }
+          var _id = op._spId || _byOpId[op.id];
+          if(_id){
+            try{ await spEscribir('FT_Operaciones',{Status:'omitida'}, parseInt(_id)); op._spId=_id; op.status='omitida'; _ok++; }
+            catch(e){ _fail.push(op.id); console.warn('[OmitirTodas] op', op.id, e&&e.message); }
+          } else { _fail.push(op.id); }
           if(typeof showLoadingModal==='function') showLoadingModal('Omitiendo operaciones','Guardando '+(i+1)+'/'+_pend.length+'…\nNo cierres ni navegues hasta que termine.');
         }
       } finally {
         if(typeof hideLoadingModal==='function') hideLoadingModal();
-        renderProg(); if(typeof renderSeg==='function') renderSeg();
+        renderProg(); if(typeof renderSeg==='function') renderSeg(); if(typeof renderApp==='function') renderApp();
       }
+      if(_fail.length){ alert('⚠️ '+_fail.length+' de '+_pend.length+' operación(es) NO se pudieron omitir en SharePoint (se guardaron '+_ok+').\nVuelve a intentar "Omitir todas" antes de finalizar la orden.'); }
     }
   );
 }
